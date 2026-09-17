@@ -55,8 +55,6 @@ def _build_explanation(candidate: RouteCandidate) -> str:
 
 
 def build_export_node(*, export_dir: Path) -> ExportNodeFn:
-    export_dir.mkdir(parents=True, exist_ok=True)
-
     def explain_and_export(state: RouteAgentState) -> dict[str, Any]:
         selected = state.get("selected_candidate")
         if selected is None:
@@ -68,6 +66,7 @@ def build_export_node(*, export_dir: Path) -> ExportNodeFn:
         candidate = RouteCandidate.model_validate(selected)
         explanation = _build_explanation(candidate)
 
+        export_dir.mkdir(parents=True, exist_ok=True)
         route_id = uuid.uuid4().hex
         geojson_path = export_dir / f"{route_id}.geojson"
         gpx_path = export_dir / f"{route_id}.gpx"
