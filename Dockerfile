@@ -2,10 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+RUN pip install --no-cache-dir poetry \
+    && poetry config virtualenvs.create false
+
+COPY pyproject.toml poetry.lock README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir .
+RUN poetry install --only main --no-interaction --no-ansi
 
 EXPOSE 8000
 

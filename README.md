@@ -1,5 +1,7 @@
 # bike-routing-agent
 
+[![CI](https://github.com/JonasHeinickeBio/pyBikeRouter/actions/workflows/ci.yml/badge.svg)](https://github.com/JonasHeinickeBio/pyBikeRouter/actions/workflows/ci.yml)
+
 An OSM-based bike-routing service: a typed, provider-neutral domain model,
 an openrouteservice adapter, and a LangGraph workflow that turns a
 validated route request into an explainable, exportable cycling route.
@@ -44,14 +46,17 @@ returns without a terminal status.
 
 ## Setup
 
-Requires Python 3.11+.
+Requires Python 3.11+ and [Poetry](https://python-poetry.org/docs/#installation).
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+poetry install
 cp .env.example .env
 ```
+
+`poetry install` creates an in-project virtualenv (`.venv/`, see
+`poetry.toml`) with both runtime and dev dependencies. Run any command
+inside it with `poetry run <command>`, or `poetry shell` to activate it
+directly.
 
 Edit `.env` and set `ORS_API_KEY` to a valid
 [openrouteservice](https://openrouteservice.org/dev/#/signup) API key.
@@ -77,7 +82,7 @@ Edit `.env` and set `ORS_API_KEY` to a valid
 ## Running the API
 
 ```bash
-uvicorn bike_routing_agent.api:app --reload
+poetry run uvicorn bike_routing_agent.api:app --reload
 ```
 
 ### Example request
@@ -132,10 +137,20 @@ If `origin`/`destination` are ambiguous or unresolved, `status` is
 `awaiting_clarification` and `clarification` lists the candidate places to
 choose from -- no route is generated from a guess.
 
+## Linting and type checking
+
+```bash
+poetry run ruff check .
+poetry run mypy src
+```
+
+Both run in CI on every push and pull request (see
+`.github/workflows/ci.yml`).
+
 ## Running tests
 
 ```bash
-pytest
+poetry run pytest
 ```
 
 Live tests that hit real external services are marked `@pytest.mark.live`
@@ -143,7 +158,7 @@ and excluded by default (see `tool.pytest.ini_options.addopts` in
 `pyproject.toml`). Run them explicitly with:
 
 ```bash
-pytest -m live
+poetry run pytest -m live
 ```
 
 ## Known limitations

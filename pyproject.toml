@@ -14,21 +14,19 @@ dependencies = [
     "langchain-core>=0.3",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.2",
-    "pytest-asyncio>=0.23",
-    "respx>=0.21",
-    "ruff>=0.6",
-    "mypy>=1.11",
-]
+[tool.poetry]
+packages = [{ include = "bike_routing_agent", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.2"
+pytest-asyncio = ">=0.23"
+respx = ">=0.21"
+ruff = ">=0.6"
+mypy = ">=1.11"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/bike_routing_agent"]
+requires = ["poetry-core>=2.0"]
+build-backend = "poetry.core.masonry.api"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
