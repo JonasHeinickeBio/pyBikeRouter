@@ -1,0 +1,16 @@
+[
+  {
+    "place_id": 1,
+    "lat": "52.2689",
+    "lon": "10.5267",
+    "display_name": "Braunschweig Hauptbahnhof, Braunschweig, Niedersachsen, Germany",
+    "importance": 0.75
+  },
+  {
+    "place_id": 2,
+    "lat": "52.2000",
+    "lon": "10.4000",
+    "display_name": "Braunschweig Nord, Braunschweig, Niedersachsen, Germany",
+    "importance": 0.31
+  }
+]

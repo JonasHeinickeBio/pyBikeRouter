@@ -1,0 +1,36 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "summary": {
+          "distance": 12543.2,
+          "duration": 2701.5
+        },
+        "ascent": 84.3,
+        "descent": 91.7,
+        "extras": {
+          "surface": {
+            "summary": [
+              {"value": 1, "distance": 6000.0, "amount": 47.8},
+              {"value": 2, "distance": 6543.2, "amount": 52.2}
+            ]
+          }
+        },
+        "warnings": [
+          {"code": 1, "message": "This route may cross a steep section."}
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [10.5267, 52.2689, 75.0],
+          [10.5401, 52.2755, 78.2],
+          [10.5522, 52.2830, 81.0],
+          [10.5450, 52.2201, 79.4]
+        ]
+      }
+    }
+  ]
+}

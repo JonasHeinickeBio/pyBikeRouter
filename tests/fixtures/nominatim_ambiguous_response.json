@@ -1,0 +1,23 @@
+[
+  {
+    "place_id": 10,
+    "lat": "39.7817",
+    "lon": "-89.6501",
+    "display_name": "Springfield, Sangamon County, Illinois, United States",
+    "importance": 0.52
+  },
+  {
+    "place_id": 11,
+    "lat": "37.2153",
+    "lon": "-93.2982",
+    "display_name": "Springfield, Greene County, Missouri, United States",
+    "importance": 0.50
+  },
+  {
+    "place_id": 12,
+    "lat": "42.1015",
+    "lon": "-72.5898",
+    "display_name": "Springfield, Hampden County, Massachusetts, United States",
+    "importance": 0.49
+  }
+]
