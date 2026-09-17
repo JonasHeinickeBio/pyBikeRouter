@@ -21,6 +21,12 @@ from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingReque
 # points", as opposed to a malformed request or transient failure.
 _ORS_NO_ROUTE_CODES = {2010, 2009}
 
+# avoid_features accepted by ORS's cycling-* profiles. "highways" and
+# "tollways" are only valid for driving profiles -- sending them for a
+# cycling profile is a hard 400 from ORS, not a soft no-op. Every profile
+# we currently route through is a cycling profile (see ORS_PROFILE_MAP).
+_CYCLING_AVOID_FEATURES = {"ferries", "fords", "steps"}
+
 
 class OpenRouteServiceAdapter:
     """RoutingProvider backed by the openrouteservice directions API."""
@@ -50,16 +56,25 @@ class OpenRouteServiceAdapter:
                 f"no ORS profile mapped for bike type '{bike_type}'", provider=self.name
             ) from exc
 
-    def _build_body(self, request: RoutingRequest) -> dict:
+    def _build_body(self, request: RoutingRequest) -> tuple[dict, list[str]]:
         coordinates = [[request.origin.lon, request.origin.lat]]
         coordinates.extend([v.lon, v.lat] for v in request.via)
         coordinates.append([request.destination.lon, request.destination.lat])
 
-        avoid_features = []
+        requested_avoid_features = []
         if request.constraints.avoid_high_traffic_roads:
-            avoid_features.append("highways")
+            requested_avoid_features.append("highways")
         if request.constraints.avoid_ferries:
-            avoid_features.append("ferries")
+            requested_avoid_features.append("ferries")
+
+        avoid_features = [f for f in requested_avoid_features if f in _CYCLING_AVOID_FEATURES]
+        unsupported = [f for f in requested_avoid_features if f not in _CYCLING_AVOID_FEATURES]
+        warnings = []
+        if unsupported:
+            warnings.append(
+                f"requested avoid_features {unsupported} are not supported by ORS cycling "
+                "profiles and were not applied"
+            )
 
         body: dict = {
             "coordinates": coordinates,
@@ -68,11 +83,11 @@ class OpenRouteServiceAdapter:
         }
         if avoid_features:
             body["options"] = {"avoid_features": avoid_features}
-        return body
+        return body, warnings
 
     async def route(self, request: RoutingRequest) -> RouteCandidate:
         profile = self._profile_for(request.constraints.bike_type.value)
-        body = self._build_body(request)
+        body, build_warnings = self._build_body(request)
         url = f"{self._base_url}/v2/directions/{profile}/geojson"
         headers = {
             "Authorization": self._api_key,
@@ -80,7 +95,12 @@ class OpenRouteServiceAdapter:
         }
 
         payload = await self._post_with_retry(url, body, headers)
-        return self._normalize(payload, profile=profile)
+        candidate = self._normalize(payload, profile=profile)
+        if build_warnings:
+            candidate = candidate.model_copy(
+                update={"warnings": [*build_warnings, *candidate.warnings]}
+            )
+        return candidate
 
     async def _post_with_retry(self, url: str, body: dict, headers: dict) -> dict:
         attempt = 0

@@ -3,19 +3,27 @@ real openrouteservice -- no mocks anywhere in this file.
 
 Excluded from the default test run (see tool.pytest.ini_options.addopts).
 Run explicitly with `pytest -m live`. Routing assertions adapt to whether
-ORS_API_KEY is set: without a key, ORS is still reached for real and must
-turn its rejection into a structured `provider_failure`, not a crash.
+an ORS key is configured: without one, ORS is still reached for real and
+must turn its rejection into a structured `provider_failure`, not a crash.
+
+Checked via bike_routing_agent.config.settings rather than os.environ:
+the app loads ORS_API_KEY through pydantic-settings' .env support, which
+is a different source than the shell environment -- a key present only in
+.env would otherwise make the app succeed while this file's branching
+still assumed failure.
 """
 
-import os
 import shutil
 
 import httpx
 import pytest
 
 from bike_routing_agent.api import _export_dir, app
+from bike_routing_agent.config import settings
 
 pytestmark = pytest.mark.live
+
+_has_ors_key = bool(settings.ors_api_key) and settings.ors_api_key != "changeme"
 
 
 @pytest.fixture(autouse=True)
@@ -62,7 +70,7 @@ async def test_live_route_plan_with_real_coordinates(client):
     body = response.json()
     assert response.status_code == 200
 
-    if os.environ.get("ORS_API_KEY"):
+    if _has_ors_key:
         assert body["status"] == "ready"
         assert body["route"]["metrics"]["distance_m"] > 0
         assert set(body["artifacts"]) == {"geojson_url", "gpx_url"}
