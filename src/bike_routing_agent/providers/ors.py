@@ -232,6 +232,10 @@ class OpenRouteServiceAdapter:
         )
 
     async def health(self) -> dict:
+        """Note: /v2/health is exposed by self-hosted ORS backends but not by
+        the public multi-tenant api.openrouteservice.org, which 404s here.
+        That 404 is reported as "unknown", not "degraded" -- a permanently
+        absent endpoint is not evidence the service itself is unhealthy."""
         url = f"{self._base_url}/v2/health"
         try:
             if self._client is not None:
@@ -239,6 +243,11 @@ class OpenRouteServiceAdapter:
             else:
                 async with httpx.AsyncClient(timeout=self._timeout_s) as client:
                     response = await client.get(url)
-            return {"status": "ok" if response.status_code == 200 else "degraded"}
         except httpx.HTTPError as exc:
             return {"status": "unavailable", "error": str(exc)}
+
+        if response.status_code == 200:
+            return {"status": "ok"}
+        if response.status_code == 404:
+            return {"status": "unknown", "detail": f"{url} not found on this ORS deployment"}
+        return {"status": "degraded", "status_code": response.status_code}

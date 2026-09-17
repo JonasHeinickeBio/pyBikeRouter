@@ -107,3 +107,25 @@ async def test_health_reports_ok_on_200():
     result = await adapter.health()
 
     assert result["status"] == "ok"
+
+
+@respx.mock
+async def test_health_reports_unknown_on_404():
+    """The public api.openrouteservice.org has no /v2/health endpoint (confirmed
+    against the real API) -- a 404 there means "not exposed", not "degraded"."""
+    respx.get(f"{BASE_URL}/v2/health").mock(return_value=httpx.Response(404))
+    adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)
+
+    result = await adapter.health()
+
+    assert result["status"] == "unknown"
+
+
+@respx.mock
+async def test_health_reports_degraded_on_5xx():
+    respx.get(f"{BASE_URL}/v2/health").mock(return_value=httpx.Response(503))
+    adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)
+
+    result = await adapter.health()
+
+    assert result["status"] == "degraded"
