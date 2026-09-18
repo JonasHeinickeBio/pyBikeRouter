@@ -12,6 +12,7 @@ from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
 
 
 def _cache_key(query: str, limit: int) -> str:
+    """SHA-256 digest of the (provider, query, limit) cache identity."""
     return hashlib.sha256(f"pelias|{query}|{limit}".encode()).hexdigest()
 
 
@@ -44,6 +45,11 @@ class PeliasGeocoder:
         boundary_geometries: str | None = None,
         boundary_rect: str | None = None,
     ) -> None:
+        """Bind the shared ORS client plus the fixed Pelias boundary filters.
+
+        Boundary defaults are constructor-time because the
+        :class:`GeocodeProvider` protocol only passes a query and a limit.
+        """
         self._client = client
         self._cache = cache if cache is not None else InMemoryTTLCache()
         self._cache_ttl_s = cache_ttl_s
@@ -52,6 +58,8 @@ class PeliasGeocoder:
         self._boundary_rect = boundary_rect
 
     async def geocode(self, query: str, *, limit: int = 5) -> list[GeocodeCandidate]:
+        """Resolve a query via ``/pelias/v1/search`` (cache-first), raising
+        :class:`GeocodingNotFoundError` on an empty feature list."""
         key = _cache_key(query, limit)
         cached = await self._cache.get(key)
         if cached is not None:
@@ -79,6 +87,7 @@ class PeliasGeocoder:
         return candidates
 
     def _normalize(self, features: list[Any], query: str) -> list[GeocodeCandidate]:
+        """Convert GeoJSON features to candidates sorted by confidence."""
         candidates: list[GeocodeCandidate] = []
         for item in features:
             try:

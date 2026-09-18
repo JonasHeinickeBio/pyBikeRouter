@@ -38,6 +38,8 @@ def normalize_query(query: str) -> str:
 
 
 def extract_house_number(query: str) -> str | None:
+    """Return the first standalone house number in the query (lowercased,
+    zero-stripped), or None when the query contains none."""
     match = _HOUSE_NUMBER.search(query)
     if match is None:
         return None
@@ -68,6 +70,7 @@ def parse_structured_query(normalized: str) -> dict[str, str] | None:
 
 
 def _cache_key(query: str, limit: int) -> str:
+    """SHA-256 digest of the (normalized query, limit) cache identity."""
     return hashlib.sha256(f"{query}|{limit}".encode()).hexdigest()
 
 
@@ -86,6 +89,11 @@ class NominatimGeocoder:
         cache_ttl_s: float = 3600.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        """Configure endpoint, usage-policy User-Agent, timeout and cache.
+
+        ``client`` may be an injected ``httpx.AsyncClient`` (tests, shared
+        pools); otherwise one is created per request.
+        """
         self._base_url = base_url.rstrip("/")
         self._user_agent = user_agent
         self._timeout_s = timeout_s
@@ -94,6 +102,13 @@ class NominatimGeocoder:
         self._client = client
 
     async def geocode(self, query: str, *, limit: int = 5) -> list[GeocodeCandidate]:
+        """Resolve a free-text query to ranked candidates (cache-first).
+
+        The query is normalized before cache lookup and request; when the
+        free-text search finds nothing, a structured street/postalcode/city
+        search is attempted as fallback before raising
+        :class:`GeocodingNotFoundError`.
+        """
         normalized = normalize_query(query)
         key = _cache_key(normalized, limit)
         cached = await self._cache.get(key)
@@ -125,6 +140,8 @@ class NominatimGeocoder:
         return candidates
 
     async def _request(self, params: dict[str, str], query: str) -> list[dict]:
+        """One /search call; maps transport/HTTP/JSON failures to structured
+        provider errors and validates the list response shape."""
         headers = {"User-Agent": self._user_agent}
         search_url = f"{self._base_url}/search"
         try:
@@ -165,6 +182,7 @@ class NominatimGeocoder:
         return payload
 
     def _normalize(self, payload: list[dict], query: str) -> list[GeocodeCandidate]:
+        """Convert raw jsonv2 results to candidates sorted by confidence."""
         candidates: list[GeocodeCandidate] = []
         query_number = extract_house_number(query)
         for item in payload:
@@ -190,6 +208,9 @@ class NominatimGeocoder:
 
     @staticmethod
     def _confidence(item: dict, query: str, query_number: str | None, label: str) -> float:
+        """Clamped importance with match-precision floors: an exact
+        house-number + street match floors to HOUSE_NUMBER_CONFIDENCE, a
+        unique street match to STREET_MATCH_CONFIDENCE."""
         importance = float(item.get("importance") or 0.0)
         confidence = max(0.0, min(1.0, importance))
         raw_address = item.get("address")
@@ -207,6 +228,8 @@ class NominatimGeocoder:
 
 
 def _street_in_label(query: str, label: str) -> bool:
+    """True when every non-numeric token of the query's first segment occurs
+    in the result label (case-insensitive)."""
     first_segment = query.split(",")[0].strip()
     tokens = [t.lower() for t in first_segment.split() if not _HOUSE_NUMBER.fullmatch(t)]
     lowered = label.lower()

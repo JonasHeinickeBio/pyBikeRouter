@@ -67,6 +67,11 @@ class OpenRouteServiceClient:
         max_retries: int = 2,
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
+        """Configure key, base URL, per-request timeout and retry budget.
+
+        ``http_client`` may be an injected ``httpx.AsyncClient`` (tests,
+        shared connection pools); otherwise one is created per request.
+        """
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
@@ -187,6 +192,9 @@ class OpenRouteServiceClient:
 
     @staticmethod
     def _raise_for_client_error(response: httpx.Response) -> None:
+        """Map a 4xx response to a structured error, honouring ORS error
+        codes from the JSON body (no-route codes raise
+        :class:`ProviderNoRouteError`, anything else is a bad response)."""
         try:
             body = response.json()
         except json.JSONDecodeError:
@@ -425,6 +433,7 @@ class OpenRouteServiceClient:
 
     @staticmethod
     def _elevation_parse(format_out: ElevationFormat) -> ParseMode:
+        """Select the response parse mode for the requested output format."""
         return "json" if format_out in ("geojson",) else "text"
 
     async def elevation_line(
@@ -496,6 +505,7 @@ class OpenRouteServiceClient:
 
     @staticmethod
     def _pelias_params(params: dict[str, Any]) -> dict[str, Any]:
+        """Drop ``None`` values so unset optional query params are omitted."""
         return {key: value for key, value in params.items() if value is not None}
 
     async def geocode_search(
