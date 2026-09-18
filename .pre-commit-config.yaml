@@ -1,0 +1,44 @@
+# Pre-commit checks mirroring .github/workflows/ci.yml, run through the
+# project's Poetry environment so versions match poetry.lock exactly.
+#
+# Install once with:  poetry run pre-commit install --hook-type pre-push
+# Run everything now: poetry run pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^src/bike_routing_agent/frontend/vendor/
+      - id: end-of-file-fixer
+        exclude: ^src/bike_routing_agent/frontend/vendor/
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=500]
+
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: poetry run ruff check --fix
+        language: system
+        types_or: [python]
+        require_serial: true
+
+      - id: mypy
+        name: mypy (src)
+        entry: poetry run mypy src
+        language: system
+        files: ^src/.*\.py$
+        pass_filenames: false
+        require_serial: true
+
+      - id: pytest
+        name: pytest (full suite, mirrors CI)
+        entry: poetry run pytest -q -x
+        language: system
+        pass_filenames: false
+        require_serial: true
+        stages: [pre-push]
