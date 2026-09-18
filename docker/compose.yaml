@@ -1,0 +1,66 @@
+name: pybikerouter
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: pybikerouter-api:latest
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      EXPORT_DIR: /app/exports
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+    volumes:
+      - exports:/app/exports
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
+  # Optional self-hosted OpenRouteService stack (use with the `self-hosted`
+  # profile and GEOCODER_PROVIDER=pelias in .env):
+  #
+  #   docker compose --profile self-hosted up
+  #
+  # The public api.openrouteservice.org does NOT serve geocoding; the Pelias
+  # geocoder only works against a container like the one below.
+  # ---------------------------------------------------------------------------
+  ors-self-hosted:
+    profiles: ["self-hosted"]
+    image: openrouteservice/openrouteservice:latest
+    restart: unless-stopped
+    ports:
+      - "${ORS_LOCAL_PORT:-8080}:8080"
+    volumes:
+      - ors-graphs:/usr/src/openroute-service/ors-graph
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    logging: *default-logging
+
+volumes:
+  exports:
+    name: pybikerouter-exports
+  ors-graphs:
+    name: pybikerouter-ors-graphs

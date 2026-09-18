@@ -1,9 +1,0 @@
-.venv
-.git
-.env
-exports/
-__pycache__
-.pytest_cache
-.ruff_cache
-.mypy_cache
-tests
