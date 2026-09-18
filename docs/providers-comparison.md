@@ -5,8 +5,9 @@ Measured 2026-09-18 with the repo's own adapters (`OpenRouteServiceAdapter`,
 identical to production traffic:
 
 - **ORS**: public `api.openrouteservice.org` (free key, cycling profiles).
-- **BRouter**: `ghcr.io/abrensch/brouter:latest` via `docker compose
-  --profile brouter up`, segment `E10_N50.rd5` + pinned `lookups.dat` (v11).
+- **BRouter**: `ghcr.io/abrensch/brouter:latest` via `docker compose -f
+  docker/compose.yaml --profile brouter up`, segment `E10_N50.rd5` + pinned
+  `lookups.dat` (v11).
 - 3 real cases x all 8 bike types. `dev med/p95` = median / 95th-percentile
   distance from each engine's route (densified) to the other engine's
   polyline; `shared@50m` = share of sampled points within 50 m of the other

@@ -73,7 +73,7 @@ class BRouterAdapter:
         points = [request.origin, *request.via, request.destination]
         return "|".join(f"{p.lon:.7f},{p.lat:.7f}" for p in points)
 
-    def _build_warnings(self, request: RoutingRequest) -> list[str]:
+    def _build_warnings(self, request: RoutingRequest, profile: str) -> list[str]:
         warnings: list[str] = []
         surfaces = [*request.constraints.prefer_surfaces, *request.constraints.avoid_surfaces]
         if surfaces:
@@ -85,6 +85,23 @@ class BRouterAdapter:
             warnings.append(
                 "avoid_ferries=False is not supported per request; the mapped BRouter "
                 "profile decides ferry handling"
+            )
+        elif profile == "custom_gravel-v1":
+            # Stock gravel only penalises ferry segments (initialcost 20000),
+            # it never forbids them; custom_touring-v1 sets allow_ferries=false
+            # and stock profile behaviour is not inferred.
+            warnings.append(
+                "avoid_ferries=True is not enforced by custom_gravel-v1: the profile "
+                "penalises ferry segments but may still route over them"
+            )
+        if request.constraints.avoid_high_traffic_roads and profile in (
+            "custom_gravel-v1",
+            "custom_touring-v1",
+        ):
+            warnings.append(
+                f"avoid_high_traffic_roads=True is not applied per request by {profile}: "
+                "its traffic-estimate switch is off by default, so traffic avoidance is "
+                "only approximated by the profile's static cost structure"
             )
         return warnings
 
@@ -162,7 +179,7 @@ class BRouterAdapter:
             ) from exc
 
         candidate = self._normalize(payload, profile=profile)
-        build_warnings = self._build_warnings(request)
+        build_warnings = self._build_warnings(request, profile)
         if build_warnings:
             candidate = candidate.model_copy(
                 update={"warnings": [*build_warnings, *candidate.warnings]}

@@ -102,7 +102,8 @@ node -- not the adapters -- owns the ambiguity/clarification policy.
 ## BRouter (`providers/brouter.py`)
 
 Full `RoutingProvider` for a self-hosted BRouter RouteServer
-(`docker compose --profile brouter up`, or any stock `abrensch/brouter`
+(`docker compose -f docker/compose.yaml --profile brouter up`, or any stock
+`abrensch/brouter`
 deployment). Bike types map to stock or versioned custom profiles via
 `config.BROUTER_PROFILE_MAP` (see the table in
 [configuration.md](configuration.md)); custom `.brf` profiles live in

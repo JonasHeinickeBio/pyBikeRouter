@@ -199,8 +199,10 @@ choose from -- no route is generated from a guess.
 `gravel`. Supported values: `road`, `gravel`, `touring`, `mountain`, `city`,
 `ebike`, `commuter` (fast, low-traffic), `recumbent`. ORS ships four cycling
 profiles, so e.g. `ebike` uses `cycling-electric` while `commuter` rides on
-`cycling-regular`; with the self-hosted BRouter provider each type gets a
-distinct cost model (see [docs/configuration.md](docs/configuration.md)).
+`cycling-regular`; the self-hosted BRouter provider differentiates further --
+`gravel`, `touring`, `mountain`, `city`, `commuter` and `recumbent` each get
+their own profile, while `road` and `ebike` share `fastbike` (BRouter has no
+e-assist cost model) (see [docs/configuration.md](docs/configuration.md)).
 
 ## Linting and type checking
 
@@ -233,17 +235,18 @@ poetry run pytest -m live
 ## Pre-commit hooks
 
 Quality gates run automatically before each commit/push via
-[pre-commit](https://pre-commit.com). Install the git hooks once after
+[pre-commit](https://pre-commit.com). Install both git hook stages once after
 `poetry install`:
 
 ```bash
-poetry run pre-commit install --hook-type pre-push
+poetry run pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
 
 On commit it runs whitespace/EOF/YAML/TOML/merge-conflict/large-file checks,
-`ruff check --fix` and `mypy src`; the full pytest suite runs on `git push`
-(mirroring CI). Run everything manually with
-`poetry run pre-commit run --all-files`.
+`ruff check --fix` and `mypy src`; the full pytest suite runs only in the
+pre-push stage on `git push` (mirroring CI). Run the commit stage manually
+with `poetry run pre-commit run --all-files` and the pre-push stage with
+`poetry run pre-commit run --hook-stage pre-push --all-files`.
 
 ## Known limitations
 

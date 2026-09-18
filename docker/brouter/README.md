@@ -1,10 +1,10 @@
 # Local BRouter service
 
 BRouter RouteServer for development and the `ROUTING_PROVIDER=brouter`
-mode (issue #1). Started with:
+mode (issue #1). Started from the repository root with:
 
 ```bash
-docker compose --profile brouter up
+docker compose -f docker/compose.yaml --profile brouter up
 ```
 
 It listens on `http://127.0.0.1:17777` (override with `BROUTER_LOCAL_PORT`)

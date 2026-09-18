@@ -61,9 +61,9 @@ services:
 
   # ---------------------------------------------------------------------------
   # Local BRouter RouteServer (use with the `brouter` profile and
-  # ROUTING_PROVIDER=brouter in .env):
+  # ROUTING_PROVIDER=brouter in .env), from the repository root:
   #
-  #   docker compose --profile brouter up
+  #   docker compose -f docker/compose.yaml --profile brouter up
   #
   # Needs at least one .rd5 segment file in ./brouter/segments (download from
   # https://brouter.de/brouter/segments4/, see docker/brouter/README.md). The
@@ -73,10 +73,14 @@ services:
   # ---------------------------------------------------------------------------
   brouter:
     profiles: ["brouter"]
-    image: ghcr.io/abrensch/brouter:latest
+    # Pinned by digest: upstream publishes only a mutable `latest` tag, so
+    # reference the exact image this repo was validated against (2026-09-18).
+    # To update: pull :latest, re-run the BRouter live tests, swap the digest.
+    image: ghcr.io/abrensch/brouter@sha256:3c6c8a616f054f9237c900760add5fec6b88fc17108348fb2733a1dd62444165
     restart: unless-stopped
     ports:
-      - "${BROUTER_LOCAL_PORT:-17777}:17777"
+      # BRouter has no authentication -- bind loopback only.
+      - "127.0.0.1:${BROUTER_LOCAL_PORT:-17777}:17777"
     environment:
       JAVA_OPTS: "-Xmx1536m"
     volumes:

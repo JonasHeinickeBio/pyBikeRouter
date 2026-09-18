@@ -1,8 +1,13 @@
 # Pre-commit checks mirroring .github/workflows/ci.yml, run through the
 # project's Poetry environment so versions match poetry.lock exactly.
 #
-# Install once with:  poetry run pre-commit install --hook-type pre-push
-# Run everything now: poetry run pre-commit run --all-files
+# Install both hook stages once with:
+#   poetry run pre-commit install --hook-type pre-commit --hook-type pre-push
+# Run the commit-stage checks now:  poetry run pre-commit run --all-files
+# Run the pre-push stage (pytest) now:
+#   poetry run pre-commit run --hook-stage pre-push --all-files
+
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

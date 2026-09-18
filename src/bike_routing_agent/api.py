@@ -38,7 +38,9 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
     same self-hosted ORS instance as routing, so both share one
     :class:`OpenRouteServiceClient` (connection reuse, single retry and
     timeout policy). ``config.Settings`` rejects "pelias" for the public
-    ORS base URL at construction time.
+    ORS base URL at construction time. With ``routing_provider`` set to
+    another engine, the Pelias geocoder still uses the shared ORS client but
+    routing goes through :func:`build_routing_provider`.
     """
     if cfg.geocoder_provider == "pelias":
         ors_client = OpenRouteServiceClient(
@@ -51,13 +53,18 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
             client=ors_client,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         )
-        router: RoutingProvider = OpenRouteServiceAdapter(
-            api_key=cfg.ors_api_key,
-            base_url=cfg.ors_base_url,
-            timeout_s=cfg.ors_timeout_s,
-            max_retries=cfg.ors_max_retries,
-            ors_client=ors_client,
-        )
+        if cfg.routing_provider == "ors":
+            # Same self-hosted ORS instance serves geocoding and routing;
+            # share one client. Any other engine comes from the selector.
+            router: RoutingProvider = OpenRouteServiceAdapter(
+                api_key=cfg.ors_api_key,
+                base_url=cfg.ors_base_url,
+                timeout_s=cfg.ors_timeout_s,
+                max_retries=cfg.ors_max_retries,
+                ors_client=ors_client,
+            )
+        else:
+            router = build_routing_provider(cfg)
         return geocoder, router
 
     return (

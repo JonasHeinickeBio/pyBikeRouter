@@ -3,7 +3,7 @@
 Excluded from the default test run (see tool.pytest.ini_options.addopts).
 Run explicitly with `pytest -m live` while
 
-    docker compose --profile brouter up
+    docker compose -f docker/compose.yaml --profile brouter up
 
 is running with at least one .rd5 segment covering the test region
 (see docker/brouter/README.md). Skips when the server is not reachable.

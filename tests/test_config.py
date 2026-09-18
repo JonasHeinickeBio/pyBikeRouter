@@ -39,6 +39,26 @@ def test_unknown_geocoder_provider_rejected():
         Settings(_env_file=None, geocoder_provider="geocodio")  # type: ignore[arg-type]
 
 
+def test_brouter_timeout_must_be_positive_when_brouter_active():
+    with pytest.raises(ValidationError, match="brouter_timeout_s"):
+        Settings(_env_file=None, routing_provider="brouter", brouter_timeout_s=0)
+
+
+def test_brouter_retries_must_not_be_negative_when_brouter_active():
+    with pytest.raises(ValidationError, match="brouter_max_retries"):
+        Settings(_env_file=None, routing_provider="brouter", brouter_max_retries=-1)
+
+
+def test_brouter_settings_unchecked_for_other_providers():
+    settings = Settings(
+        _env_file=None,
+        routing_provider="ors",
+        brouter_timeout_s=0,
+        brouter_max_retries=-1,
+    )
+    assert settings.routing_provider == "ors"
+
+
 # ----------------------------------------------------------------------
 # Profile maps
 # ----------------------------------------------------------------------
@@ -91,5 +111,19 @@ def test_build_providers_brouter_selects_brouter_adapter():
     cfg = Settings(_env_file=None, routing_provider="brouter")
     geocoder, router = build_providers(cfg)
     assert isinstance(geocoder, NominatimGeocoder)
+    assert isinstance(router, BRouterAdapter)
+    assert router.name == "brouter"
+
+
+def test_build_providers_pelias_with_brouter_keeps_ors_client_for_geocoder_only():
+    cfg = Settings(
+        _env_file=None,
+        geocoder_provider="pelias",
+        ors_base_url="https://ors.internal.example.org",
+        ors_api_key="secret",
+        routing_provider="brouter",
+    )
+    geocoder, router = build_providers(cfg)
+    assert isinstance(geocoder, PeliasGeocoder)
     assert isinstance(router, BRouterAdapter)
     assert router.name == "brouter"

@@ -26,10 +26,11 @@ ROBOTS_URL = f"{BROUTER_BASE}/robots.txt"
 
 
 def make_request(**constraint_kwargs: object) -> RoutingRequest:
+    constraint_kwargs.setdefault("bike_type", "gravel")
     return RoutingRequest(
         origin=Coordinate(lon=10.5267132, lat=52.2689081),
         destination=Coordinate(lon=10.5450128, lat=52.2201356),
-        constraints=RouteConstraints(bike_type="gravel", **constraint_kwargs),  # type: ignore[arg-type]
+        constraints=RouteConstraints(**constraint_kwargs),  # type: ignore[arg-type]
     )
 
 
@@ -49,7 +50,11 @@ async def test_route_normalizes_fixture_into_candidate(brouter_route_response: d
     assert candidate.geometry_geojson["type"] == "LineString"
     assert candidate.provenance == {"provider": "brouter", "profile": "custom_gravel-v1"}
     assert candidate.raw_provider_response == brouter_route_response
-    assert candidate.warnings == []
+    # Default constraints (avoid_ferries/avoid_high_traffic_roads True) on the
+    # gravel custom profile produce the two profile-specific warnings.
+    assert len(candidate.warnings) == 2
+    assert "avoid_ferries=True is not enforced by custom_gravel-v1" in candidate.warnings[0]
+    assert "avoid_high_traffic_roads=True is not applied per request" in candidate.warnings[1]
 
 
 @respx.mock
@@ -246,9 +251,53 @@ async def test_surface_preferences_produce_warning(brouter_route_response: dict)
 
     candidate = await adapter.route(make_request(prefer_surfaces=["gravel", "unpaved"]))
 
-    assert len(candidate.warnings) == 1
-    assert "gravel" in candidate.warnings[0]
-    assert "cannot be applied per request" in candidate.warnings[0]
+    surface_warnings = [w for w in candidate.warnings if "cannot be applied per request" in w]
+    assert len(surface_warnings) == 1
+    assert "gravel" in surface_warnings[0]
+
+
+@respx.mock
+async def test_touring_avoid_ferries_true_has_no_ferry_warning(
+    brouter_route_response: dict,
+) -> None:
+    """custom_touring-v1 sets allow_ferries=false, so it genuinely enforces it."""
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    request = make_request(bike_type="touring")
+    candidate = await adapter.route(request)
+
+    assert candidate.provider_profile == "custom_touring-v1"
+    assert not any("ferry" in w or "ferries" in w for w in candidate.warnings)
+    assert len(candidate.warnings) == 1  # only the traffic-estimate warning
+    assert "avoid_high_traffic_roads=True" in candidate.warnings[0]
+
+
+@respx.mock
+async def test_stock_profiles_get_no_constraint_warnings(
+    brouter_route_response: dict,
+) -> None:
+    """Stock profile behaviour is not inferred, so no warnings are emitted."""
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(make_request(bike_type="road"))
+
+    assert candidate.provider_profile == "fastbike"
+    assert candidate.warnings == []
+
+
+@respx.mock
+async def test_allow_ferries_warns_generically_not_enforcement(
+    brouter_route_response: dict,
+) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(make_request(avoid_ferries=False))
+
+    assert any("avoid_ferries=False is not supported per request" in w for w in candidate.warnings)
+    assert not any("not enforced by custom_gravel-v1" in w for w in candidate.warnings)
 
 
 @respx.mock
