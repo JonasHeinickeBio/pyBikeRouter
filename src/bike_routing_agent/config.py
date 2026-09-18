@@ -38,6 +38,14 @@ class Settings(BaseSettings):
 
     valhalla_base_url: str = "http://localhost:8002"
 
+    # Routing engine selection. "brouter" routes against a local/self-hosted
+    # BRouter RouteServer (see docker/compose.yaml, profile "brouter"); no
+    # automatic fallback between engines is attempted.
+    routing_provider: Literal["ors", "brouter"] = "ors"
+    brouter_base_url: str = "http://127.0.0.1:17777"
+    brouter_timeout_s: float = 30.0
+    brouter_max_retries: int = 1
+
     export_dir: str = "exports"
     log_level: str = "INFO"
 
@@ -55,16 +63,61 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _check_brouter_settings_when_active(self) -> Settings:
+        if self.routing_provider == "brouter":
+            if self.brouter_timeout_s <= 0:
+                raise ValueError(
+                    "brouter_timeout_s must be > 0 when routing_provider='brouter' "
+                    f"(got {self.brouter_timeout_s})"
+                )
+            if self.brouter_max_retries < 0:
+                raise ValueError(
+                    "brouter_max_retries must be >= 0 when routing_provider='brouter' "
+                    f"(got {self.brouter_max_retries})"
+                )
+        return self
+
 
 settings = Settings()
 
 # Internal bike type -> ORS cycling profile. Kept configurable and isolated
 # here because engine profiles are an approximation of real-world bike
 # categories (gravel riding in particular has no dedicated ORS profile).
+# ORS 9.x ships exactly four cycling profiles (regular/mountain/road/electric;
+# the former cycling-recreational was removed), so several bike types share a
+# profile here. ebike is the only new type with dedicated ORS support;
+# commuter and recumbent are approximated with cycling-regular on ORS and get
+# their distinct behaviour from the stock BRouter profiles below.
 ORS_PROFILE_MAP: dict[str, str] = {
     "road": "cycling-road",
     "gravel": "cycling-regular",
     "touring": "cycling-regular",
     "mountain": "cycling-mountain",
     "city": "cycling-regular",
+    "ebike": "cycling-electric",
+    "commuter": "cycling-regular",
+    "recumbent": "cycling-regular",
+}
+
+# Internal bike type -> BRouter profile name (the profile= request parameter).
+# A "custom_" prefix is BRouter's convention: the server resolves
+# "custom_<name>" to the file <name>.brf under its CUSTOMPROFILESPATH mount,
+# which we point at docker/brouter/profiles/ so the gravel and touring
+# profiles are versioned in this repository (see docs/providers.md).
+# Non-prefixed entries are stock profiles shipped with the BRouter image.
+BROUTER_PROFILE_MAP: dict[str, str] = {
+    "road": "fastbike",
+    "gravel": "custom_gravel-v1",
+    "touring": "custom_touring-v1",
+    "mountain": "mtb",
+    "city": "trekking",
+    # Stock profiles shipped with the BRouter image (misc/profiles2 in the
+    # upstream repo). BRouter's cost model has no e-assist term, so ebike
+    # rides use the fastbike profile (faster target speed, cycle-infrastructure
+    # preference). fastbike-verylowtraffic is the community commuter profile;
+    # vm-forum-liegerad-schnell is the recumbent (Liegerad) forum profile.
+    "ebike": "fastbike",
+    "commuter": "fastbike-verylowtraffic",
+    "recumbent": "vm-forum-liegerad-schnell",
 }

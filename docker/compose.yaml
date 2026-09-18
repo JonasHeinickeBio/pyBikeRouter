@@ -59,6 +59,43 @@ services:
           memory: 4g
     logging: *default-logging
 
+  # ---------------------------------------------------------------------------
+  # Local BRouter RouteServer (use with the `brouter` profile and
+  # ROUTING_PROVIDER=brouter in .env), from the repository root:
+  #
+  #   docker compose -f docker/compose.yaml --profile brouter up
+  #
+  # Needs at least one .rd5 segment file in ./brouter/segments (download from
+  # https://brouter.de/brouter/segments4/, see docker/brouter/README.md). The
+  # versioned custom profiles in ./brouter/profiles are mounted as
+  # /customprofiles, so "profile=custom_gravel-v1" resolves to
+  # gravel-v1.brf here in the repository.
+  # ---------------------------------------------------------------------------
+  brouter:
+    profiles: ["brouter"]
+    # Pinned by digest: upstream publishes only a mutable `latest` tag, so
+    # reference the exact image this repo was validated against (2026-09-18).
+    # To update: pull :latest, re-run the BRouter live tests, swap the digest.
+    image: ghcr.io/abrensch/brouter@sha256:3c6c8a616f054f9237c900760add5fec6b88fc17108348fb2733a1dd62444165
+    restart: unless-stopped
+    ports:
+      # BRouter has no authentication -- bind loopback only.
+      - "127.0.0.1:${BROUTER_LOCAL_PORT:-17777}:17777"
+    environment:
+      JAVA_OPTS: "-Xmx1536m"
+    volumes:
+      - ./brouter/segments:/segments4
+      - ./brouter/profiles:/customprofiles:ro
+      # Pinned lookups.dat (version 11, from abrensch/brouter misc/profiles2)
+      # -- the copy baked into the image must match the .rd5 segment format
+      # version, and upstream images lag behind the segments.
+      - ./brouter/lookups.dat:/profiles2/lookups.dat:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    logging: *default-logging
+
 volumes:
   exports:
     name: pybikerouter-exports

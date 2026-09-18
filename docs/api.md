@@ -44,7 +44,7 @@ defaults:
 
 | Field | Default | Constraints |
 | --- | --- | --- |
-| `bike_type` | `"gravel"` | one of `road`, `gravel`, `touring`, `mountain`, `city` |
+| `bike_type` | `"gravel"` | one of `road`, `gravel`, `touring`, `mountain`, `city`, `ebike`, `commuter`, `recumbent` |
 | `target_distance_km` | `null` | `0 < x <= 1000` |
 | `max_distance_km` | `null` | `0 < x <= 1000`; must be >= `target_distance_km` |
 | `max_ascent_m` | `null` | `0 <= x <= 10000` |

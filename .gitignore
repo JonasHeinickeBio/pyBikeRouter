@@ -10,3 +10,9 @@ exports/
 dist/
 build/
 .coverage*
+
+# BRouter road-network segments (downloaded, see docker/brouter/README.md)
+docker/brouter/segments/*.rd5
+
+# backend comparison output (scripts/compare_backends.py)
+backend-compare.json

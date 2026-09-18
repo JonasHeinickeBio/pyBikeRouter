@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [10.5267132, 52.2689081],
+          [10.5301042, 52.2651277],
+          [10.5348821, 52.2577044],
+          [10.5394417, 52.2491182],
+          [10.5450128, 52.2201356]
+        ]
+      },
+      "properties": {
+        "creator": "BRouter-1.11.0",
+        "name": "gravel-v1",
+        "track-length": "5761",
+        "filtered ascend": "64",
+        "plain-ascend": "58",
+        "total-time": "1224",
+        "time-ascending": "186",
+        "average-speed": "16.9",
+        "costes": "4308",
+        "cost": "4308"
+      }
+    }
+  ]
+}

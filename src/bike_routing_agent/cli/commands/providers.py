@@ -18,13 +18,19 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
 
 
 def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
-    from bike_routing_agent.config import ORS_PROFILE_MAP, PUBLIC_ORS_BASE_URLS, Settings
+    from bike_routing_agent.config import (
+        BROUTER_PROFILE_MAP,
+        ORS_PROFILE_MAP,
+        PUBLIC_ORS_BASE_URLS,
+        Settings,
+    )
 
     if args.command != "list":
         print("unknown providers command", file=stderr)
         return 2
 
     cfg = Settings()
+    profile_maps = {"ors": ORS_PROFILE_MAP, "brouter": BROUTER_PROFILE_MAP}
     payload = {
         "geocoder": {
             "configured": cfg.geocoder_provider,
@@ -39,11 +45,16 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
             + " does not serve it)",
         },
         "routing": {
-            "configured": "openrouteservice",
-            "base_url": cfg.ors_base_url,
-            "api_key_configured": bool(cfg.ors_api_key),
+            "configured": cfg.routing_provider,
+            "available": ["ors", "brouter"],
+            "base_url": (
+                cfg.brouter_base_url if cfg.routing_provider == "brouter" else cfg.ors_base_url
+            ),
+            "api_key_configured": bool(cfg.ors_api_key)
+            if cfg.routing_provider == "ors"
+            else None,
         },
-        "bike_type_profiles": dict(sorted(ORS_PROFILE_MAP.items())),
+        "bike_type_profiles": dict(sorted(profile_maps[cfg.routing_provider].items())),
     }
     print(json.dumps(payload, indent=2), file=stdout)
     return 0

@@ -312,22 +312,38 @@ def test_config_check_rejects_pelias_on_public_ors(monkeypatch: pytest.MonkeyPat
 # ---------------------------------------------------------------- providers
 
 
-def test_providers_list_reports_profile_map() -> None:
+def test_providers_list_reports_profile_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROUTING_PROVIDER", "ors")
     out, err = io.StringIO(), io.StringIO()
     args = parse("providers", "list")
     assert providers_cmd.run(args, out, err) == 0
     payload = json.loads(out.getvalue())
     assert payload["bike_type_profiles"]["road"] == "cycling-road"
-    assert payload["routing"]["configured"] == "openrouteservice"
+    assert payload["routing"]["configured"] == "ors"
+
+
+def test_providers_list_reports_brouter_when_selected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ROUTING_PROVIDER", "brouter")
+    monkeypatch.setenv("BROUTER_BASE_URL", "http://127.0.0.1:17777")
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("providers", "list")
+    assert providers_cmd.run(args, out, err) == 0
+    payload = json.loads(out.getvalue())
+    assert payload["routing"]["configured"] == "brouter"
+    assert payload["routing"]["base_url"] == "http://127.0.0.1:17777"
+    assert payload["bike_type_profiles"]["gravel"] == "custom_gravel-v1"
 
 
 # ------------------------------------------------- dispatch and default wiring
 
 
-def test_main_dispatches_group_module_and_returns_its_exit_code() -> None:
+def test_main_dispatches_group_module_and_returns_its_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ROUTING_PROVIDER", "ors")
     out, err = io.StringIO(), io.StringIO()
     assert main(["providers", "list"], stdout=out, stderr=err) == 0
-    assert json.loads(out.getvalue())["routing"]["configured"] == "openrouteservice"
+    assert json.loads(out.getvalue())["routing"]["configured"] == "ors"
 
 
 def test_python_m_entrypoint_exits_with_main_code(

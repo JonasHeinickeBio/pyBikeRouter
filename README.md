@@ -21,6 +21,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [API](docs/api.md) | Endpoint contracts, response statuses, artifact serving |
 | [Configuration](docs/configuration.md) | Every environment variable, validation rules, deployment notes |
 | [Providers](docs/providers.md) | Protocols, ORS client/adapter behaviour, geocoders, stubs, adding a backend |
+| [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
@@ -192,6 +193,17 @@ If `origin`/`destination` are ambiguous or unresolved, `status` is
 `awaiting_clarification` and `clarification` lists the candidate places to
 choose from -- no route is generated from a guess.
 
+## Bike types
+
+`constraints.bike_type` selects the routing profile per engine and defaults to
+`gravel`. Supported values: `road`, `gravel`, `touring`, `mountain`, `city`,
+`ebike`, `commuter` (fast, low-traffic), `recumbent`. ORS ships four cycling
+profiles, so e.g. `ebike` uses `cycling-electric` while `commuter` rides on
+`cycling-regular`; the self-hosted BRouter provider differentiates further --
+`gravel`, `touring`, `mountain`, `city`, `commuter` and `recumbent` each get
+their own profile, while `road` and `ebike` share `fastbike` (BRouter has no
+e-assist cost model) (see [docs/configuration.md](docs/configuration.md)).
+
 ## Linting and type checking
 
 ```bash
@@ -220,6 +232,22 @@ and excluded by default (see `tool.pytest.ini_options.addopts` in
 poetry run pytest -m live
 ```
 
+## Pre-commit hooks
+
+Quality gates run automatically before each commit/push via
+[pre-commit](https://pre-commit.com). Install both git hook stages once after
+`poetry install`:
+
+```bash
+poetry run pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+On commit it runs whitespace/EOF/YAML/TOML/merge-conflict/large-file checks,
+`ruff check --fix` and `mypy src`; the full pytest suite runs only in the
+pre-push stage on `git push` (mirroring CI). Run the commit stage manually
+with `poetry run pre-commit run --all-files` and the pre-push stage with
+`poetry run pre-commit run --hook-stage pre-push --all-files`.
+
 ## Known limitations
 
 - OSM tag completeness varies by region; surface/access metadata is
@@ -233,8 +261,10 @@ poetry run pytest -m live
 - No route produced by this service is a safety guarantee. Explanations use
   hedged language ("better aligned with available map metadata") rather
   than claims like "safe route".
-- Valhalla/BRouter adapters are stubs in this milestone; only
-  openrouteservice is wired up end to end.
+- The Valhalla adapter is a stub in this milestone; BRouter is wired up
+  end to end but only against a self-hosted RouteServer (`ROUTING_PROVIDER=brouter`,
+  see [docker/brouter/README.md](docker/brouter/README.md)), and
+  openrouteservice remains the default engine.
 - The Pelias geocoder option requires a self-hosted openrouteservice
   instance; the public `api.openrouteservice.org` does not serve Pelias
   (see [docs/geocoding.md](docs/geocoding.md)).
