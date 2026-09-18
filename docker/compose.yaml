@@ -82,6 +82,10 @@ services:
     volumes:
       - ./brouter/segments:/segments4
       - ./brouter/profiles:/customprofiles:ro
+      # Pinned lookups.dat (version 11, from abrensch/brouter misc/profiles2)
+      # -- the copy baked into the image must match the .rd5 segment format
+      # version, and upstream images lag behind the segments.
+      - ./brouter/lookups.dat:/profiles2/lookups.dat:ro
     deploy:
       resources:
         limits:

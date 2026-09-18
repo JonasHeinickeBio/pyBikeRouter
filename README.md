@@ -21,6 +21,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [API](docs/api.md) | Endpoint contracts, response statuses, artifact serving |
 | [Configuration](docs/configuration.md) | Every environment variable, validation rules, deployment notes |
 | [Providers](docs/providers.md) | Protocols, ORS client/adapter behaviour, geocoders, stubs, adding a backend |
+| [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |

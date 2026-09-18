@@ -22,6 +22,16 @@ test region (and all of northern Germany):
 curl -o segments/E10_N50.rd5 https://brouter.de/brouter/segments4/E10_N50.rd5   # ~125 MB
 ```
 
+## lookups.dat (version-matched, in git)
+
+Segments and `lookups.dat` must share a data format version. The container
+image ships an old `lookups.dat` (v10), which makes it reject current
+downloads with `lookup version mismatch (old rd5?) lookups.dat=10
+E10_N50.rd5=11`. We therefore pin a copy of BRouter's current
+`misc/profiles2/lookups.dat` (v11) in this folder and mount it over the
+image's copy; if you add segments later and hit that error, refresh the pin
+from <https://github.com/abrensch/brouter/blob/master/misc/profiles2/lookups.dat>.
+
 ## Profiles
 
 `profiles/` is mounted read-only as `/customprofiles`, so request

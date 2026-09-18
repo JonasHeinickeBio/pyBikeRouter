@@ -113,6 +113,10 @@ bodies on 400/500, string-typed GeoJSON summary values, no descent figure
 instead. Unsupported-constraint honesty works the same way as for ORS: the
 constraint is recorded as a candidate warning, not silently dropped.
 
+A real-world A/B against ORS across all bike types -- where the engines
+disagree and why -- is in
+[providers-comparison.md](providers-comparison.md).
+
 ## Stub: Valhalla
 
 `providers/valhalla.py` implements `RoutingProvider` but raises
