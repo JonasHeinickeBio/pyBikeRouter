@@ -19,6 +19,19 @@ _OptDict = dict[str, Any] | None
 _ResolveResult = tuple[_OptDict, _OptDict, _OptDict]
 GeocodeNodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 
+NO_MATCH_HINT = (
+    "no matches found; try a full street name with house number and postcode "
+    "(e.g. 'Kasernenstraße 23, 38106 Braunschweig'), or pass a coordinate directly"
+)
+
+
+def _no_match(query: str) -> dict[str, Any]:
+    return {"field": query, "candidates": [], "hint": NO_MATCH_HINT}
+
+
+def _not_found_error(query: str) -> dict[str, Any]:
+    return {"code": "geocoding_not_found", "message": f"no results for '{query}'"}
+
 
 def build_geocode_node(
     *,
@@ -38,18 +51,12 @@ def build_geocode_node(
         try:
             candidates = await geocode_provider.geocode(query, limit=candidate_limit)
         except GeocodingNotFoundError:
-            return None, {"field": query, "candidates": []}, {
-                "code": "geocoding_not_found",
-                "message": f"no results for '{query}'",
-            }
+            return None, _no_match(query), _not_found_error(query)
         except ProviderError as exc:
             return None, None, exc.to_dict()
 
         if not candidates:
-            return None, {"field": query, "candidates": []}, {
-                "code": "geocoding_not_found",
-                "message": f"no results for '{query}'",
-            }
+            return None, _no_match(query), _not_found_error(query)
 
         confidence_gap = (
             candidates[0].confidence - candidates[1].confidence if len(candidates) > 1 else 1.0
