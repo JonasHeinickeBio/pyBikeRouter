@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pyBikeRouter — bike route planner</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <header class="brand">
+        <h1>pyBikeRouter</h1>
+        <p class="tagline">OSM bike routing with scored candidates</p>
+      </header>
+
+      <section class="panel" id="places-panel">
+        <h2>Places</h2>
+        <div class="field">
+          <label for="origin-input">Origin</label>
+          <div class="place-row">
+            <input id="origin-input" type="text" placeholder="e.g. Oxford, UK" autocomplete="off" />
+            <button class="icon-btn" data-map-target="origin" title="Pick on map">&#9673;</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="destination-input">Destination</label>
+          <div class="place-row">
+            <input id="destination-input" type="text" placeholder="e.g. Cambridge, UK" autocomplete="off" />
+            <button class="icon-btn" data-map-target="destination" title="Pick on map">&#9673;</button>
+          </div>
+        </div>
+        <div id="via-list"></div>
+        <div class="row">
+          <button id="add-via" class="ghost" type="button">+ Add via point</button>
+          <button id="swap" class="ghost" type="button" title="Swap origin and destination">&#8646; Swap</button>
+        </div>
+        <p class="hint">Tip: type <code>lat, lon</code> (e.g. <code>51.75, -1.25</code>) to skip geocoding, or use &#9673; then click the map.</p>
+      </section>
+
+      <section class="panel" id="constraints-panel">
+        <details open>
+          <summary><h2>Constraints</h2></summary>
+          <div class="field">
+            <label for="bike-type">Bike type</label>
+            <select id="bike-type">
+              <option value="road">Road</option>
+              <option value="gravel" selected>Gravel</option>
+              <option value="touring">Touring</option>
+              <option value="mountain">Mountain</option>
+              <option value="city">City</option>
+            </select>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="target-distance">Target distance (km)</label>
+              <input id="target-distance" type="number" min="0.1" max="1000" step="0.1" placeholder="any" />
+            </div>
+            <div class="field">
+              <label for="max-distance">Max distance (km)</label>
+              <input id="max-distance" type="number" min="0.1" max="1000" step="0.1" placeholder="none" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="max-ascent">Max ascent (m)</label>
+            <input id="max-ascent" type="number" min="0" max="10000" step="10" placeholder="none" />
+          </div>
+          <div class="field">
+            <label for="prefer-surfaces">Prefer surfaces (comma separated)</label>
+            <input id="prefer-surfaces" type="text" placeholder="paved, asphalt" />
+          </div>
+          <div class="field">
+            <label for="avoid-surfaces">Avoid surfaces (comma separated)</label>
+            <input id="avoid-surfaces" type="text" placeholder="gravel, sand" />
+          </div>
+          <div class="check-grid">
+            <label class="check"><input id="avoid-traffic" type="checkbox" checked /> Avoid high-traffic roads</label>
+            <label class="check"><input id="avoid-ferries" type="checkbox" checked /> Avoid ferries</label>
+            <label class="check"><input id="return-origin" type="checkbox" /> Return to origin (loop)</label>
+          </div>
+        </details>
+      </section>
+
+      <div class="actions">
+        <button id="plan-btn" class="primary" type="button">Plan route</button>
+        <button id="reset-btn" class="ghost" type="button">Reset</button>
+      </div>
+      <div id="status" class="status" hidden></div>
+
+      <section class="panel" id="clarification-panel" hidden>
+        <h2>Which place did you mean?</h2>
+        <div id="clarification-list"></div>
+      </section>
+
+      <section class="panel" id="results-panel" hidden>
+        <h2>Result</h2>
+        <p id="explanation" class="explanation"></p>
+        <div class="metrics" id="metrics"></div>
+        <details id="breakdown-details" hidden>
+          <summary>Score breakdown</summary>
+          <table id="score-breakdown"></table>
+        </details>
+        <details id="surfaces-details" hidden>
+          <summary>Surface coverage</summary>
+          <table id="surface-table"></table>
+        </details>
+        <ul id="warnings" class="warnings"></ul>
+        <div class="artifacts" id="artifacts"></div>
+        <p class="prov" id="provenance"></p>
+      </section>
+
+      <section class="panel" id="errors-panel" hidden>
+        <h2>Errors</h2>
+        <ul id="error-list" class="errors"></ul>
+      </section>
+
+      <footer class="foot">
+        <a href="/docs" target="_blank" rel="noopener">API docs</a>
+        <span>&middot;</span>
+        <a href="https://github.com/" target="_blank" rel="noopener">About</a>
+      </footer>
+    </aside>
+
+    <main id="map" role="application" aria-label="Route map"></main>
+    <div id="map-mode-banner" hidden>Click the map to set the <strong id="map-mode-kind"></strong> &middot; <a href="#" id="map-mode-cancel">cancel</a></div>
+  </div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="app.js"></script>
+</body>
+</html>

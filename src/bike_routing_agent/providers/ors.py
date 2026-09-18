@@ -2,28 +2,27 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-
 import httpx
 
 from bike_routing_agent.config import ORS_PROFILE_MAP
-from bike_routing_agent.errors import (
-    ProviderBadResponseError,
-    ProviderNoRouteError,
-    ProviderRateLimitError,
-    ProviderTimeoutError,
-    ProviderUnavailableError,
-)
+from bike_routing_agent.errors import ProviderBadResponseError, ProviderNoRouteError
 from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingRequest
+from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
 
-# ORS error codes that mean "no path could be found between the given
-# points", as opposed to a malformed request or transient failure.
-_ORS_NO_ROUTE_CODES = {2010, 2009}
+# avoid_features accepted by ORS's cycling-* profiles. "highways" and
+# "tollways" are only valid for driving profiles -- sending them for a
+# cycling profile is a hard 400 from ORS, not a soft no-op. Every profile
+# we currently route through is a cycling profile (see ORS_PROFILE_MAP).
+_CYCLING_AVOID_FEATURES = {"ferries", "fords", "steps"}
 
 
 class OpenRouteServiceAdapter:
-    """RoutingProvider backed by the openrouteservice directions API."""
+    """RoutingProvider backed by the openrouteservice directions API.
+
+    Built on :class:`OpenRouteServiceClient`, which exposes the full ORS
+    API surface (isochrones, matrix, snapping, export, elevation, POIs,
+    Vroom, Pelias geocoding). Only the directions call is needed here.
+    """
 
     name = "ors"
 
@@ -35,12 +34,17 @@ class OpenRouteServiceAdapter:
         timeout_s: float,
         max_retries: int = 2,
         client: httpx.AsyncClient | None = None,
+        ors_client: OpenRouteServiceClient | None = None,
     ) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
-        self._timeout_s = timeout_s
-        self._max_retries = max_retries
-        self._client = client
+        if ors_client is None:
+            ors_client = OpenRouteServiceClient(
+                api_key=api_key,
+                base_url=base_url,
+                timeout_s=timeout_s,
+                max_retries=max_retries,
+                http_client=client,
+            )
+        self._ors = ors_client
 
     def _profile_for(self, bike_type: str) -> str:
         try:
@@ -50,16 +54,25 @@ class OpenRouteServiceAdapter:
                 f"no ORS profile mapped for bike type '{bike_type}'", provider=self.name
             ) from exc
 
-    def _build_body(self, request: RoutingRequest) -> dict:
+    def _build_body(self, request: RoutingRequest) -> tuple[dict, list[str]]:
         coordinates = [[request.origin.lon, request.origin.lat]]
         coordinates.extend([v.lon, v.lat] for v in request.via)
         coordinates.append([request.destination.lon, request.destination.lat])
 
-        avoid_features = []
+        requested_avoid_features = []
         if request.constraints.avoid_high_traffic_roads:
-            avoid_features.append("highways")
+            requested_avoid_features.append("highways")
         if request.constraints.avoid_ferries:
-            avoid_features.append("ferries")
+            requested_avoid_features.append("ferries")
+
+        avoid_features = [f for f in requested_avoid_features if f in _CYCLING_AVOID_FEATURES]
+        unsupported = [f for f in requested_avoid_features if f not in _CYCLING_AVOID_FEATURES]
+        warnings = []
+        if unsupported:
+            warnings.append(
+                f"requested avoid_features {unsupported} are not supported by ORS cycling "
+                "profiles and were not applied"
+            )
 
         body: dict = {
             "coordinates": coordinates,
@@ -68,91 +81,24 @@ class OpenRouteServiceAdapter:
         }
         if avoid_features:
             body["options"] = {"avoid_features": avoid_features}
-        return body
+        return body, warnings
 
     async def route(self, request: RoutingRequest) -> RouteCandidate:
         profile = self._profile_for(request.constraints.bike_type.value)
-        body = self._build_body(request)
-        url = f"{self._base_url}/v2/directions/{profile}/geojson"
-        headers = {
-            "Authorization": self._api_key,
-            "Content-Type": "application/json",
-        }
+        body, build_warnings = self._build_body(request)
 
-        payload = await self._post_with_retry(url, body, headers)
-        return self._normalize(payload, profile=profile)
-
-    async def _post_with_retry(self, url: str, body: dict, headers: dict) -> dict:
-        attempt = 0
-        while True:
-            try:
-                if self._client is not None:
-                    response = await self._client.post(
-                        url, json=body, headers=headers, timeout=self._timeout_s
-                    )
-                else:
-                    async with httpx.AsyncClient(timeout=self._timeout_s) as client:
-                        response = await client.post(url, json=body, headers=headers)
-            except httpx.TimeoutException as exc:
-                if attempt >= self._max_retries:
-                    raise ProviderTimeoutError(
-                        "ORS request timed out",
-                        provider=self.name,
-                        detail={"attempts": attempt + 1},
-                    ) from exc
-                attempt += 1
-                await asyncio.sleep(0.5 * attempt)
-                continue
-            except httpx.HTTPError as exc:
-                raise ProviderUnavailableError(
-                    "ORS request failed", provider=self.name, detail={"error": str(exc)}
-                ) from exc
-
-            if response.status_code == 429:
-                raise ProviderRateLimitError(
-                    "ORS rate limit exceeded",
-                    provider=self.name,
-                    detail={"retry_after": response.headers.get("Retry-After")},
-                )
-            if response.status_code >= 500:
-                if attempt >= self._max_retries:
-                    raise ProviderUnavailableError(
-                        f"ORS returned HTTP {response.status_code}",
-                        provider=self.name,
-                        detail={"status_code": response.status_code},
-                    )
-                attempt += 1
-                await asyncio.sleep(0.5 * attempt)
-                continue
-            if response.status_code >= 400:
-                return self._raise_for_client_error(response)
-
-            try:
-                return response.json()
-            except json.JSONDecodeError as exc:
-                raise ProviderBadResponseError(
-                    "ORS returned invalid JSON", provider=self.name
-                ) from exc
-
-    def _raise_for_client_error(self, response: httpx.Response) -> dict:
-        try:
-            body = response.json()
-        except json.JSONDecodeError:
-            body = {}
-        error_code = None
-        if isinstance(body, dict) and isinstance(body.get("error"), dict):
-            error_code = body["error"].get("code")
-        if error_code in _ORS_NO_ROUTE_CODES:
-            raise ProviderNoRouteError(
-                "ORS could not find a route between the given points",
+        payload = await self._ors.directions(profile, body=body, format="geojson")
+        if not isinstance(payload, dict):
+            raise ProviderBadResponseError(
+                "ORS directions endpoint returned a non-JSON payload",
                 provider=self.name,
-                detail={"status_code": response.status_code, "ors_code": error_code},
             )
-        raise ProviderBadResponseError(
-            f"ORS rejected the request (HTTP {response.status_code})",
-            provider=self.name,
-            detail={"status_code": response.status_code, "body": body},
-        )
+        candidate = self._normalize(payload, profile=profile)
+        if build_warnings:
+            candidate = candidate.model_copy(
+                update={"warnings": [*build_warnings, *candidate.warnings]}
+            )
+        return candidate
 
     def _normalize(self, payload: dict, *, profile: str) -> RouteCandidate:
         try:
@@ -212,13 +158,4 @@ class OpenRouteServiceAdapter:
         )
 
     async def health(self) -> dict:
-        url = f"{self._base_url}/v2/health"
-        try:
-            if self._client is not None:
-                response = await self._client.get(url, timeout=self._timeout_s)
-            else:
-                async with httpx.AsyncClient(timeout=self._timeout_s) as client:
-                    response = await client.get(url)
-            return {"status": "ok" if response.status_code == 200 else "degraded"}
-        except httpx.HTTPError as exc:
-            return {"status": "unavailable", "error": str(exc)}
+        return await self._ors.health()

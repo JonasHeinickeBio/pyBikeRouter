@@ -125,6 +125,7 @@ PlanStatus = Literal[
 class ClarificationOption(BaseModel):
     field: str
     candidates: list[GeocodeCandidate]
+    hint: str | None = None
 
 
 class RoutePlanResponse(BaseModel):

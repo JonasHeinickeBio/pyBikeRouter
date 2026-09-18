@@ -9,3 +9,4 @@ exports/
 *.egg-info/
 dist/
 build/
+.coverage*

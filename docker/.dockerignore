@@ -1,0 +1,29 @@
+# Used as docker/.dockerignore → applies to the repo-root build context
+# (BuildKit resolves "<dockerfile>.dockerignore"; compose points at docker/Dockerfile).
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+exports/
+data/
+docs/
+tests/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.coverage
+htmlcov/
+coverage.xml
+poetry.toml
+*.md
+!README.md
+.vscode/
+.idea/
