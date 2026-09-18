@@ -93,7 +93,9 @@ Edit `.env` and set `ORS_API_KEY` to a valid
 | `GEOCODER_CACHE_TTL_S` | In-memory geocode cache TTL | `3600` |
 | `GEOCODER_AMBIGUITY_MARGIN` | Confidence gap below which top-2 results are "ambiguous" | `0.05` |
 | `GEOCODER_MIN_CONFIDENCE` | Minimum confidence to auto-accept a top result | `0.3` |
-| `VALHALLA_BASE_URL` | Base URL for the (stubbed) Valhalla adapter | `http://localhost:8002` |
+| `VALHALLA_BASE_URL` | Base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |
+| `VALHALLA_TIMEOUT_S` | Per-request Valhalla timeout (seconds) | `30.0` |
+| `VALHALLA_MAX_RETRIES` | Retries for Valhalla timeouts/5xx | `1` |
 | `EXPORT_DIR` | Local directory for GeoJSON/GPX artifacts | `exports` |
 | `LOG_LEVEL` | Log level | `INFO` |
 

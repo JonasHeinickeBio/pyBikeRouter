@@ -37,11 +37,15 @@ class Settings(BaseSettings):
     geocoder_min_confidence: float = 0.3
 
     valhalla_base_url: str = "http://localhost:8002"
+    valhalla_timeout_s: float = 30.0
+    valhalla_max_retries: int = 1
 
     # Routing engine selection. "brouter" routes against a local/self-hosted
-    # BRouter RouteServer (see docker/compose.yaml, profile "brouter"); no
-    # automatic fallback between engines is attempted.
-    routing_provider: Literal["ors", "brouter"] = "ors"
+    # BRouter RouteServer (see docker/compose.yaml, profile "brouter") and
+    # "valhalla" against a self-hosted Valhalla meili server; "all" queries
+    # ors + brouter + valhalla in parallel and lets scoring pick the best
+    # candidate. No automatic fallback between engines is attempted.
+    routing_provider: Literal["ors", "brouter", "valhalla", "all"] = "ors"
     brouter_base_url: str = "http://127.0.0.1:17777"
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
@@ -75,6 +79,21 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "brouter_max_retries must be >= 0 when routing_provider='brouter' "
                     f"(got {self.brouter_max_retries})"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _check_valhalla_settings_when_active(self) -> Settings:
+        if self.routing_provider in ("valhalla", "all"):
+            if self.valhalla_timeout_s <= 0:
+                raise ValueError(
+                    "valhalla_timeout_s must be > 0 when routing_provider='valhalla' "
+                    f"(got {self.valhalla_timeout_s})"
+                )
+            if self.valhalla_max_retries < 0:
+                raise ValueError(
+                    "valhalla_max_retries must be >= 0 when routing_provider='valhalla' "
+                    f"(got {self.valhalla_max_retries})"
                 )
         return self
 
@@ -120,4 +139,20 @@ BROUTER_PROFILE_MAP: dict[str, str] = {
     "ebike": "fastbike",
     "commuter": "fastbike-verylowtraffic",
     "recumbent": "vm-forum-liegerad-schnell",
+}
+
+# Internal bike type -> Valhalla costing model. Current Valhalla bicycle
+# costing has no per-bike-type option (unlike ORS/BRouter profiles), so all
+# types map to the single "bicycle" costing; bike-type differentiation comes
+# from the other engines and the scoring step. Kept as a map so a future
+# Valhalla costing (e.g. e-assist) can be wired in here only.
+VALHALLA_PROFILE_MAP: dict[str, str] = {
+    "road": "bicycle",
+    "gravel": "bicycle",
+    "touring": "bicycle",
+    "mountain": "bicycle",
+    "city": "bicycle",
+    "ebike": "bicycle",
+    "commuter": "bicycle",
+    "recumbent": "bicycle",
 }
