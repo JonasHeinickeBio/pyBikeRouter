@@ -79,6 +79,7 @@ async def test_plan_route_ready_end_to_end(
     )
     respx.post(ORS_URL).mock(return_value=httpx.Response(200, json=ors_directions_response))
 
+    shutil.rmtree(_export_dir, ignore_errors=True)
     response = await client.post(
         "/v1/route/plan",
         json={
