@@ -14,8 +14,12 @@ dependencies = [
     "langchain-core>=0.3",
 ]
 
+[project.scripts]
+bike-router = "bike_routing_agent.cli:main"
+
 [tool.poetry]
 packages = [{ include = "bike_routing_agent", from = "src" }]
+include = [{ path = "src/bike_routing_agent/frontend/**/*", format = ["sdist", "wheel"] }]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.2"
@@ -23,6 +27,7 @@ pytest-asyncio = ">=0.23"
 respx = ">=0.21"
 ruff = ">=0.6"
 mypy = ">=1.11"
+pytest-cov = "^7.1.0"
 
 [build-system]
 requires = ["poetry-core>=2.0"]
@@ -34,7 +39,7 @@ asyncio_mode = "auto"
 markers = [
     "live: hits a real external service; excluded from the default run",
 ]
-addopts = "-m 'not live'"
+addopts = "-m 'not live' --cov=bike_routing_agent --cov-report=term --cov-fail-under=80"
 
 [tool.ruff]
 line-length = 100

@@ -1,3 +1,5 @@
+import pytest
+
 from bike_routing_agent.models import RouteCandidate, RouteConstraints, RouteMetrics
 from bike_routing_agent.scoring.basic import score_candidate, uncertainty_notes
 
@@ -62,3 +64,36 @@ def test_unknown_surface_fraction_is_reported_as_uncertainty_not_bonus():
     assert score == baseline_score
     notes = uncertainty_notes(candidate)
     assert any("unknown" in note for note in notes)
+
+
+def test_warning_penalty_scales_linearly_below_the_cap():
+    candidate = _candidate()
+    candidate = candidate.model_copy(update={"warnings": ["a", "b", "c"]})
+    _, breakdown = score_candidate(candidate, RouteConstraints())
+    assert breakdown["warning_penalty"] == pytest.approx(0.15)
+
+
+def test_distance_fit_never_goes_negative_for_huge_detours():
+    candidate = _candidate(distance_m=100_000)
+    _, breakdown = score_candidate(candidate, RouteConstraints(target_distance_km=20))
+    assert breakdown["distance_fit"] == 0.0
+
+
+def test_elevation_fit_never_goes_negative():
+    candidate = _candidate(ascent_m=10_000)
+    _, breakdown = score_candidate(candidate, RouteConstraints(max_ascent_m=100))
+    assert breakdown["elevation_fit"] == 0.0
+
+
+def test_missing_ascent_keeps_elevation_fit_at_one_and_is_flagged():
+    candidate = _candidate(ascent_m=None)
+    constraints = RouteConstraints(max_ascent_m=50)
+    _, breakdown = score_candidate(candidate, constraints)
+    assert breakdown["elevation_fit"] == 1.0
+    notes = uncertainty_notes(candidate)
+    assert any("elevation" in note for note in notes)
+
+
+def test_clean_candidate_has_no_uncertainty_notes():
+    notes = uncertainty_notes(_candidate())
+    assert notes == []
