@@ -13,6 +13,7 @@ the graph without a status.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +59,7 @@ def _after_score(state: RouteAgentState) -> str:
 def build_graph(
     *,
     geocode_provider: GeocodeProvider,
-    routing_provider: RoutingProvider,
+    routing_providers: Sequence[RoutingProvider],
     export_dir: Path,
     llm_parser: LLMParser | None = None,
     ambiguity_margin: float = 0.05,
@@ -77,7 +78,7 @@ def build_graph(
             min_confidence=min_confidence,
         ),
     )
-    graph.add_node("route_with_provider", build_route_node(routing_provider=routing_provider))
+    graph.add_node("route_with_provider", build_route_node(routing_providers=routing_providers))
     graph.add_node("score_candidates", score_candidates)
     graph.add_node("explain_and_export", build_export_node(export_dir=export_dir))
 

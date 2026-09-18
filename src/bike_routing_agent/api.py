@@ -25,13 +25,14 @@ from bike_routing_agent.providers.geocoder import NominatimGeocoder
 from bike_routing_agent.providers.ors import OpenRouteServiceAdapter
 from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
 from bike_routing_agent.providers.pelias import PeliasGeocoder
+from bike_routing_agent.providers.valhalla import ValhallaAdapter
 
 _SAFE_FILENAME = re.compile(r"^[0-9a-f]{32}\.(geojson|gpx)$")
 
 app = FastAPI(title="bike-routing-agent", version="0.1.0")
 
 
-def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
+def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvider]]:
     """Instantiate the geocode + routing providers for a configuration.
 
     With ``geocoder_provider == "pelias"`` the geocoder is served by the
@@ -40,7 +41,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
     timeout policy). ``config.Settings`` rejects "pelias" for the public
     ORS base URL at construction time. With ``routing_provider`` set to
     another engine, the Pelias geocoder still uses the shared ORS client but
-    routing goes through :func:`build_routing_provider`.
+    routing goes through :func:`build_routing_providers`.
     """
     if cfg.geocoder_provider == "pelias":
         ors_client = OpenRouteServiceClient(
@@ -56,16 +57,18 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
         if cfg.routing_provider == "ors":
             # Same self-hosted ORS instance serves geocoding and routing;
             # share one client. Any other engine comes from the selector.
-            router: RoutingProvider = OpenRouteServiceAdapter(
-                api_key=cfg.ors_api_key,
-                base_url=cfg.ors_base_url,
-                timeout_s=cfg.ors_timeout_s,
-                max_retries=cfg.ors_max_retries,
-                ors_client=ors_client,
-            )
+            routers: list[RoutingProvider] = [
+                OpenRouteServiceAdapter(
+                    api_key=cfg.ors_api_key,
+                    base_url=cfg.ors_base_url,
+                    timeout_s=cfg.ors_timeout_s,
+                    max_retries=cfg.ors_max_retries,
+                    ors_client=ors_client,
+                )
+            ]
         else:
-            router = build_routing_provider(cfg)
-        return geocoder, router
+            routers = build_routing_providers(cfg)
+        return geocoder, routers
 
     return (
         NominatimGeocoder(
@@ -74,37 +77,65 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
             timeout_s=cfg.geocoder_timeout_s,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         ),
-        build_routing_provider(cfg),
+        build_routing_providers(cfg),
     )
 
 
-def build_routing_provider(cfg: Settings) -> RoutingProvider:
-    """Routing engine for a configuration, per ``cfg.routing_provider``.
+def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
+    """Routing engines for a configuration, per ``cfg.routing_provider``.
 
-    There is no automatic fallback between engines: a request failing on
-    the selected provider fails (issue #1 scope).
+    Normally a single-entry list; ``routing_provider="all"`` returns ORS,
+    BRouter and Valhalla so the route node queries them in parallel and
+    scoring picks the best candidate (issue #2). There is no automatic
+    fallback between engines: a request only fails when every returned
+    provider fails.
     """
     if cfg.routing_provider == "brouter":
-        return BRouterAdapter(
-            base_url=cfg.brouter_base_url,
-            timeout_s=cfg.brouter_timeout_s,
-            max_retries=cfg.brouter_max_retries,
-        )
-    return OpenRouteServiceAdapter(
+        return [
+            BRouterAdapter(
+                base_url=cfg.brouter_base_url,
+                timeout_s=cfg.brouter_timeout_s,
+                max_retries=cfg.brouter_max_retries,
+            )
+        ]
+    if cfg.routing_provider == "valhalla":
+        return [
+            ValhallaAdapter(
+                base_url=cfg.valhalla_base_url,
+                timeout_s=cfg.valhalla_timeout_s,
+                max_retries=cfg.valhalla_max_retries,
+            )
+        ]
+    ors_provider: RoutingProvider = OpenRouteServiceAdapter(
         api_key=cfg.ors_api_key,
         base_url=cfg.ors_base_url,
         timeout_s=cfg.ors_timeout_s,
         max_retries=cfg.ors_max_retries,
     )
+    if cfg.routing_provider != "all":
+        return [ors_provider]
+    return [
+        ors_provider,
+        BRouterAdapter(
+            base_url=cfg.brouter_base_url,
+            timeout_s=cfg.brouter_timeout_s,
+            max_retries=cfg.brouter_max_retries,
+        ),
+        ValhallaAdapter(
+            base_url=cfg.valhalla_base_url,
+            timeout_s=cfg.valhalla_timeout_s,
+            max_retries=cfg.valhalla_max_retries,
+        ),
+    ]
 
 
 _export_dir = Path(settings.export_dir)
 
-_geocode_provider, _routing_provider = build_providers(settings)
+_geocode_provider, _routing_providers = build_providers(settings)
 
 _graph = build_graph(
     geocode_provider=_geocode_provider,
-    routing_provider=_routing_provider,
+    routing_providers=_routing_providers,
     export_dir=_export_dir,
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
@@ -113,10 +144,10 @@ _graph = build_graph(
 
 def build_graph_for_settings(cfg: Settings) -> Any:
     """Build a fresh graph from the given settings (used by the CLI)."""
-    geocode_provider, routing_provider = build_providers(cfg)
+    geocode_provider, routing_providers = build_providers(cfg)
     return build_graph(
         geocode_provider=geocode_provider,
-        routing_provider=routing_provider,
+        routing_providers=routing_providers,
         export_dir=Path(cfg.export_dir),
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,

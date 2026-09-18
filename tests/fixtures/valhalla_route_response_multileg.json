@@ -1,0 +1,92 @@
+{
+  "id": "bike-route-1",
+  "trip": {
+    "status": 0,
+    "status_message": "Completed Trip",
+    "units": "kilometers",
+    "summary": {
+      "length": 3.338,
+      "time": 780,
+      "has_toll": false,
+      "has_highway": false,
+      "has_ferry": false,
+      "max_speed": null,
+      "max_lat": 52.527742,
+      "min_lat": 52.506832,
+      "max_lon": 13.419405,
+      "min_lon": 13.387208
+    },
+    "shapes": [
+      "e2ZgZWNCb3thcFh8dkR1eU50ekVlfU12bkl5a0s=",
+      "b2NpZGNCZWFtcVhka0htcUZoakdlY0s="
+    ],
+    "legs": [
+      {
+        "summary": {
+          "length": 2.412,
+          "time": 540,
+          "has_toll": false,
+          "has_highway": false,
+          "has_ferry": false,
+          "max_speed": null,
+          "max_lat": 52.527742,
+          "min_lat": 52.506832,
+          "max_lon": 13.419405,
+          "min_lon": 13.387208
+        },
+        "elevation": [
+          34.1,
+          34.6,
+          35.2,
+          34.8,
+          34.2,
+          33.9
+        ],
+        "maneuvers": [],
+        "shape": 0
+      },
+      {
+        "summary": {
+          "length": 0.926,
+          "time": 240,
+          "has_toll": false,
+          "has_highway": false,
+          "has_ferry": false,
+          "max_speed": null,
+          "max_lat": 52.527742,
+          "min_lat": 52.506832,
+          "max_lon": 13.419405,
+          "min_lon": 13.387208
+        },
+        "elevation": [
+          33.9,
+          33.1,
+          32.6,
+          32.9
+        ],
+        "maneuvers": [],
+        "shape": 1
+      }
+    ],
+    "locations": [
+      {
+        "lat": 52.527742,
+        "lon": 13.387208,
+        "type": "break",
+        "side_of_street": "right",
+        "projected_lon": 13.387208,
+        "projected_lat": 52.527742,
+        "road": "Stra\u00dfe des 17. Juni"
+      },
+      {
+        "lat": 52.506832,
+        "lon": 13.419405,
+        "type": "break",
+        "side_of_street": "left",
+        "projected_lon": 13.419405,
+        "projected_lat": 52.506832,
+        "road": "Yorckstra\u00dfe"
+      }
+    ]
+  }
+}

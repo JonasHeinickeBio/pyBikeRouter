@@ -21,6 +21,26 @@ def brouter_route_response() -> dict:
 
 
 @pytest.fixture
+def valhalla_route_response() -> dict:
+    return load_fixture("valhalla_route_response.json")
+
+
+@pytest.fixture
+def valhalla_route_response_multileg() -> dict:
+    return load_fixture("valhalla_route_response_multileg.json")
+
+
+@pytest.fixture
+def valhalla_route_response_inline_shape() -> dict:
+    return load_fixture("valhalla_route_response_inline_shape.json")
+
+
+@pytest.fixture
+def valhalla_no_route_response() -> dict:
+    return load_fixture("valhalla_no_route_response.json")
+
+
+@pytest.fixture
 def ors_no_route_response() -> dict:
     return load_fixture("ors_no_route_response.json")
 

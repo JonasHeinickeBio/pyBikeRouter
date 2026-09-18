@@ -22,6 +22,7 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
         BROUTER_PROFILE_MAP,
         ORS_PROFILE_MAP,
         PUBLIC_ORS_BASE_URLS,
+        VALHALLA_PROFILE_MAP,
         Settings,
     )
 
@@ -30,7 +31,22 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
         return 2
 
     cfg = Settings()
-    profile_maps = {"ors": ORS_PROFILE_MAP, "brouter": BROUTER_PROFILE_MAP}
+    profile_maps = {
+        "ors": ORS_PROFILE_MAP,
+        "brouter": BROUTER_PROFILE_MAP,
+        "valhalla": VALHALLA_PROFILE_MAP,
+    }
+    base_urls = {
+        "ors": cfg.ors_base_url,
+        "brouter": cfg.brouter_base_url,
+        "valhalla": cfg.valhalla_base_url,
+    }
+    if cfg.routing_provider == "all":
+        bike_type_profiles: object = {
+            name: dict(sorted(mapping.items())) for name, mapping in profile_maps.items()
+        }
+    else:
+        bike_type_profiles = dict(sorted(profile_maps[cfg.routing_provider].items()))
     payload = {
         "geocoder": {
             "configured": cfg.geocoder_provider,
@@ -46,15 +62,13 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
         },
         "routing": {
             "configured": cfg.routing_provider,
-            "available": ["ors", "brouter"],
-            "base_url": (
-                cfg.brouter_base_url if cfg.routing_provider == "brouter" else cfg.ors_base_url
-            ),
+            "available": ["ors", "brouter", "valhalla", "all"],
+            "base_url": base_urls.get(cfg.routing_provider),
             "api_key_configured": bool(cfg.ors_api_key)
-            if cfg.routing_provider == "ors"
+            if cfg.routing_provider in ("ors", "all")
             else None,
         },
-        "bike_type_profiles": dict(sorted(profile_maps[cfg.routing_provider].items())),
+        "bike_type_profiles": bike_type_profiles,
     }
     print(json.dumps(payload, indent=2), file=stdout)
     return 0
