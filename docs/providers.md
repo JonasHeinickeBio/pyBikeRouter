@@ -2,8 +2,8 @@
 
 All backends sit behind the `Protocol`s in `providers/base.py`. Graph nodes
 and scoring depend only on these interfaces, so a new backend is a new
-adapter class plus wiring in `api.build_providers` -- never a change to
-orchestration.
+adapter class plus wiring in `api.build_providers` / `api.build_routing_provider`
+-- never a change to orchestration.
 
 ```python
 class RoutingProvider(Protocol):
@@ -99,13 +99,27 @@ confidence-sorted `GeocodeCandidate`s and raise
 `GeocodingNotFoundError`/`ProviderBadResponseError`; the `geocode_locations`
 node -- not the adapters -- owns the ambiguity/clarification policy.
 
-## Stubs: Valhalla and BRouter
+## BRouter (`providers/brouter.py`)
 
-`providers/valhalla.py` and `providers/brouter.py` implement
-`RoutingProvider` but raise `ProviderUnavailableError` on `route()`. They
-exist so the protocol has second implementers to test against and so provider
-selection can be exercised without live services. Wiring one up for real is
-tracked in [roadmap.md](roadmap.md).
+Full `RoutingProvider` for a self-hosted BRouter RouteServer
+(`docker compose --profile brouter up`, or any stock `abrensch/brouter`
+deployment). Bike types map to stock or versioned custom profiles via
+`config.BROUTER_PROFILE_MAP` (see the table in
+[configuration.md](configuration.md)); custom `.brf` profiles live in
+`docker/brouter/profiles` and are mounted into the container with a
+`custom_` prefix. Quirks the adapter absorbs: plain-text (never JSON) error
+bodies on 400/500, string-typed GeoJSON summary values, no descent figure
+(`descent_m` stays `None`), and no health endpoint -- `/robots.txt` is probed
+instead. Unsupported-constraint honesty works the same way as for ORS: the
+constraint is recorded as a candidate warning, not silently dropped.
+
+## Stub: Valhalla
+
+`providers/valhalla.py` implements `RoutingProvider` but raises
+`ProviderUnavailableError` on `route()`. It exists so the protocol has second
+implementers to test against and so provider selection can be exercised
+without live services. Wiring it up for real is tracked in
+[roadmap.md](roadmap.md).
 
 ## Adding a new backend
 

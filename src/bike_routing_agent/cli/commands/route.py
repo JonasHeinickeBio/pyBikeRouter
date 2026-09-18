@@ -28,7 +28,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         metavar="PLACE",
         help="optional waypoint (place text or 'lat,lon'); repeatable",
     )
-    plan.add_argument("--bike-type", default="gravel", help="road|gravel|touring|mountain|city")
+    plan.add_argument(
+        "--bike-type",
+        default="gravel",
+        help=(
+            "road|gravel|touring|mountain|city|ebike|commuter|recumbent "
+            "(see 'providers list' for the engine profile map)"
+        ),
+    )
     plan.add_argument("--target-distance-km", type=float, default=None)
     plan.add_argument("--max-distance-km", type=float, default=None)
     plan.add_argument("--max-ascent-m", type=float, default=None)

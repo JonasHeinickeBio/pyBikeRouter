@@ -11,8 +11,10 @@ decisions still open.
   health probe). Implement `route()` against a Valhalla `route` endpoint,
   map `BikeType` -> Valhalla costing options in `config.py`, and classify
   no-path vs infrastructure failures like the ORS adapter does.
-- **BRouter adapter** -- same shape; of particular interest for custom
-  gravel/touring profile profiles, which ORS approximates today.
+- **BRouter adapter** -- done (issue #1): full adapter, local compose
+  service, versioned custom profiles for gravel/touring. Open follow-ups:
+  serving the profile-backed engine beyond local dev (production hosting)
+  and per-request profile overrides instead of the config-table mapping.
 - **Multi-candidate scoring** -- the state, the `score_candidates` node, and
   the scorer already handle N candidates; today one provider yields one.
   With a second engine wired, score across engines and (optionally) return

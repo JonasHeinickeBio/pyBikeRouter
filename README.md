@@ -192,6 +192,15 @@ If `origin`/`destination` are ambiguous or unresolved, `status` is
 `awaiting_clarification` and `clarification` lists the candidate places to
 choose from -- no route is generated from a guess.
 
+## Bike types
+
+`constraints.bike_type` selects the routing profile per engine and defaults to
+`gravel`. Supported values: `road`, `gravel`, `touring`, `mountain`, `city`,
+`ebike`, `commuter` (fast, low-traffic), `recumbent`. ORS ships four cycling
+profiles, so e.g. `ebike` uses `cycling-electric` while `commuter` rides on
+`cycling-regular`; with the self-hosted BRouter provider each type gets a
+distinct cost model (see [docs/configuration.md](docs/configuration.md)).
+
 ## Linting and type checking
 
 ```bash
@@ -220,6 +229,21 @@ and excluded by default (see `tool.pytest.ini_options.addopts` in
 poetry run pytest -m live
 ```
 
+## Pre-commit hooks
+
+Quality gates run automatically before each commit/push via
+[pre-commit](https://pre-commit.com). Install the git hooks once after
+`poetry install`:
+
+```bash
+poetry run pre-commit install --hook-type pre-push
+```
+
+On commit it runs whitespace/EOF/YAML/TOML/merge-conflict/large-file checks,
+`ruff check --fix` and `mypy src`; the full pytest suite runs on `git push`
+(mirroring CI). Run everything manually with
+`poetry run pre-commit run --all-files`.
+
 ## Known limitations
 
 - OSM tag completeness varies by region; surface/access metadata is
@@ -233,8 +257,10 @@ poetry run pytest -m live
 - No route produced by this service is a safety guarantee. Explanations use
   hedged language ("better aligned with available map metadata") rather
   than claims like "safe route".
-- Valhalla/BRouter adapters are stubs in this milestone; only
-  openrouteservice is wired up end to end.
+- The Valhalla adapter is a stub in this milestone; BRouter is wired up
+  end to end but only against a self-hosted RouteServer (`ROUTING_PROVIDER=brouter`,
+  see [docker/brouter/README.md](docker/brouter/README.md)), and
+  openrouteservice remains the default engine.
 - The Pelias geocoder option requires a self-hosted openrouteservice
   instance; the public `api.openrouteservice.org` does not serve Pelias
   (see [docs/geocoding.md](docs/geocoding.md)).

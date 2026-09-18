@@ -59,6 +59,35 @@ services:
           memory: 4g
     logging: *default-logging
 
+  # ---------------------------------------------------------------------------
+  # Local BRouter RouteServer (use with the `brouter` profile and
+  # ROUTING_PROVIDER=brouter in .env):
+  #
+  #   docker compose --profile brouter up
+  #
+  # Needs at least one .rd5 segment file in ./brouter/segments (download from
+  # https://brouter.de/brouter/segments4/, see docker/brouter/README.md). The
+  # versioned custom profiles in ./brouter/profiles are mounted as
+  # /customprofiles, so "profile=custom_gravel-v1" resolves to
+  # gravel-v1.brf here in the repository.
+  # ---------------------------------------------------------------------------
+  brouter:
+    profiles: ["brouter"]
+    image: ghcr.io/abrensch/brouter:latest
+    restart: unless-stopped
+    ports:
+      - "${BROUTER_LOCAL_PORT:-17777}:17777"
+    environment:
+      JAVA_OPTS: "-Xmx1536m"
+    volumes:
+      - ./brouter/segments:/segments4
+      - ./brouter/profiles:/customprofiles:ro
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    logging: *default-logging
+
 volumes:
   exports:
     name: pybikerouter-exports

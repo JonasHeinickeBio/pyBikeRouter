@@ -1,8 +1,9 @@
-"""Tests for the Valhalla and BRouter provider stubs.
+"""Tests for the Valhalla provider stub.
 
-The stubs are deliberate in this milestone: route() must fail as a structured
+The stub is deliberate in this milestone: route() must fail as a structured
 provider-unavailable error (never a crash, never a silent empty candidate),
-and health probes must report honestly.
+and health probes must report honestly. (BRouter graduated from stub to a
+real adapter; its tests live in test_brouter_adapter.py.)
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import respx
 
 from bike_routing_agent.errors import ProviderUnavailableError
 from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
-from bike_routing_agent.providers.brouter import BRouterAdapter
 from bike_routing_agent.providers.valhalla import ValhallaAdapter
 
 VALHALLA_BASE = "http://valhalla.test"
@@ -67,21 +67,3 @@ async def test_valhalla_health_unavailable_on_connection_error() -> None:
 
     assert result["status"] == "unavailable"
     assert "refused" in result["error"]
-
-
-async def test_brouter_route_raises_structured_unavailable() -> None:
-    adapter = BRouterAdapter(base_url="http://brouter.test", timeout_s=1.0)
-    assert adapter.name == "brouter"
-
-    with pytest.raises(ProviderUnavailableError) as exc_info:
-        await adapter.route(make_request())
-
-    assert exc_info.value.code == "provider_unavailable"
-    assert exc_info.value.provider == "brouter"
-    assert "not implemented" in str(exc_info.value)
-
-
-async def test_brouter_health_reports_not_implemented() -> None:
-    adapter = BRouterAdapter(base_url="http://brouter.test")
-
-    assert await adapter.health() == {"status": "not_implemented"}

@@ -28,6 +28,14 @@ def test_route_constraints_rejects_unsupported_bike_type():
         RouteConstraints(bike_type="unicycle")
 
 
+@pytest.mark.parametrize(
+    "bike_type",
+    ["road", "gravel", "touring", "mountain", "city", "ebike", "commuter", "recumbent"],
+)
+def test_route_constraints_accepts_all_bike_types(bike_type: str):
+    assert RouteConstraints(bike_type=bike_type).bike_type.value == bike_type
+
+
 def test_route_constraints_rejects_oversized_ascent():
     with pytest.raises(ValidationError):
         RouteConstraints(max_ascent_m=999_999)

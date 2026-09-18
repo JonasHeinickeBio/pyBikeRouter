@@ -19,6 +19,10 @@ cp .env.example .env
 | `ORS_BASE_URL` | openrouteservice base URL | `https://api.openrouteservice.org` |
 | `ORS_TIMEOUT_S` | per-request ORS timeout (seconds) | `10.0` |
 | `ORS_MAX_RETRIES` | retries for timeouts/5xx (not 429) | `2` |
+| `ROUTING_PROVIDER` | `ors` or `brouter` -- routing engine selection, no automatic fallback | `ors` |
+| `BROUTER_BASE_URL` | base URL of a local/self-hosted BRouter RouteServer | `http://127.0.0.1:17777` |
+| `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
+| `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |
 | `GEOCODER_PROVIDER` | `nominatim` or `pelias` (see below and [geocoding.md](geocoding.md)) | `nominatim` |
 | `GEOCODER_BASE_URL` | Nominatim base URL (ignored for `pelias`) | `https://nominatim.openstreetmap.org` |
 | `GEOCODER_TIMEOUT_S` | geocoder request timeout | `5.0` |
@@ -51,10 +55,32 @@ rest of the code stays provider-neutral:
 | `touring` | `cycling-regular` |
 | `mountain` | `cycling-mountain` |
 | `city` | `cycling-regular` |
+| `ebike` | `cycling-electric` |
+| `commuter` | `cycling-regular` |
+| `recumbent` | `cycling-regular` |
 
-This mapping is an approximation -- ORS has no dedicated gravel profile, and
-engine behaviour differs from real-world bike categories. It is deliberately
-a config table, not hard-coded in the adapter, so operators can adjust it.
+This mapping is an approximation -- ORS 9.x ships exactly four cycling
+profiles (`cycling-regular`, `cycling-mountain`, `cycling-road`,
+`cycling-electric`; the former `cycling-recreational` was removed), so several
+bike types share one profile, and engine behaviour differs from real-world
+bike categories. It is deliberately a config table, not hard-coded in the
+adapter, so operators can adjust it. For a `bike_type` -> profile map per
+engine, run `bike-router providers list`.
+
+Against a self-hosted BRouter (`ROUTING_PROVIDER=brouter`, see
+[providers.md](providers.md)) the same types map to stock or versioned
+profiles with genuinely different cost models:
+
+| `bike_type` | BRouter profile |
+| --- | --- |
+| `road` | `fastbike` (stock) |
+| `gravel` | `custom_gravel-v1` (repo: `docker/brouter/profiles/`) |
+| `touring` | `custom_touring-v1` (repo: `docker/brouter/profiles/`) |
+| `mountain` | `mtb` (stock) |
+| `city` | `trekking` (stock) |
+| `ebike` | `fastbike` (stock; BRouter does not model e-assist) |
+| `commuter` | `fastbike-verylowtraffic` (stock) |
+| `recumbent` | `vm-forum-liegerad-schnell` (stock recumbent profile) |
 
 Similarly, the ORS adapter only forwards `avoid_features` that cycling
 profiles actually accept (`ferries`, `fords`, `steps`); unsupported requests
@@ -72,6 +98,12 @@ and, in `pelias` mode, geocoding too):
   `ORS_MAX_RETRIES`;
 - `429` is **not** retried -- it maps immediately to `ProviderRateLimitError`
   (with `Retry-After` when present).
+
+`BRouterAdapter` applies the same shape of policy with its own budget:
+per-request `BROUTER_TIMEOUT_S`, timeouts/5xx retried with `0.5s * attempt`
+backoff up to `BROUTER_MAX_RETRIES`, then `ProviderTimeoutError` /
+`ProviderUnavailableError` (BRouter's plain-text 400s are routing answers,
+never retried -- see [providers.md](providers.md)).
 
 ## Running with Docker / compose
 
@@ -98,4 +130,12 @@ such an instance, see [geocoding.md](geocoding.md)):
 
 ```bash
 docker compose -f docker/compose.yaml --profile self-hosted up
+```
+
+And an optional `brouter` profile running a local BRouter RouteServer
+(segments, versioned custom profiles, verification steps:
+[`docker/brouter/README.md`](../docker/brouter/README.md)):
+
+```bash
+docker compose -f docker/compose.yaml --profile brouter up
 ```

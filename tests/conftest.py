@@ -16,6 +16,11 @@ def ors_directions_response() -> dict:
 
 
 @pytest.fixture
+def brouter_route_response() -> dict:
+    return load_fixture("brouter_route_response.json")
+
+
+@pytest.fixture
 def ors_no_route_response() -> dict:
     return load_fixture("ors_no_route_response.json")
 

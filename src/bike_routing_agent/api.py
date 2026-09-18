@@ -20,6 +20,7 @@ from bike_routing_agent.models import (
     RoutePlanResponse,
 )
 from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
+from bike_routing_agent.providers.brouter import BRouterAdapter
 from bike_routing_agent.providers.geocoder import NominatimGeocoder
 from bike_routing_agent.providers.ors import OpenRouteServiceAdapter
 from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
@@ -50,7 +51,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
             client=ors_client,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         )
-        router = OpenRouteServiceAdapter(
+        router: RoutingProvider = OpenRouteServiceAdapter(
             api_key=cfg.ors_api_key,
             base_url=cfg.ors_base_url,
             timeout_s=cfg.ors_timeout_s,
@@ -66,12 +67,27 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, RoutingProvider]:
             timeout_s=cfg.geocoder_timeout_s,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         ),
-        OpenRouteServiceAdapter(
-            api_key=cfg.ors_api_key,
-            base_url=cfg.ors_base_url,
-            timeout_s=cfg.ors_timeout_s,
-            max_retries=cfg.ors_max_retries,
-        ),
+        build_routing_provider(cfg),
+    )
+
+
+def build_routing_provider(cfg: Settings) -> RoutingProvider:
+    """Routing engine for a configuration, per ``cfg.routing_provider``.
+
+    There is no automatic fallback between engines: a request failing on
+    the selected provider fails (issue #1 scope).
+    """
+    if cfg.routing_provider == "brouter":
+        return BRouterAdapter(
+            base_url=cfg.brouter_base_url,
+            timeout_s=cfg.brouter_timeout_s,
+            max_retries=cfg.brouter_max_retries,
+        )
+    return OpenRouteServiceAdapter(
+        api_key=cfg.ors_api_key,
+        base_url=cfg.ors_base_url,
+        timeout_s=cfg.ors_timeout_s,
+        max_retries=cfg.ors_max_retries,
     )
 
 

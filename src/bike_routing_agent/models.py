@@ -17,6 +17,9 @@ class BikeType(StrEnum):
     TOURING = "touring"
     MOUNTAIN = "mountain"
     CITY = "city"
+    EBIKE = "ebike"
+    COMMUTER = "commuter"
+    RECUMBENT = "recumbent"
 
 
 class Coordinate(BaseModel):
