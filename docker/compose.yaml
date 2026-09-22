@@ -96,6 +96,52 @@ services:
           memory: 2g
     logging: *default-logging
 
+  # ---------------------------------------------------------------------------
+  # Local Valhalla routing service (use with the `valhalla` profile and
+  # ROUTING_PROVIDER=valhalla (or "all") in .env), from the repository root:
+  #
+  #   docker compose -f docker/compose.yaml --profile valhalla up
+  #
+  # Needs a pre-built tile archive at ./valhalla/valhalla_tiles.tar (unzipped
+  # .tar, the scripted entrypoint's default tileset name; build it with
+  # valhalla_build_tiles from an OSM extract, or download a pre-built extract
+  # from https://github.com/valhalla/valhalla-discourse/wiki/Prebuilt-tiles
+  # and decompress). Memory scales with the extract size; a city extract runs
+  # fine in ~4g, national extracts need substantially more.
+  # ---------------------------------------------------------------------------
+  valhalla:
+    profiles: ["valhalla"]
+    # The scripted image wraps the entrypoint scripts that build
+    # valhalla.json and start valhalla_service; plain `valhalla/valhalla` is
+    # a build/tooling image and does not serve tiles. Pinned release tag
+    # (upstream `latest` is mutable). To update: bump the tag and re-check
+    # `curl localhost:8002/status` after `--profile valhalla up`.
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.0
+    restart: unless-stopped
+    ports:
+      # Valhalla has no authentication -- bind loopback only.
+      - "127.0.0.1:${VALHALLA_LOCAL_PORT:-8002}:8002"
+    environment:
+      # Serve the pre-built tile tar instead of building from OSM PBFs.
+      use_tiles_ignore_pbf: "True"
+      force_rebuild: "False"
+      # Tile-only startup: admins/timezone/elevation builds need extra input
+      # files (or downloads) that this offline setup does not provide, and
+      # bicycle costing without date_time does not use them.
+      build_admins: "False"
+      build_time_zones: "False"
+      build_elevation: "False"
+    volumes:
+      # The scripted entrypoint's tile directory: it reads
+      # /custom_files/valhalla_tiles.tar and writes valhalla.json +
+      # file_hashes.txt back, so the mount must be writable.
+      - ./valhalla:/custom_files
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    logging: *default-logging
+
 volumes:
   exports:
     name: pybikerouter-exports

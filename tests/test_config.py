@@ -3,13 +3,18 @@
 import pytest
 from pydantic import ValidationError
 
-from bike_routing_agent.api import build_providers, build_routing_providers
+from bike_routing_agent.api import (
+    build_providers,
+    build_routing_providers,
+    build_surface_enricher,
+)
 from bike_routing_agent.config import (
     BROUTER_PROFILE_MAP,
     ORS_PROFILE_MAP,
     VALHALLA_PROFILE_MAP,
     Settings,
 )
+from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.models import BikeType
 from bike_routing_agent.providers.brouter import BRouterAdapter
 from bike_routing_agent.providers.geocoder import NominatimGeocoder
@@ -198,3 +203,59 @@ def test_build_providers_all_routes_through_all_three_engines():
     assert isinstance(geocoder, NominatimGeocoder)
     assert [r.name for r in routers] == ["ors", "brouter", "valhalla"]
     assert isinstance(routers[0], OpenRouteServiceAdapter)
+
+
+# ----------------------------------------------------------------------
+# OSM surface enrichment settings (issue #3)
+# ----------------------------------------------------------------------
+
+
+def test_osm_enrichment_is_disabled_by_default():
+    cfg = Settings(_env_file=None)
+    assert cfg.osm_enrichment_enabled is False
+    assert cfg.overpass_base_url == "https://overpass-api.de/api/interpreter"
+    assert cfg.overpass_timeout_s == pytest.approx(20.0)
+    assert cfg.overpass_buffer_m == pytest.approx(25.0)
+
+
+def test_enabling_osm_enrichment_requires_sane_overpass_settings():
+    with pytest.raises(ValidationError, match="overpass_timeout_s"):
+        Settings(_env_file=None, osm_enrichment_enabled=True, overpass_timeout_s=0)
+    with pytest.raises(ValidationError, match="overpass_max_retries"):
+        Settings(_env_file=None, osm_enrichment_enabled=True, overpass_max_retries=-1)
+    with pytest.raises(ValidationError, match="overpass_buffer_m"):
+        Settings(_env_file=None, osm_enrichment_enabled=True, overpass_buffer_m=0)
+
+
+def test_invalid_overpass_values_tolerated_while_enrichment_is_disabled():
+    cfg = Settings(
+        _env_file=None,
+        overpass_timeout_s=0,
+        overpass_max_retries=-1,
+        overpass_buffer_m=0,
+    )
+    assert cfg.osm_enrichment_enabled is False
+
+
+def test_build_surface_enricher_none_while_disabled():
+    cfg = Settings(_env_file=None)
+    assert build_surface_enricher(cfg) is None
+
+
+def test_build_surface_enricher_wires_settings_when_enabled():
+    cfg = Settings(
+        _env_file=None,
+        osm_enrichment_enabled=True,
+        overpass_base_url="http://overpass.internal.example/interpreter",
+        overpass_timeout_s=7.5,
+        overpass_max_retries=2,
+        overpass_buffer_m=40.0,
+        overpass_cache_ttl_s=60,
+    )
+    enricher = build_surface_enricher(cfg)
+    assert isinstance(enricher, OverpassEnricher)
+    assert enricher.name == "overpass"
+    assert enricher._base_url == "http://overpass.internal.example/interpreter"
+    assert enricher._timeout_s == pytest.approx(7.5)
+    assert enricher._max_retries == 2
+    assert enricher._buffer_m == pytest.approx(40.0)

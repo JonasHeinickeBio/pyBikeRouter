@@ -46,6 +46,16 @@ def ors_no_route_response() -> dict:
 
 
 @pytest.fixture
+def overpass_surface_response() -> dict:
+    return load_fixture("overpass_surface_response.json")
+
+
+@pytest.fixture
+def overpass_empty_response() -> dict:
+    return load_fixture("overpass_empty_response.json")
+
+
+@pytest.fixture
 def nominatim_single_response() -> list:
     return load_fixture("nominatim_single_response.json")
 

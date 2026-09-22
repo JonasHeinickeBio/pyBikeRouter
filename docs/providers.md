@@ -121,8 +121,9 @@ disagree and why -- is in
 ## Valhalla (`providers/valhalla.py`)
 
 Full `RoutingProvider` for a self-hosted Valhalla HTTP meili server
-(`POST /route`, health probe on `GET /status` -- any stock deployment,
-e.g. the `valhalla/valhalla` image). All eight bike types map to
+(`POST /route`, health probe on `GET /status` -- any stock deployment; the
+compose `valhalla` profile uses the pinned `ghcr.io/valhalla/valhalla-scripted`
+image with a pre-built `./valhalla/valhalla_tiles.tar`). All eight bike types map to
 Valhalla's single `bicycle` costing via `config.VALHALLA_PROFILE_MAP`:
 current Valhalla has no per-bike-type or e-assist costing, so bike-type
 differentiation comes from the other engines and the scoring step; the map

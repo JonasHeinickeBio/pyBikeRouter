@@ -50,6 +50,18 @@ class Settings(BaseSettings):
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
 
+    # OSM surface enrichment (issue #3). Off by default: the public Overpass
+    # API is rate-limited and the PostGIS pipeline that should serve this at
+    # production scale is not in place yet (docs/enrichment.md).
+    osm_enrichment_enabled: bool = False
+    overpass_base_url: str = "https://overpass-api.de/api/interpreter"
+    overpass_timeout_s: float = 20.0
+    overpass_max_retries: int = 1
+    # Half-width of the corridor queried around the route; way matching then
+    # accepts polylines within 2x this distance of a segment midpoint.
+    overpass_buffer_m: float = 25.0
+    overpass_cache_ttl_s: int = 86_400
+
     export_dir: str = "exports"
     log_level: str = "INFO"
 
@@ -81,6 +93,26 @@ class Settings(BaseSettings):
                     "brouter_max_retries must be >= 0 when routing_provider='brouter' "
                     "or 'all' (got "
                     f"{self.brouter_max_retries})"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _check_osm_enrichment_settings_when_enabled(self) -> Settings:
+        if self.osm_enrichment_enabled:
+            if self.overpass_timeout_s <= 0:
+                raise ValueError(
+                    "overpass_timeout_s must be > 0 when osm_enrichment_enabled "
+                    f"(got {self.overpass_timeout_s})"
+                )
+            if self.overpass_max_retries < 0:
+                raise ValueError(
+                    "overpass_max_retries must be >= 0 when osm_enrichment_enabled "
+                    f"(got {self.overpass_max_retries})"
+                )
+            if self.overpass_buffer_m <= 0:
+                raise ValueError(
+                    "overpass_buffer_m must be > 0 when osm_enrichment_enabled "
+                    f"(got {self.overpass_buffer_m})"
                 )
         return self
 
@@ -157,4 +189,49 @@ VALHALLA_PROFILE_MAP: dict[str, str] = {
     "ebike": "bicycle",
     "commuter": "bicycle",
     "recumbent": "bicycle",
+}
+
+# OSM ``surface`` tag value -> surface-quality category (issue #3). The
+# enrichment data-quality policy (enrichment/quality.py) and RouteMetrics
+# surface_coverage keys share this vocabulary; values outside the map are
+# treated as unknown, so adding a value here is the only way to make it
+# count. Colon-suffixed values (paving_stones:30) normalise to their base.
+SURFACE_TAXONOMY: dict[str, str] = {
+    # Hard, bound surfaces.
+    "asphalt": "paved",
+    "paved": "paved",
+    "concrete": "paved",
+    "paving_stones": "masonry",
+    "sett": "masonry",
+    "cobblestone": "masonry",
+    "blockstone": "masonry",
+    "metal": "masonry",
+    "wood": "masonry",
+    # Firm but unbound: rideable by almost everyone, still loose material.
+    "compacted": "compacted",
+    "fine_gravel": "compacted",
+    "gravel": "loose",
+    "grit": "loose",
+    "pebblestone": "loose",
+    "unhewn_cobblestone": "loose",
+    # Soft natural material.
+    "ground": "natural_soft",
+    "dirt": "natural_soft",
+    "earth": "natural_soft",
+    "sand": "natural_soft",
+    "grass": "natural_soft",
+    "grass_paver": "natural_soft",
+    "mud": "natural_soft",
+    "rock": "natural_soft",
+}
+
+# OSM ``tracktype`` grade -> category. Grades are an ordered OSM vocabulary
+# (grade1 hard-packed/paved .. grade5 impassable for cars), so the mapping
+# is fixed rather than configurable.
+TRACKTYPE_TAXONOMY: dict[str, str] = {
+    "grade1": "paved",
+    "grade2": "compacted",
+    "grade3": "loose",
+    "grade4": "natural_soft",
+    "grade5": "natural_soft",
 }

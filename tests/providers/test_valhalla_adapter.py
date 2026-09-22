@@ -22,11 +22,32 @@ from bike_routing_agent.errors import (
     ProviderUnavailableError,
 )
 from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
+from bike_routing_agent.providers import valhalla as valhalla_module
 from bike_routing_agent.providers.valhalla import ValhallaAdapter, decode_polyline6
 
 VALHALLA_BASE = "http://valhalla.test"
 ROUTE_URL = f"{VALHALLA_BASE}/route"
 STATUS_URL = f"{VALHALLA_BASE}/status"
+
+
+def encode_polyline6(points: list[tuple[float, float]]) -> str:
+    """Independent polyline6 encoder (lat, lon) -> string, for round-trips."""
+    out: list[str] = []
+    prev_lat = prev_lon = 0
+    for lat, lon in points:
+        lat_i, lon_i = round(lat * 1e6), round(lon * 1e6)
+        for delta in (lat_i - prev_lat, lon_i - prev_lon):
+            zigzag = (delta << 1) ^ (delta >> 63)
+            while True:
+                chunk = zigzag & 0x1F
+                zigzag >>= 5
+                if zigzag:
+                    chunk |= 0x20
+                out.append(chr(chunk + 63))
+                if not zigzag:
+                    break
+        prev_lat, prev_lon = lat_i, lon_i
+    return "".join(out)
 
 # Decoded geometry of the fixture polylines (fixture encoding is pinned by
 # tests/providers/test_valhalla_adapter.py::test_polyline6_roundtrip).
@@ -406,3 +427,256 @@ def test_decode_polyline6_rejects_truncated_encoding() -> None:
         decode_polyline6("{")
 
     assert "truncated" in str(exc_info.value)
+
+
+# --- additional edge cases -------------------------------------------------
+
+
+def test_polyline6_roundtrip_matches_independent_encoder() -> None:
+    # Covers negative deltas, multi-byte varints and antimeridian-adjacent
+    # longitudes against a hand-rolled encoder written from the spec.
+    points = [
+        (52.527742, 13.387208),
+        (52.524799, 13.395315),
+        (37.441883, -122.143001),
+        (-33.868820, 151.209296),
+        (0.0, 0.0),
+        (-0.000001, -0.000001),
+    ]
+    decoded = decode_polyline6(encode_polyline6(points))
+    for got, (lat, lon) in zip(decoded, points, strict=True):
+        assert got == pytest.approx([lon, lat])
+
+
+def test_decode_polyline6_empty_string_yields_no_points() -> None:
+    assert decode_polyline6("") == []
+
+
+@respx.mock
+async def test_degenerate_geometry_maps_to_no_route_error(
+    valhalla_route_response: dict,
+) -> None:
+    valhalla_route_response["trip"]["legs"][0]["shape"] = encode_polyline6([(52.5, 13.4)])
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderNoRouteError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "degenerate" in str(exc_info.value)
+
+
+@respx.mock
+async def test_missing_legs_list_maps_to_no_route_error(valhalla_route_response: dict) -> None:
+    del valhalla_route_response["trip"]["legs"]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderNoRouteError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "no route legs" in str(exc_info.value)
+
+
+@respx.mock
+async def test_non_dict_leg_maps_to_bad_response(valhalla_route_response: dict) -> None:
+    valhalla_route_response["trip"]["legs"] = ["not-a-dict"]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderBadResponseError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "malformed Valhalla trip leg" in str(exc_info.value)
+
+
+@respx.mock
+async def test_non_matching_leg_junctions_are_kept_verbatim(
+    valhalla_route_response: dict,
+) -> None:
+    # Two legs whose endpoints differ: nothing is deduplicated.
+    valhalla_route_response["trip"]["legs"] = [
+        {"shape": encode_polyline6([(52.5, 13.4), (52.6, 13.5)])},
+        {"shape": encode_polyline6([(52.7, 13.6), (52.8, 13.7)])},
+    ]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request())
+
+    assert candidate.geometry_geojson["coordinates"] == [
+        [13.4, 52.5],
+        [13.5, 52.6],
+        [13.6, 52.7],
+        [13.7, 52.8],
+    ]
+
+
+@respx.mock
+async def test_missing_summary_maps_to_bad_response(valhalla_route_response: dict) -> None:
+    del valhalla_route_response["trip"]["summary"]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderBadResponseError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "missing 'summary'" in str(exc_info.value)
+
+
+@respx.mock
+async def test_boolean_length_is_treated_as_missing(valhalla_route_response: dict) -> None:
+    # _as_float rejects bools, so a JSON true in a numeric field cannot leak
+    # into the metrics as distance 1 m.
+    valhalla_route_response["trip"]["summary"]["length"] = True
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderBadResponseError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "missing 'length'" in str(exc_info.value)
+
+
+@respx.mock
+async def test_boolean_time_yields_none_duration(valhalla_route_response: dict) -> None:
+    valhalla_route_response["trip"]["summary"]["time"] = False
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request())
+
+    assert candidate.metrics.duration_s is None
+
+
+@respx.mock
+async def test_unknown_bike_type_maps_to_bad_response(
+    valhalla_route_response: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delitem(valhalla_module.VALHALLA_PROFILE_MAP, "city", raising=False)
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderBadResponseError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "no Valhalla costing mapped" in str(exc_info.value)
+    assert len(respx.calls) == 0  # fails before any HTTP request
+
+
+@respx.mock
+async def test_nonzero_trip_status_without_message_maps_to_bad_response() -> None:
+    respx.post(ROUTE_URL).mock(
+        return_value=httpx.Response(200, json={"trip": {"status": 442}})
+    )
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    with pytest.raises(ProviderBadResponseError) as exc_info:
+        await adapter.route(make_request())
+
+    assert "HTTP 442" in str(exc_info.value)
+
+
+@respx.mock
+async def test_has_ferry_summary_flag_becomes_warning(valhalla_route_response: dict) -> None:
+    valhalla_route_response["trip"]["summary"]["has_ferry"] = True
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request(avoid_ferries=False))
+
+    assert any("has_ferry=true" in w for w in candidate.warnings)
+
+
+@respx.mock
+async def test_malformed_provider_warning_entries_are_dropped(
+    valhalla_route_response: dict,
+) -> None:
+    valhalla_route_response["trip"]["warnings"] = [
+        "a bare string",
+        {"code": 105},
+        {"text": 12},
+        {"text": "kept", "code": 1},
+    ]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request())
+
+    assert [w for w in candidate.warnings if "kept" in w] == ["kept"]
+    assert not any("bare string" in w for w in candidate.warnings)
+
+
+@respx.mock
+async def test_partial_elevation_array_stops_at_null_sample(
+    valhalla_route_response: dict,
+) -> None:
+    valhalla_route_response["trip"]["legs"][0]["elevation"] = [10.0, 12.0, None, 5.0]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request())
+
+    # 10 -> 12 counts, the null truncates the array, 5 m below is never seen.
+    assert candidate.metrics.ascent_m == pytest.approx(2.0)
+    assert candidate.metrics.descent_m == pytest.approx(0.0)
+
+
+@respx.mock
+async def test_single_sample_elevation_array_is_ignored(
+    valhalla_route_response: dict,
+) -> None:
+    valhalla_route_response["trip"]["legs"][0]["elevation"] = [10.0]
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request())
+
+    assert candidate.metrics.ascent_m is None
+    assert candidate.metrics.descent_m is None
+
+
+@respx.mock
+async def test_retries_exhausted_on_persistent_server_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(valhalla_module.asyncio, "sleep", no_sleep)
+    respx.post(ROUTE_URL).mock(
+        side_effect=[httpx.Response(500, text="busy"), httpx.Response(500, text="busy")]
+    )
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE, max_retries=1)
+
+    with pytest.raises(ProviderUnavailableError) as exc_info:
+        await adapter.route(make_request())
+
+    assert exc_info.value.detail["status_code"] == 500
+    assert len(respx.calls) == 2
+
+
+@respx.mock
+async def test_timeout_retry_counts_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(valhalla_module.asyncio, "sleep", no_sleep)
+    respx.post(ROUTE_URL).mock(side_effect=[httpx.ReadTimeout("slow"), httpx.ReadTimeout("slow")])
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE, timeout_s=0.1, max_retries=1)
+
+    with pytest.raises(ProviderTimeoutError) as exc_info:
+        await adapter.route(make_request())
+
+    assert exc_info.value.detail["attempts"] == 2
+
+
+async def test_health_unavailable_on_timeout() -> None:
+    with respx.mock:
+        respx.get(STATUS_URL).mock(side_effect=httpx.ConnectTimeout("dial timeout"))
+        adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+        result = await adapter.health()
+
+        assert result["status"] == "unavailable"
+        assert "dial timeout" in result["error"]

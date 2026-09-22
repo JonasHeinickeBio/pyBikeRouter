@@ -1,0 +1,8 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (recorded-style fixture)",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-01T00:00:00Z"
+  },
+  "elements": []
+}
