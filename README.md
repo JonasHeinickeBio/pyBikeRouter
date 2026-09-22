@@ -20,7 +20,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Architecture](docs/architecture.md) | Graph nodes, state, branching, terminal statuses, error model |
 | [API](docs/api.md) | Endpoint contracts, response statuses, artifact serving |
 | [Configuration](docs/configuration.md) | Every environment variable, validation rules, deployment notes |
-| [Providers](docs/providers.md) | Protocols, ORS client/adapter behaviour, geocoders, stubs, adding a backend |
+| [Providers](docs/providers.md) | Protocols, ORS client/adapter behaviour, geocoders, BRouter/Valhalla adapters, adding a backend |
 | [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
@@ -93,7 +93,9 @@ Edit `.env` and set `ORS_API_KEY` to a valid
 | `GEOCODER_CACHE_TTL_S` | In-memory geocode cache TTL | `3600` |
 | `GEOCODER_AMBIGUITY_MARGIN` | Confidence gap below which top-2 results are "ambiguous" | `0.05` |
 | `GEOCODER_MIN_CONFIDENCE` | Minimum confidence to auto-accept a top result | `0.3` |
-| `VALHALLA_BASE_URL` | Base URL for the (stubbed) Valhalla adapter | `http://localhost:8002` |
+| `VALHALLA_BASE_URL` | Base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |
+| `VALHALLA_TIMEOUT_S` | Per-request Valhalla timeout (seconds) | `30.0` |
+| `VALHALLA_MAX_RETRIES` | Retries for Valhalla timeouts/5xx | `1` |
 | `EXPORT_DIR` | Local directory for GeoJSON/GPX artifacts | `exports` |
 | `LOG_LEVEL` | Log level | `INFO` |
 
@@ -261,9 +263,10 @@ with `poetry run pre-commit run --all-files` and the pre-push stage with
 - No route produced by this service is a safety guarantee. Explanations use
   hedged language ("better aligned with available map metadata") rather
   than claims like "safe route".
-- The Valhalla adapter is a stub in this milestone; BRouter is wired up
-  end to end but only against a self-hosted RouteServer (`ROUTING_PROVIDER=brouter`,
-  see [docker/brouter/README.md](docker/brouter/README.md)), and
+- BRouter and Valhalla are wired up end to end but only against
+  self-hosted deployments (`ROUTING_PROVIDER=brouter` / `valhalla` / `all`,
+  BRouter via the compose profile in
+  [docker/brouter/README.md](docker/brouter/README.md)), and
   openrouteservice remains the default engine.
 - The Pelias geocoder option requires a self-hosted openrouteservice
   instance; the public `api.openrouteservice.org` does not serve Pelias

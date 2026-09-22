@@ -4,6 +4,7 @@ from bike_routing_agent.errors import (
     GeocodingNotFoundError,
     ProviderNoRouteError,
     ProviderTimeoutError,
+    ProviderUnavailableError,
 )
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.models import Coordinate, GeocodeCandidate, RouteCandidate, RouteMetrics
@@ -80,7 +81,7 @@ async def test_known_request_returns_normalized_ready_route(tmp_path: Path):
         }
     )
     router = FakeRouter(candidate=sample_candidate())
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke(base_input())
 
@@ -94,7 +95,7 @@ async def test_known_request_returns_normalized_ready_route(tmp_path: Path):
 async def test_missing_destination_awaits_clarification_without_routing(tmp_path: Path):
     geocoder = FakeGeocoder()
     router = FakeRouter(candidate=sample_candidate())
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke({"raw_input": {"origin": "Braunschweig", "constraints": {}}})
 
@@ -124,7 +125,7 @@ async def test_ambiguous_geocoding_result_returns_candidate_choices_without_rout
         }
     )
     router = FakeRouter(candidate=sample_candidate())
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke(base_input(origin="Springfield", destination="Chicago"))
 
@@ -141,7 +142,7 @@ async def test_ors_timeout_produces_structured_provider_failure(tmp_path: Path):
         }
     )
     router = FakeRouter(error=ProviderTimeoutError("timed out", provider="ors"))
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke(base_input())
 
@@ -157,7 +158,7 @@ async def test_no_route_ends_in_informative_failure_state(tmp_path: Path):
         }
     )
     router = FakeRouter(error=ProviderNoRouteError("no path found", provider="ors"))
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke(base_input())
 
@@ -168,7 +169,7 @@ async def test_no_route_ends_in_informative_failure_state(tmp_path: Path):
 async def test_invalid_constraints_rejected_before_geocoding_or_routing(tmp_path: Path):
     geocoder = FakeGeocoder()
     router = FakeRouter(candidate=sample_candidate())
-    graph = build_graph(geocode_provider=geocoder, routing_provider=router, export_dir=tmp_path)
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
 
     result = await graph.ainvoke(
         base_input(constraints={"bike_type": "gravel", "target_distance_km": -5})
@@ -177,3 +178,44 @@ async def test_invalid_constraints_rejected_before_geocoding_or_routing(tmp_path
     assert result["status"] == "invalid"
     assert router.calls == 0
     assert geocoder.calls == []
+
+
+async def test_multiple_providers_all_reach_scoring_and_selection(tmp_path: Path):
+    geocoder = FakeGeocoder(
+        by_query={
+            "Braunschweig": unambiguous("Braunschweig", 10.5267, 52.2689),
+            "Wolfenbuettel": unambiguous("Wolfenbuettel", 10.5450, 52.2201),
+        }
+    )
+    first = FakeRouter(candidate=sample_candidate(provider="first"))
+    second = FakeRouter(candidate=sample_candidate(provider="second"))
+    graph = build_graph(
+        geocode_provider=geocoder, routing_providers=[first, second], export_dir=tmp_path
+    )
+
+    result = await graph.ainvoke(base_input())
+
+    assert result["status"] == "ready"
+    assert first.calls == 1 and second.calls == 1
+    assert {c["provider"] for c in result["candidates"]} == {"first", "second"}
+    assert result["selected_candidate"]["provider"] in {"first", "second"}
+
+
+async def test_one_provider_failing_still_completes_via_the_other(tmp_path: Path):
+    geocoder = FakeGeocoder(
+        by_query={
+            "Braunschweig": unambiguous("Braunschweig", 10.5267, 52.2689),
+            "Wolfenbuettel": unambiguous("Wolfenbuettel", 10.5450, 52.2201),
+        }
+    )
+    ok = FakeRouter(candidate=sample_candidate(provider="ok"))
+    down = FakeRouter(error=ProviderUnavailableError("down", provider="down"))
+    graph = build_graph(
+        geocode_provider=geocoder, routing_providers=[down, ok], export_dir=tmp_path
+    )
+
+    result = await graph.ainvoke(base_input())
+
+    assert result["status"] == "ready"
+    assert result["selected_candidate"]["provider"] == "ok"
+    assert result["errors"][0]["provider"] == "down"

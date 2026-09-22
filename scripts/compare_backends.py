@@ -20,7 +20,7 @@ import math
 from statistics import median
 from typing import Any
 
-from bike_routing_agent.api import build_routing_provider
+from bike_routing_agent.api import build_routing_providers
 from bike_routing_agent.config import BROUTER_PROFILE_MAP, ORS_PROFILE_MAP, Settings
 from bike_routing_agent.models import (
     Coordinate,
@@ -161,8 +161,12 @@ def print_markdown(results: list[dict[str, Any]]) -> None:
 
 async def main(out_path: str) -> None:
     settings = Settings()
-    ors_router = build_routing_provider(settings.model_copy(update={"routing_provider": "ors"}))
-    br_router = build_routing_provider(settings.model_copy(update={"routing_provider": "brouter"}))
+    ors_router = build_routing_providers(
+        settings.model_copy(update={"routing_provider": "ors"})
+    )[0]
+    br_router = build_routing_providers(
+        settings.model_copy(update={"routing_provider": "brouter"})
+    )[0]
 
     results: list[dict[str, Any]] = []
     for case_id, (_title, origin, dest) in CASES.items():

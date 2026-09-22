@@ -19,7 +19,7 @@ cp .env.example .env
 | `ORS_BASE_URL` | openrouteservice base URL | `https://api.openrouteservice.org` |
 | `ORS_TIMEOUT_S` | per-request ORS timeout (seconds) | `10.0` |
 | `ORS_MAX_RETRIES` | retries for timeouts/5xx (not 429) | `2` |
-| `ROUTING_PROVIDER` | `ors` or `brouter` -- routing engine selection, no automatic fallback | `ors` |
+| `ROUTING_PROVIDER` | `ors`, `brouter`, `valhalla` or `all` -- `all` queries the three engines in parallel and scoring picks the best candidate; otherwise no automatic fallback | `ors` |
 | `BROUTER_BASE_URL` | base URL of a local/self-hosted BRouter RouteServer | `http://127.0.0.1:17777` |
 | `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
 | `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |
@@ -30,7 +30,9 @@ cp .env.example .env
 | `GEOCODER_CACHE_TTL_S` | in-memory geocode cache TTL | `3600` |
 | `GEOCODER_AMBIGUITY_MARGIN` | top-2 confidence gap below which results are ambiguous | `0.05` |
 | `GEOCODER_MIN_CONFIDENCE` | below this, the top result is clarified instead of accepted | `0.3` |
-| `VALHALLA_BASE_URL` | base URL for the (stubbed) Valhalla adapter | `http://localhost:8002` |
+| `VALHALLA_BASE_URL` | base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |
+| `VALHALLA_TIMEOUT_S` | per-request Valhalla timeout (seconds) | `30.0` |
+| `VALHALLA_MAX_RETRIES` | retries for Valhalla timeouts/5xx | `1` |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `LOG_LEVEL` | log level | `INFO` |
 
