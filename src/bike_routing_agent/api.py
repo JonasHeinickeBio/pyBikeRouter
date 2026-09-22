@@ -11,6 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bike_routing_agent.config import Settings, settings
+from bike_routing_agent.enrichment.base import SurfaceEnricher
+from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.models import (
     ClarificationOption,
@@ -19,7 +21,12 @@ from bike_routing_agent.models import (
     RoutePlanAPIRequest,
     RoutePlanResponse,
 )
-from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
+from bike_routing_agent.providers.base import (
+    CacheBackend,
+    GeocodeProvider,
+    InMemoryTTLCache,
+    RoutingProvider,
+)
 from bike_routing_agent.providers.brouter import BRouterAdapter
 from bike_routing_agent.providers.geocoder import NominatimGeocoder
 from bike_routing_agent.providers.ors import OpenRouteServiceAdapter
@@ -129,6 +136,27 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
     ]
 
 
+def build_surface_enricher(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> SurfaceEnricher | None:
+    """Surface enricher for a configuration, or ``None`` when disabled.
+
+    ``osm_enrichment_enabled`` stays off by default: the public Overpass
+    instance is rate-limited and shared, and the PostGIS pipeline meant to
+    serve this at production scale is still a design (docs/enrichment.md).
+    """
+    if not cfg.osm_enrichment_enabled:
+        return None
+    return OverpassEnricher(
+        base_url=cfg.overpass_base_url,
+        timeout_s=cfg.overpass_timeout_s,
+        max_retries=cfg.overpass_max_retries,
+        buffer_m=cfg.overpass_buffer_m,
+        cache=cache if cache is not None else InMemoryTTLCache(),
+        cache_ttl_s=cfg.overpass_cache_ttl_s,
+    )
+
+
 _export_dir = Path(settings.export_dir)
 
 _geocode_provider, _routing_providers = build_providers(settings)
@@ -139,6 +167,7 @@ _graph = build_graph(
     export_dir=_export_dir,
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
+    surface_enricher=build_surface_enricher(settings),
 )
 
 
@@ -151,6 +180,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         export_dir=Path(cfg.export_dir),
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,
+        surface_enricher=build_surface_enricher(cfg),
     )
 
 

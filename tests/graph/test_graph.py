@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import pytest
+
+from bike_routing_agent.enrichment.base import SurfaceSummary
 from bike_routing_agent.errors import (
     GeocodingNotFoundError,
     ProviderNoRouteError,
@@ -219,3 +222,89 @@ async def test_one_provider_failing_still_completes_via_the_other(tmp_path: Path
     assert result["status"] == "ready"
     assert result["selected_candidate"]["provider"] == "ok"
     assert result["errors"][0]["provider"] == "down"
+
+
+# ----------------------------------------------------------------------
+# Surface enrichment wiring (issue #3)
+# ----------------------------------------------------------------------
+
+
+class FakeSurfaceEnricher:
+    name = "overpass-fake"
+
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self._error = error
+        self.calls = 0
+
+    async def surface_profile(self, coordinates):
+        self.calls += 1
+        if self._error is not None:
+            raise self._error
+        return SurfaceSummary(
+            total_m=12_000,
+            coverage={"paved": 0.6, "compacted": 0.2},
+            unknown_fraction=0.2,
+            inferred_fraction=0.0,
+            conflict_fraction=0.0,
+            highway_fractions={"residential": 0.8},
+        )
+
+
+def enrichment_graph(tmp_path: Path, enricher: FakeSurfaceEnricher):
+    geocoder = FakeGeocoder(
+        by_query={
+            "Braunschweig": unambiguous("Braunschweig", 10.5267, 52.2689),
+            "Wolfenbuettel": unambiguous("Wolfenbuettel", 10.5450, 52.2201),
+        }
+    )
+    router = FakeRouter(candidate=sample_candidate())
+    return build_graph(
+        geocode_provider=geocoder,
+        routing_providers=[router],
+        export_dir=tmp_path,
+        surface_enricher=enricher,
+    )
+
+
+async def test_enrichment_decorates_candidates_between_routing_and_scoring(tmp_path: Path):
+    enricher = FakeSurfaceEnricher()
+    result = await enrichment_graph(tmp_path, enricher).ainvoke(base_input())
+
+    assert result["status"] == "ready"
+    assert enricher.calls == 1
+    selected = result["selected_candidate"]
+    assert selected["metrics"]["surface_coverage"] == {"paved": 0.6, "compacted": 0.2}
+    assert selected["metrics"]["unknown_surface_fraction"] == pytest.approx(0.2)
+    assert selected["provenance"]["surface_enrichment"]["status"] == "ok"
+    assert selected["provenance"]["surface_enrichment"]["source"] == "overpass-fake"
+
+
+async def test_enrichment_failure_does_not_sink_the_run(tmp_path: Path):
+    enricher = FakeSurfaceEnricher(error=ProviderTimeoutError("slow", provider="overpass"))
+    result = await enrichment_graph(tmp_path, enricher).ainvoke(base_input())
+
+    assert result["status"] == "ready"
+    selected = result["selected_candidate"]
+    assert selected["metrics"]["surface_coverage"] == {}
+    assert selected["metrics"]["unknown_surface_fraction"] is None
+    assert selected["provenance"]["surface_enrichment"]["status"] == "failed"
+    assert any(e["code"] == "provider_timeout" for e in result["errors"])
+
+
+async def test_graph_without_enricher_leaves_candidates_untouched(tmp_path: Path):
+    graph = build_graph(
+        geocode_provider=FakeGeocoder(
+            by_query={
+                "Braunschweig": unambiguous("Braunschweig", 10.5267, 52.2689),
+                "Wolfenbuettel": unambiguous("Wolfenbuettel", 10.5450, 52.2201),
+            }
+        ),
+        routing_providers=[FakeRouter(candidate=sample_candidate())],
+        export_dir=tmp_path,
+    )
+
+    result = await graph.ainvoke(base_input())
+
+    assert result["status"] == "ready"
+    assert "surface_enrichment" not in result["selected_candidate"]["provenance"]
+    assert result["selected_candidate"]["metrics"]["surface_coverage"] == {}

@@ -1,0 +1,63 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (recorded-style fixture)",
+  "osm3s": {
+    "timestamp_osm_base": "2026-09-01T00:00:00Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org."
+  },
+  "elements": [
+    {
+      "type": "node",
+      "id": 9001,
+      "lat": 52.5,
+      "lon": 13.40375,
+      "tags": {"highway": "traffic_signals"}
+    },
+    {
+      "type": "way",
+      "id": 101,
+      "tags": {"highway": "residential", "surface": "asphalt", "name": "Asphaltstraße"},
+      "geometry": [
+        {"lat": 52.5, "lon": 13.3999},
+        {"lat": 52.5, "lon": 13.40375}
+      ]
+    },
+    {
+      "type": "way",
+      "id": 102,
+      "tags": {"highway": "track", "tracktype": "grade2"},
+      "geometry": [
+        {"lat": 52.50001, "lon": 13.40375},
+        {"lat": 52.50001, "lon": 13.405},
+        {"lat": 52.50001, "lon": 13.40625}
+      ]
+    },
+    {
+      "type": "way",
+      "id": 103,
+      "tags": {"highway": "path", "surface": "gravel", "paved": "yes"},
+      "geometry": [
+        {"lat": 52.5, "lon": 13.40625},
+        {"lat": 52.5, "lon": 13.40875},
+        {"lat": 52.5, "lon": 13.4101}
+      ]
+    },
+    {
+      "type": "way",
+      "id": 999,
+      "tags": {"highway": "cycleway"},
+      "geometry": [
+        {"lat": 52.50002, "lon": 13.4005}
+      ]
+    },
+    {
+      "type": "way",
+      "id": 998,
+      "tags": {"highway": "cycleway", "surface": "asphalt"},
+      "geometry": [
+        {"lat": 52.50002, "lon": 13.4005},
+        {"lat": 52.50002}
+      ]
+    }
+  ]
+}
