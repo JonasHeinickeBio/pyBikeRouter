@@ -96,6 +96,33 @@ services:
           memory: 2g
     logging: *default-logging
 
+  # ---------------------------------------------------------------------------
+  # Local Valhalla routing service (use with the `valhalla` profile and
+  # ROUTING_PROVIDER=valhalla (or "all") in .env), from the repository root:
+  #
+  #   docker compose -f docker/compose.yaml --profile valhalla up
+  #
+  # Needs a pre-built tile archive at ./valhalla/valhalla_tiles.tar.gz (build
+  # it with valhalla_build_tiles from an OSM extract, or download a
+  # pre-built extract from https://github.com/valhalla/valhalla-discourse
+  # /wiki/Prebuilt-tiles). Memory scales with the extract size; a city
+  # extract runs fine in ~4g, national extracts need substantially more.
+  # ---------------------------------------------------------------------------
+  valhalla:
+    profiles: ["valhalla"]
+    image: valhalla/valhalla:latest
+    restart: unless-stopped
+    ports:
+      # Valhalla has no authentication -- bind loopback only.
+      - "127.0.0.1:${VALHALLA_LOCAL_PORT:-8002}:8002"
+    volumes:
+      - ./valhalla/valhalla_tiles.tar.gz:/mnt/valhalla_tiles.tar.gz:ro
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    logging: *default-logging
+
 volumes:
   exports:
     name: pybikerouter-exports
