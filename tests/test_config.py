@@ -56,6 +56,16 @@ def test_brouter_retries_must_not_be_negative_when_brouter_active():
         Settings(_env_file=None, routing_provider="brouter", brouter_max_retries=-1)
 
 
+def test_brouter_timeout_must_be_positive_when_all_includes_brouter():
+    with pytest.raises(ValidationError, match="brouter_timeout_s"):
+        Settings(_env_file=None, routing_provider="all", brouter_timeout_s=0)
+
+
+def test_brouter_retries_must_not_be_negative_when_all_includes_brouter():
+    with pytest.raises(ValidationError, match="brouter_max_retries"):
+        Settings(_env_file=None, routing_provider="all", brouter_max_retries=-1)
+
+
 def test_brouter_settings_unchecked_for_other_providers():
     settings = Settings(
         _env_file=None,

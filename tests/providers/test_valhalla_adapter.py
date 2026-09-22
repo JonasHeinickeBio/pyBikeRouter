@@ -1,9 +1,9 @@
 """Tests for the Valhalla adapter against recorded-style fixtures.
 
-Valhalla-specific shapes pinned here: base64 polyline6 geometry (shared
-``trip.shapes`` by leg index and inline leg shapes), kilometer summaries,
-elevation arrays -> ascent/descent, and the JSON error bodies with
-``message`` text mapping to no-route vs bad-response errors.
+Valhalla-specific shapes pinned here: direct polyline6 geometry carried
+per leg in ``trip.legs[].shape``, kilometer summaries, elevation arrays ->
+ascent/descent, and the JSON error bodies with ``message`` text mapping to
+no-route vs bad-response errors.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def make_request(**constraint_kwargs: object) -> RoutingRequest:
 
 
 def test_polyline6_decodes_fixture_shape(valhalla_route_response: dict) -> None:
-    assert decode_polyline6(valhalla_route_response["trip"]["shapes"][0]) == SHAPE_A_FULL
+    assert decode_polyline6(valhalla_route_response["trip"]["legs"][0]["shape"]) == SHAPE_A_FULL
 
 
 @respx.mock
@@ -348,7 +348,7 @@ async def test_missing_trip_maps_to_bad_response() -> None:
 
 
 @respx.mock
-async def test_missing_shape_index_maps_to_bad_response(valhalla_route_response: dict) -> None:
+async def test_non_string_leg_shape_maps_to_bad_response(valhalla_route_response: dict) -> None:
     valhalla_route_response["trip"]["legs"][0]["shape"] = 7
     respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
     adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
@@ -356,12 +356,13 @@ async def test_missing_shape_index_maps_to_bad_response(valhalla_route_response:
     with pytest.raises(ProviderBadResponseError) as exc_info:
         await adapter.route(make_request())
 
-    assert "out of range" in str(exc_info.value)
+    assert "missing an encoded shape" in str(exc_info.value)
 
 
 @respx.mock
 async def test_undecodable_shape_maps_to_bad_response(valhalla_route_response: dict) -> None:
-    valhalla_route_response["trip"]["shapes"] = ["not base64 at all!!"]
+    # Non-ASCII characters cannot be part of a plain-ASCII polyline6 string.
+    valhalla_route_response["trip"]["legs"][0]["shape"] = "p\u00f6lyline"
     respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
     adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
 
@@ -400,11 +401,8 @@ async def test_health_unavailable_on_connection_error() -> None:
 
 
 def test_decode_polyline6_rejects_truncated_encoding() -> None:
-    # Valid start ('\x8b\x01' -> one delta) then a lone continuation byte.
-    import base64
-
-    truncated = base64.b64encode(bytes([0x8B, 0xA1])).decode()
+    # A continuation character whose delta is never completed.
     with pytest.raises(ProviderBadResponseError) as exc_info:
-        decode_polyline6(truncated)
+        decode_polyline6("{")
 
     assert "truncated" in str(exc_info.value)

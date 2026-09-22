@@ -7,18 +7,20 @@ decisions still open.
 
 ## Routing engines
 
-- **Valhalla adapter** -- `providers/valhalla.py` is a stub (protocol +
-  health probe). Implement `route()` against a Valhalla `route` endpoint,
-  map `BikeType` -> Valhalla costing options in `config.py`, and classify
-  no-path vs infrastructure failures like the ORS adapter does.
+- **Valhalla adapter** -- done (issue #2): full adapter against a
+  self-hosted Valhalla server, all bike types on the single `bicycle`
+  costing, no-path vs infrastructure classification, and
+  `routing_provider="all"` polling all three engines in parallel. Open
+  follow-ups: a compose profile for serving Valhalla alongside the app and
+  a real per-bike-type costing once Valhalla offers one (e-assist).
 - **BRouter adapter** -- done (issue #1): full adapter, local compose
   service, versioned custom profiles for gravel/touring. Open follow-ups:
   serving the profile-backed engine beyond local dev (production hosting)
   and per-request profile overrides instead of the config-table mapping.
-- **Multi-candidate scoring** -- the state, the `score_candidates` node, and
-  the scorer already handle N candidates; today one provider yields one.
-  With a second engine wired, score across engines and (optionally) return
-  ranked alternatives.
+- **Multi-candidate scoring** -- the state, the `score_candidates` node,
+  and the scorer handle N candidates, and `routing_provider="all"` now
+  feeds them from ors + brouter + valhalla in parallel. Still open:
+  (optionally) returning ranked alternatives instead of a single winner.
 
 ## Scoring and map-metadata quality
 

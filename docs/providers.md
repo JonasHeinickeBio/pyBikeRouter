@@ -118,13 +118,29 @@ A real-world A/B against ORS across all bike types -- where the engines
 disagree and why -- is in
 [providers-comparison.md](providers-comparison.md).
 
-## Stub: Valhalla
+## Valhalla (`providers/valhalla.py`)
 
-`providers/valhalla.py` implements `RoutingProvider` but raises
-`ProviderUnavailableError` on `route()`. It exists so the protocol has second
-implementers to test against and so provider selection can be exercised
-without live services. Wiring it up for real is tracked in
-[roadmap.md](roadmap.md).
+Full `RoutingProvider` for a self-hosted Valhalla HTTP meili server
+(`POST /route`, health probe on `GET /status` -- any stock deployment,
+e.g. the `valhalla/valhalla` image). All eight bike types map to
+Valhalla's single `bicycle` costing via `config.VALHALLA_PROFILE_MAP`:
+current Valhalla has no per-bike-type or e-assist costing, so bike-type
+differentiation comes from the other engines and the scoring step; the map
+exists so a future costing can be wired in without touching the adapter.
+Quirks the adapter absorbs: geometry is a plain-ASCII polyline6 string in
+each leg's `shape` field (not GeoJSON coordinates), decoded by the
+in-repo `decode_polyline6`; `trip.summary` distances are in kilometers and
+converted to meters; elevation only exists when `elevation_interval` is
+requested and the tiles carry it (ascent/descent stay `None` otherwise);
+no-path answers are 4xx responses whose `status_message` carries markers
+like "No path could be found for input" and map to
+`ProviderNoRouteError` (other 4xx -> `ProviderBadResponseError`, 429 ->
+`ProviderRateLimitError`, timeouts/5xx retried then raised), mirroring the
+ORS adapter's classification. Unsupported constraints are recorded as
+candidate warnings, not silently dropped.
+
+`routing_provider="all"` polls ORS, BRouter, and Valhalla in parallel and
+lets the scorer pick the best candidate across engines.
 
 ## Adding a new backend
 

@@ -16,9 +16,6 @@
       "max_lon": 13.419405,
       "min_lon": 13.387208
     },
-    "shapes": [
-      "e2ZgZWNCb3thcFh8dkR1eU50ekVlfU12bkl5a0s="
-    ],
     "legs": [
       {
         "summary": {
@@ -42,7 +39,7 @@
           33.9
         ],
         "maneuvers": [],
-        "shape": 0
+        "shape": "{f`ecBo{apX|vDuyNtzEe}MvnIykK"
       }
     ],
     "locations": [

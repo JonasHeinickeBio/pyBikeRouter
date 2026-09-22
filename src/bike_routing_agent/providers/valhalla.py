@@ -7,8 +7,8 @@ deployment (``valhalla/valhalla`` image, valhalla-service package, ...):
 
 Valhalla quirks this adapter absorbs:
 
-- Route geometry is an *encoded polyline* (Google polyline algorithm at
-  1e-6 precision) carried as base64 in ``trip.shapes`` / ``leg["shape"]``,
+- Route geometry is a *polyline6 string* (Google polyline algorithm at
+  1e-6 precision) carried as plain ASCII in each leg's ``shape`` field,
   not GeoJSON coordinates.
 - ``trip.summary.length`` is in the response units (kilometers by
   default here), while the domain model wants meters.
@@ -25,8 +25,6 @@ Valhalla quirks this adapter absorbs:
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import json
 import struct
 
@@ -308,14 +306,12 @@ class ValhallaAdapter:
         )
 
     def _decode_geometry(self, trip: dict) -> list[list[float]]:
-        """Concatenate leg shapes into one LineString.
+        """Concatenate per-leg polyline6 shapes into one LineString.
 
-        Valhalla stores shapes two ways: a single shared ``trip.shapes``
-        list of base64-encoded polylines that each leg references by index,
-        or (single-leg trips) the leg's own ``shape`` string. Both appear
-        with 6-decimal polyline precision.
+        Stock Valhalla carries a direct polyline6 string in each
+        ``trip.legs[].shape``; concatenating the legs (minus the shared
+        junction point) reproduces the whole-trip geometry.
         """
-        shapes = trip.get("shapes")
         legs = trip.get("legs")
         if not isinstance(legs, list) or not legs:
             raise ProviderNoRouteError("Valhalla returned no route legs", provider=self.name)
@@ -327,13 +323,6 @@ class ValhallaAdapter:
                     "malformed Valhalla trip leg", provider=self.name
                 )
             encoded = leg.get("shape")
-            if isinstance(encoded, int) and isinstance(shapes, list):
-                try:
-                    encoded = shapes[encoded]
-                except IndexError as exc:
-                    raise ProviderBadResponseError(
-                        f"Valhalla leg shape index {encoded} out of range", provider=self.name
-                    ) from exc
             if not isinstance(encoded, str):
                 raise ProviderBadResponseError(
                     "Valhalla leg is missing an encoded shape",
@@ -404,16 +393,16 @@ class ValhallaAdapter:
 
 
 def decode_polyline6(encoded: str, *, provider: str = "valhalla") -> list[list[float]]:
-    """Decode a base64-encoded Google-style polyline at 1e-6 precision.
+    """Decode a Valhalla polyline6 string at 1e-6 precision.
 
-    This is Valhalla's trip-shape encoding: the standard polyline variable
-    length encoding (5 bits per byte, continuation bit, zig-zag) applied to
-    lat/lon deltas scaled by 1e6, with the resulting byte string base64
-    encoded.
+    This is Valhalla's trip-shape encoding: the standard Google polyline
+    variable length encoding (5 bits per character, continuation bit,
+    zig-zag) applied to lat/lon deltas scaled by 1e6, as plain ASCII --
+    each character is one 5-bit group, not a base64 payload.
     """
     try:
-        data = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError) as exc:
+        data = encoded.encode("ascii")
+    except UnicodeEncodeError as exc:
         raise ProviderBadResponseError(
             "Valhalla returned an undecodable route shape",
             provider=provider,

@@ -69,16 +69,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check_brouter_settings_when_active(self) -> Settings:
-        if self.routing_provider == "brouter":
+        if self.routing_provider in ("brouter", "all"):
             if self.brouter_timeout_s <= 0:
                 raise ValueError(
                     "brouter_timeout_s must be > 0 when routing_provider='brouter' "
-                    f"(got {self.brouter_timeout_s})"
+                    "or 'all' (got "
+                    f"{self.brouter_timeout_s})"
                 )
             if self.brouter_max_retries < 0:
                 raise ValueError(
                     "brouter_max_retries must be >= 0 when routing_provider='brouter' "
-                    f"(got {self.brouter_max_retries})"
+                    "or 'all' (got "
+                    f"{self.brouter_max_retries})"
                 )
         return self
 

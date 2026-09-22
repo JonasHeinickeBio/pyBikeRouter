@@ -14,6 +14,26 @@ from bike_routing_agent.models import RouteCandidate, RouteMetrics
 from bike_routing_agent.nodes.route import build_route_node
 
 
+class StartBarrier:
+    """Releases only once ``size`` routings have started concurrently.
+
+    A sequential poller would deadlock on this (the first router waits for a
+    second that never starts), so combined with ``asyncio.wait_for`` it is a
+    race-free parallelism check instead of a wall-clock timing assertion.
+    """
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._arrived = 0
+        self._event = asyncio.Event()
+
+    async def wait_if_full(self) -> None:
+        self._arrived += 1
+        if self._arrived == self._size:
+            self._event.set()
+        await self._event.wait()
+
+
 class CapturingRouter:
     def __init__(
         self,
@@ -22,15 +42,19 @@ class CapturingRouter:
         provider: str | None = None,
         error: Exception | None = None,
         delay_s: float = 0.0,
+        barrier: StartBarrier | None = None,
     ) -> None:
         self.name = name
         self._provider = provider or name
         self._error = error
         self._delay_s = delay_s
+        self._barrier = barrier
         self.last_request = None
 
     async def route(self, request):
         self.last_request = request
+        if self._barrier is not None:
+            await self._barrier.wait_if_full()
         if self._delay_s:
             await asyncio.sleep(self._delay_s)
         if self._error is not None:
@@ -123,14 +147,17 @@ async def test_all_providers_are_asked_and_all_candidates_forwarded():
 
 
 async def test_providers_are_polled_in_parallel_not_sequentially():
+    barrier = StartBarrier(size=2)
     node = build_route_node(
         routing_providers=[
-            CapturingRouter(name="a", delay_s=0.1),
-            CapturingRouter(name="b", delay_s=0.1),
+            CapturingRouter(name="a", barrier=barrier),
+            CapturingRouter(name="b", barrier=barrier),
         ]
     )
 
-    update = await asyncio.wait_for(node(base_state()), timeout=0.19)
+    # A sequential poller deadlocks on the barrier, which wait_for turns
+    # into a fast test failure instead of a flaky sleep-based assertion.
+    update = await asyncio.wait_for(node(base_state()), timeout=5.0)
 
     assert update["status"] == "in_progress"
 
