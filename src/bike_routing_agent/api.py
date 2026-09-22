@@ -184,7 +184,11 @@ def build_graph_for_settings(cfg: Settings) -> Any:
     )
 
 
-def _place_to_raw(value: str | Coordinate) -> str | dict:
+def _place_to_raw(value: str | Coordinate | None) -> str | dict | None:
+    """Loop requests carry no destination (issue #5) -- None passes through
+    so the parse node records it as absent rather than the string "None"."""
+    if value is None:
+        return None
     return value if isinstance(value, str) else value.model_dump(mode="json")
 
 

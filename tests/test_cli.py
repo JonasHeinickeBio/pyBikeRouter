@@ -157,8 +157,6 @@ def test_route_plan_passes_constraints_through() -> None:
         "plan",
         "--origin",
         "52.5,13.4",
-        "--destination",
-        "52.4,13.1",
         "--via",
         "52.45,13.2",
         "--bike-type",
@@ -169,16 +167,40 @@ def test_route_plan_passes_constraints_through() -> None:
         "asphalt,paving_stones",
         "--allow-high-traffic",
         "--loop",
+        "--loop-direction",
+        "counterclockwise",
     )
     assert route_cmd.run(args, out, err, graph_factory=lambda: graph) == 0
     raw = graph.invoked_with["raw_input"]  # type: ignore[index]
     assert raw["origin"] == {"lat": 52.5, "lon": 13.4}
+    # A loop is single-origin: no destination key reaches the graph at all.
+    assert "destination" not in raw
     assert raw["via"] == [{"lat": 52.45, "lon": 13.2}]
     assert raw["constraints"]["bike_type"] == "road"
     assert raw["constraints"]["target_distance_km"] == 12.0
     assert raw["constraints"]["prefer_surfaces"] == ["asphalt", "paving_stones"]
     assert raw["constraints"]["avoid_high_traffic_roads"] is False
     assert raw["constraints"]["return_to_origin"] is True
+    assert raw["constraints"]["loop_direction"] == "counterclockwise"
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected_fragment"),
+    [
+        (
+            ("--origin", "a", "--destination", "b", "--loop", "--target-distance-km", "10"),
+            "takes no --destination",
+        ),
+        (("--origin", "a", "--loop"), "--target-distance-km"),
+        (("--origin", "a"), "--destination is required"),
+    ],
+)
+def test_route_plan_loop_usage_errors(argv: tuple[str, ...], expected_fragment: str) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", *argv)
+    rc = route_cmd.run(args, out, err, graph_factory=lambda: FakeGraph(READY_STATE))
+    assert rc == 2
+    assert expected_fragment in err.getvalue()
 
 
 @pytest.mark.parametrize(

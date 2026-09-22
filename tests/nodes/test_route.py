@@ -325,3 +325,55 @@ async def test_candidates_carry_full_serialized_candidate_payload():
         "warnings",
     }
     assert candidate["metrics"]["distance_m"] == 1000
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+def loop_state():
+    return {
+        "resolved_origin": {"lon": 10.5, "lat": 52.3},
+        "resolved_destination": {"lon": 10.5, "lat": 52.3},  # snapped by geocode
+        "resolved_via": [],
+        "constraints": {
+            "return_to_origin": True,
+            "target_distance_km": 15,
+            "loop_direction": "counterclockwise",
+        },
+    }
+
+
+async def test_loop_request_receives_synthesized_waypoints_around_the_origin():
+    router = CapturingRouter()
+    node = build_route_node(routing_providers=[router])
+
+    update = await node(loop_state())
+
+    request = router.last_request
+    assert request.destination == request.origin
+    assert len(request.via) == 2
+    assert all((v.lon, v.lat) != (10.5, 52.3) for v in request.via)
+    assert update["loop_plan"]["direction"] == "counterclockwise"
+    assert update["loop_plan"]["reach_m"] > 0
+
+
+async def test_loop_with_caller_supplied_vias_keeps_the_callers_shape():
+    router = CapturingRouter()
+    node = build_route_node(routing_providers=[router])
+
+    state = loop_state()
+    state["resolved_via"] = [{"lon": 10.7, "lat": 52.35}]
+    update = await node(state)
+
+    assert [(v.lon, v.lat) for v in router.last_request.via] == [(10.7, 52.35)]
+    assert update["loop_plan"] is None
+
+
+async def test_ordinary_request_records_no_loop_plan():
+    router = CapturingRouter()
+    node = build_route_node(routing_providers=[router])
+
+    update = await node(base_state())
+
+    assert update["loop_plan"] is None
+    assert len(router.last_request.via) == 1

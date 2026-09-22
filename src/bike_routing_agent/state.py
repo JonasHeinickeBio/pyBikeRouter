@@ -41,6 +41,9 @@ class RouteAgentState(TypedDict, total=False):
     resolved_origin: dict[str, Any] | None
     resolved_destination: dict[str, Any] | None
     resolved_via: list[dict[str, Any]]
+    # Provenance of synthesized loop waypoints (issue #5): None for normal
+    # requests and for loops whose shape came from caller-supplied vias.
+    loop_plan: dict[str, Any] | None
 
     candidates: list[dict[str, Any]]
     selected_candidate: dict[str, Any] | None

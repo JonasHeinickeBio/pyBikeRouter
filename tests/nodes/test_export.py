@@ -93,3 +93,51 @@ def test_export_dir_is_created_on_demand(tmp_path):
     update = node({"selected_candidate": selected_candidate()})
 
     assert (nested / update["artifacts"]["geojson_file"]).is_file()
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+def test_explanation_describes_a_synthesized_loop(tmp_path):
+    node = build_export_node(export_dir=tmp_path)
+
+    update = node(
+        {
+            "selected_candidate": selected_candidate(),
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+            "loop_plan": {
+                "vias": [],
+                "radius_m": 2887.0,
+                "reach_m": 5000.0,
+                "direction": "clockwise",
+                "sides": 3,
+            },
+        }
+    )
+
+    explanation = update["explanation"]
+    assert "loop back to the start" in explanation
+    assert "waypoints were synthesized" in explanation
+    assert "5.0 km out" in explanation
+
+
+def test_explanation_notes_caller_drawn_loop_waypoints(tmp_path):
+    node = build_export_node(export_dir=tmp_path)
+
+    update = node(
+        {
+            "selected_candidate": selected_candidate(),
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+            "loop_plan": None,
+        }
+    )
+
+    assert "waypoints you supplied" in update["explanation"]
+
+
+def test_non_loop_explanation_carries_no_loop_language(tmp_path):
+    node = build_export_node(export_dir=tmp_path)
+
+    update = node({"selected_candidate": selected_candidate(), "constraints": {}})
+
+    assert "loop" not in update["explanation"].lower()

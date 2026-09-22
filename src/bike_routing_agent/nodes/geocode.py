@@ -103,6 +103,12 @@ def build_geocode_node(
         if errors:
             return {"status": "provider_failure", "errors": errors}
 
+        # Loop contract (issue #5): no destination is a request to come back
+        # to the resolved origin, not a place to geocode -- snapping here
+        # means clarification and provenance speak about one origin only.
+        if dest_coord is None and state.get("constraints", {}).get("return_to_origin"):
+            dest_coord = origin_coord
+
         return {
             "status": "in_progress",
             "resolved_origin": origin_coord,

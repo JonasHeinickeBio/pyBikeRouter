@@ -35,7 +35,7 @@ FastAPI with `422` and never reaches the workflow.
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `origin` | non-empty string **or** `Coordinate` | yes | A string is geocoded; a coordinate is used directly. |
-| `destination` | non-empty string **or** `Coordinate` | yes | Same. |
+| `destination` | non-empty string **or** `Coordinate` | yes* | Same. Omit for loop requests -- see `return_to_origin` below. |
 | `via` | list, max 10 | no | Same shape as `origin`. |
 | `constraints` | `RouteConstraints` | no | Defaults apply when omitted. |
 
@@ -51,7 +51,17 @@ defaults:
 | `prefer_surfaces` / `avoid_surfaces` | `[]` | a surface may not appear in both |
 | `avoid_high_traffic_roads` | `true` | |
 | `avoid_ferries` | `true` | |
-| `return_to_origin` | `false` | accepted, not yet acted on (see [roadmap.md](roadmap.md)) |
+| `return_to_origin` | `false` | loop request: `destination` must be omitted and `target_distance_km` is required. |
+| `loop_direction` | `"clockwise"` | one of `clockwise`, `counterclockwise`; only meaningful with `return_to_origin`. |
+
+### Loop requests
+
+Setting `return_to_origin: true` makes a single-origin request: no
+`destination`, a required `target_distance_km` to size the circuit. The
+agent synthesizes two way-points around the origin (`loop_direction` picks
+the handedness) and routes back to the start; the response explains the
+plan and reports the synthesized geometry. Supplying `via` alongside a loop
+is honored verbatim instead of resynthesized.
 
 ### Response
 

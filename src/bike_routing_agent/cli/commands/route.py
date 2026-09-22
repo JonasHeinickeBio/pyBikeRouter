@@ -20,7 +20,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
 
     plan = route_sub.add_parser("plan", help="plan a route between two places")
     plan.add_argument("--origin", required=True, help="place text, or 'lat,lon'")
-    plan.add_argument("--destination", required=True, help="place text, or 'lat,lon'")
+    plan.add_argument(
+        "--destination",
+        default=None,
+        help="place text, or 'lat,lon' (omit with --loop: a loop ends where it starts)",
+    )
     plan.add_argument(
         "--via",
         action="append",
@@ -56,7 +60,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     ferries = plan.add_mutually_exclusive_group()
     ferries.add_argument("--avoid-ferries", dest="avoid_ferries", action="store_true", default=True)
     ferries.add_argument("--allow-ferries", dest="avoid_ferries", action="store_false")
-    plan.add_argument("--loop", action="store_true", help="return to the origin")
+    plan.add_argument(
+        "--loop",
+        action="store_true",
+        help="round trip back to the origin; omit --destination and set --target-distance-km",
+    )
+    plan.add_argument(
+        "--loop-direction",
+        choices=("clockwise", "counterclockwise"),
+        default="clockwise",
+        help="sweep direction for a loop whose shape is not drawn with --via (default: clockwise)",
+    )
     plan.add_argument(
         "--output",
         type=Path,
@@ -83,10 +97,21 @@ def _csv(text: str) -> list[str]:
     return [s.strip() for s in text.split(",") if s.strip()]
 
 
+def _loop_usage_error(args: argparse.Namespace) -> str | None:
+    """Loop contract as CLI usage messages (issue #5); the API enforces the
+    same rules through the request model."""
+    if args.loop and args.destination:
+        return "--loop takes no --destination: a loop starts and ends at --origin"
+    if args.loop and args.target_distance_km is None:
+        return "--loop requires --target-distance-km (loop size is not invented silently)"
+    if not args.loop and not args.destination:
+        return "--destination is required unless --loop is set"
+    return None
+
+
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
-    return {
+    request: dict[str, Any] = {
         "origin": _place(args.origin),
-        "destination": _place(args.destination),
         "via": [_place(v) for v in args.via],
         "constraints": {
             "bike_type": args.bike_type,
@@ -98,8 +123,12 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
             "avoid_high_traffic_roads": args.avoid_high_traffic_roads,
             "avoid_ferries": args.avoid_ferries,
             "return_to_origin": args.loop,
+            "loop_direction": args.loop_direction,
         },
     }
+    if args.destination:
+        request["destination"] = _place(args.destination)
+    return request
 
 
 def _default_graph_factory() -> Any:
@@ -118,6 +147,11 @@ def run(
 ) -> int:
     if args.command != "plan":
         print("unknown route command", file=stderr)
+        return 2
+
+    usage_error = _loop_usage_error(args)
+    if usage_error is not None:
+        print(f"invalid request: {usage_error}", file=stderr)
         return 2
 
     request = build_request(args)

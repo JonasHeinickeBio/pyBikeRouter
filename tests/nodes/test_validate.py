@@ -50,3 +50,29 @@ def test_valid_state_proceeds_in_progress():
     )
 
     assert update == {"status": "in_progress"}
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+def test_loop_request_proceeds_without_a_destination():
+    update = validate_request(
+        {
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+            "origin_input": {"query": "A"},
+            "destination_input": None,
+        }
+    )
+
+    assert update == {"status": "in_progress"}
+
+
+def test_loop_without_target_distance_is_invalid_before_any_io():
+    update = validate_request(
+        {"constraints": {"return_to_origin": True}, "origin_input": {"query": "A"}}
+    )
+
+    assert update["status"] == "invalid"
+    error = update["errors"][0]
+    assert error["code"] == "invalid_constraints"
+    assert "target_distance_km" in error["message"]

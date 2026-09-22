@@ -42,9 +42,11 @@ decisions still open.
   policy); what remains is a surface component in the score with weights
   justified by calibration evidence from `scripts/calibrate.py`, not
   chosen arbitrarily.
-- **`return_to_origin`** -- accepted in `RouteConstraints`, not yet acted
-  on. Natural implementation: a loop request (destination snapped back to
-  origin) or a route-to-route composition, engine-dependent.
+- **`return_to_origin`** -- done: loop requests synthesize two way-points
+  around the origin and route back to the start (`loop_direction` picks
+  handedness; caller-supplied `via` is honored verbatim). Provider-native
+  round trips were rejected: only ORS has one and it is standalone-only,
+  so way-points keep the routing engines symmetric.
 
 ## LLM integration
 
