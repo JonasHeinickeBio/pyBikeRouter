@@ -17,6 +17,7 @@ import respx
 from bike_routing_agent.enrichment.overpass import (
     USER_AGENT,
     OverpassEnricher,
+    _parse_ways,
     build_overpass_query,
 )
 from bike_routing_agent.errors import (
@@ -107,6 +108,12 @@ async def test_surface_profile_from_fixture(overpass_surface_response: dict) -> 
         "track": pytest.approx(2 / 8),
         "path": pytest.approx(3 / 8),
     }
+    # Access visibility rides along even on the surface-conflicted path way
+    # (fixture's mixed-case "Private" normalises to lower case).
+    assert summary.access_fractions == {
+        "destination": pytest.approx(3 / 8),
+        "private": pytest.approx(3 / 8),
+    }
     # ~678 m of route (8 segments of 0.00125 deg lon at lat 52.5).
     assert summary.total_m == pytest.approx(678.2, abs=1.0)
 
@@ -123,6 +130,35 @@ async def test_surface_profile_posts_form_encoded_query() -> None:
     form = parse_qs(request.content.decode())
     (query,) = form["data"]
     assert query.startswith("[out:json][timeout:20];way(around:25.0,")
+
+
+def test_out_of_range_geometry_point_skips_only_its_way() -> None:
+    # Coordinate validates |lat|<=90 / |lon|<=180; one poisoned point must
+    # drop its way, never abort parsing of the whole corridor.
+    payload = {
+        "elements": [
+            {
+                "type": "way",
+                "id": 1,
+                "tags": {"highway": "residential"},
+                "geometry": [{"lat": 52.5, "lon": 13.4}, {"lat": 999.0, "lon": 13.5}],
+            },
+            {
+                "type": "way",
+                "id": 2,
+                "tags": {"highway": "cycleway"},
+                "geometry": [{"lat": 52.5, "lon": 13.6}, [52.5, 181.0]],
+            },
+            {
+                "type": "way",
+                "id": 3,
+                "tags": {"highway": "path"},
+                "geometry": [{"lat": 52.5, "lon": 13.4}, {"lat": 52.6, "lon": 13.5}],
+            },
+        ]
+    }
+    ways = _parse_ways(payload, provider="overpass")
+    assert [w.way_id for w in ways] == [3]
 
 
 @respx.mock

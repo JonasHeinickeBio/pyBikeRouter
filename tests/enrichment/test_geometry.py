@@ -117,9 +117,12 @@ def test_match_segments_to_ways_rejects_far_ways() -> None:
     assert match_segments_to_ways(segments, [far_away], tolerance_m=50.0) == [None]
 
 
-def test_match_segments_to_ways_bbox_prefilter_skips_distant_ways() -> None:
-    # A way a full degree east is far outside both the tolerance and the
-    # grown bbox; correctness of the prefilter means it can never win.
+def test_match_segments_to_ways_prefilter_margin_follows_tolerance() -> None:
+    # A way a full degree east (~67 km at this latitude) is far outside a
+    # metre-scale tolerance and must be rejected. But when the tolerance
+    # genuinely covers the distance, the bbox prefilter must not veto the
+    # way -- the prefilter margin has to scale with the tolerance, which is
+    # what the old fixed degree margin got wrong.
     route = [Coordinate(lon=13.4, lat=LAT), Coordinate(lon=13.401, lat=LAT)]
     segments = route_segments(route)
     far_east = ObservedWay(
@@ -127,4 +130,6 @@ def test_match_segments_to_ways_bbox_prefilter_skips_distant_ways() -> None:
         tags={},
         points=[Coordinate(lon=14.4, lat=LAT), Coordinate(lon=14.401, lat=LAT)],
     )
-    assert match_segments_to_ways(segments, [far_east], tolerance_m=1e9) == [None]
+    assert match_segments_to_ways(segments, [far_east], tolerance_m=50.0) == [None]
+    matches = match_segments_to_ways(segments, [far_east], tolerance_m=100_000.0)
+    assert [m.way_id if m else None for m in matches] == [13]

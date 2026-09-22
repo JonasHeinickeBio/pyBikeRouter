@@ -22,6 +22,10 @@ Rules, in order of evidence strength:
 Values outside the taxonomy (``surface=trail``, ``surface=unpaved``,
 missing tags entirely) are unknown -- unknown stays unknown. The
 taxonomy itself lives in ``config.py`` with the other data vocabularies.
+
+The ``access`` tag is carried through verbatim (normalised) and reported
+in ``SurfaceSummary.access_fractions``; it never influences the surface
+category, keeping access visibility separate from surface semantics.
 """
 
 from __future__ import annotations
@@ -53,13 +57,15 @@ class WayClass:
     ``category`` is a taxonomy category or ``None`` (unknown/conflict);
     ``source`` records the evidence strength (``explicit`` from a
     ``surface`` tag, ``inferred`` from fallback tags, ``None`` when no
-    usable evidence exists).
+    usable evidence exists). ``access`` is the normalised ``access`` tag
+    value or ``None`` -- visibility only, never surface evidence.
     """
 
     category: str | None
     source: str | None
     conflict: bool
     highway: str | None
+    access: str | None = None
 
 
 def normalize_tag_value(value: str) -> str:
@@ -86,6 +92,8 @@ def _tag_str(tags: dict, key: str) -> str | None:
 def classify_way(tags: dict) -> WayClass:
     """Apply the data-quality policy to one way's tag dict."""
     highway = _tag_str(tags, "highway")
+    access_tag = _tag_str(tags, "access")
+    access = normalize_tag_value(access_tag) if access_tag else None
 
     surface_tag = _tag_str(tags, "surface")
     surface_category = (
@@ -99,23 +107,41 @@ def classify_way(tags: dict) -> WayClass:
     native = _tri_state(tags.get("native"))
 
     if _has_conflict(paved=paved, native=native, surface_category=surface_category):
-        return WayClass(category=None, source=None, conflict=True, highway=highway)
+        return WayClass(
+            category=None, source=None, conflict=True, highway=highway, access=access
+        )
 
     if surface_category is not None:
         return WayClass(
-            category=surface_category, source=EXPLICIT, conflict=False, highway=highway
+            category=surface_category,
+            source=EXPLICIT,
+            conflict=False,
+            highway=highway,
+            access=access,
         )
     if tracktype_category is not None:
         return WayClass(
-            category=tracktype_category, source=INFERRED, conflict=False, highway=highway
+            category=tracktype_category,
+            source=INFERRED,
+            conflict=False,
+            highway=highway,
+            access=access,
         )
     if paved is True:
-        return WayClass(category="paved", source=INFERRED, conflict=False, highway=highway)
+        return WayClass(
+            category="paved", source=INFERRED, conflict=False, highway=highway, access=access
+        )
     if native is True:
         return WayClass(
-            category="natural_soft", source=INFERRED, conflict=False, highway=highway
+            category="natural_soft",
+            source=INFERRED,
+            conflict=False,
+            highway=highway,
+            access=access,
         )
-    return WayClass(category=None, source=None, conflict=False, highway=highway)
+    return WayClass(
+        category=None, source=None, conflict=False, highway=highway, access=access
+    )
 
 
 def _has_conflict(
@@ -148,6 +174,7 @@ def build_summary(
 
     coverage_m: dict[str, float] = {}
     highway_m: dict[str, float] = {}
+    access_m: dict[str, float] = {}
     unknown_m = 0.0
     inferred_m = 0.0
     conflict_m = 0.0
@@ -158,6 +185,10 @@ def build_summary(
             continue
         if way_class.highway:
             highway_m[way_class.highway] = highway_m.get(way_class.highway, 0.0) + length
+        # Access visibility is reported for every tagged way, including
+        # surface-conflicted ones: it is independent evidence.
+        if way_class.access:
+            access_m[way_class.access] = access_m.get(way_class.access, 0.0) + length
         if way_class.conflict:
             conflict_m += length
             unknown_m += length
@@ -176,4 +207,5 @@ def build_summary(
         inferred_fraction=inferred_m / total_m,
         conflict_fraction=conflict_m / total_m,
         highway_fractions={name: meters / total_m for name, meters in sorted(highway_m.items())},
+        access_fractions={name: meters / total_m for name, meters in sorted(access_m.items())},
     )

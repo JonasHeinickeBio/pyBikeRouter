@@ -37,6 +37,9 @@ class SurfaceSummary:
       was therefore treated as unknown.
     - ``highway_fractions``: length-weighted share per ``highway`` tag value
       (road-class visibility; scoring on it is a separate follow-up).
+    - ``access_fractions``: length-weighted share per ``access`` tag value
+      (e.g. ``private``, permissive; visibility only -- access never feeds
+      the surface fractions and ways without the tag are simply absent).
 
     All fractions are relative to the route's geometric length and sum with
     ``unknown_fraction`` to 1.
@@ -48,6 +51,7 @@ class SurfaceSummary:
     inferred_fraction: float = 0.0
     conflict_fraction: float = 0.0
     highway_fractions: dict[str, float] = field(default_factory=dict)
+    access_fractions: dict[str, float] = field(default_factory=dict)
 
 
 class SurfaceEnricher(Protocol):

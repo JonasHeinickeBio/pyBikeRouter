@@ -115,29 +115,42 @@ def _bbox_contains(bbox: tuple[float, float, float, float], point: Coordinate) -
     return bbox[0] <= point.lon <= bbox[1] and bbox[2] <= point.lat <= bbox[3]
 
 
+def _grown_bbox(way: ObservedWay, tolerance_m: float) -> tuple[float, float, float, float]:
+    """The way's bbox grown by exactly ``tolerance_m``, in degrees.
+
+    Conservative by construction: any point within ``tolerance_m`` (local
+    plane) of the way lies inside. Degrees-of-latitude scale uniformly, but
+    a degree of longitude shrinks with |latitude|, so the longitude margin
+    uses the largest |latitude| the grown bbox can reach -- the smallest
+    metres-per-degree, hence the widest margin.
+    """
+    min_lon, max_lon, min_lat, max_lat = _way_bbox(way)
+    lat_margin = tolerance_m / METERS_PER_DEGREE_LAT
+    lon_ref_lat = max(abs(min_lat - lat_margin), abs(max_lat + lat_margin))
+    lon_margin = tolerance_m / _meters_per_degree_lon(lon_ref_lat)
+    return (
+        min_lon - lon_margin,
+        max_lon + lon_margin,
+        min_lat - lat_margin,
+        max_lat + lat_margin,
+    )
+
+
 def match_segments_to_ways(
     segments: Sequence[RouteSegment],
     ways: Sequence[ObservedWay],
     *,
     tolerance_m: float,
-    prefilter_margin_deg: float = 0.002,
 ) -> list[ObservedWay | None]:
     """Nearest way within ``tolerance_m`` of each segment midpoint.
 
-    Ways whose bounding box (grown by ``prefilter_margin_deg``) misses the
-    midpoint are skipped before the exact point-polyline distance is
-    computed -- the cheap stand-in for a spatial index until PostGIS takes
-    over this job.
+    Ways whose bounding box misses the midpoint are skipped before the
+    exact point-polyline distance is computed -- the cheap stand-in for a
+    spatial index until PostGIS takes over this job. The bbox growth is
+    derived from ``tolerance_m`` itself, so the prefilter can never reject
+    a way that the exact distance check would have accepted.
     """
-    bboxes = [
-        (
-            min_lon - prefilter_margin_deg,
-            max_lon + prefilter_margin_deg,
-            min_lat - prefilter_margin_deg,
-            max_lat + prefilter_margin_deg,
-        )
-        for min_lon, max_lon, min_lat, max_lat in (_way_bbox(way) for way in ways)
-    ]
+    bboxes = [_grown_bbox(way, tolerance_m) for way in ways]
 
     matches: list[ObservedWay | None] = []
     for segment in segments:

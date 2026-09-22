@@ -121,6 +121,18 @@ def test_highway_tag_is_carried_through() -> None:
     assert classify_way({"highway": 123}).highway is None  # non-string ignored
 
 
+def test_access_tag_is_carried_through_but_never_changes_surface() -> None:
+    way_class = classify_way({"access": " Private ", "surface": "asphalt"})
+    assert way_class.access == "private"  # normalised like every other tag
+    assert way_class.category == "paved"  # access is visibility, not evidence
+    assert classify_way({"surface": "asphalt"}).access is None
+    assert classify_way({"access": 123}).access is None  # non-string ignored
+    # A conflict keeps its access too -- access is independent evidence.
+    conflict = classify_way({"access": "noexit", "paved": "yes", "native": "yes"})
+    assert conflict.conflict is True
+    assert conflict.access == "noexit"
+
+
 def test_build_summary_weights_everything_by_length() -> None:
     paved = WayClass(category="paved", source=EXPLICIT, conflict=False, highway="residential")
     loose_inferred = WayClass(
@@ -149,6 +161,30 @@ def test_build_summary_weights_everything_by_length() -> None:
         "track": pytest.approx(0.2),
         "path": pytest.approx(0.2),
     }
+
+
+def test_build_summary_weights_access_independently_of_surface() -> None:
+    private_paved = WayClass(
+        category="paved", source=EXPLICIT, conflict=False, highway=None, access="private"
+    )
+    tagged_conflict = WayClass(
+        category=None, source=None, conflict=True, highway=None, access="noexit"
+    )
+    summary = build_summary(
+        [
+            (100.0, private_paved),
+            (100.0, tagged_conflict),  # access survives a surface conflict
+            (100.0, None),  # unmatched geometry has no access either
+            (100.0, WayClass(category=None, source=None, conflict=False, highway=None)),
+        ]
+    )
+    assert summary.access_fractions == {
+        "private": pytest.approx(0.25),
+        "noexit": pytest.approx(0.25),
+    }
+    # ...while the surface fractions stay exactly as if access never existed.
+    assert summary.coverage == {"paved": pytest.approx(0.25)}
+    assert summary.unknown_fraction == pytest.approx(0.75)
 
 
 def test_build_summary_fractions_sum_to_one() -> None:

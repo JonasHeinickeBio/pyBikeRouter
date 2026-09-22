@@ -141,6 +141,7 @@ def _apply_summary(
             "inferred_fraction": summary.inferred_fraction,
             "conflict_fraction": summary.conflict_fraction,
             "highway_fractions": summary.highway_fractions,
+            "access_fractions": summary.access_fractions,
         }
     updated = validated.model_copy(
         update={

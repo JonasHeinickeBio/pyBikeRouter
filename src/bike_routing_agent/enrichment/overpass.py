@@ -20,7 +20,7 @@ Overpass quirks absorbed here:
   the ``around`` clause is fed a decimated copy (``_MAX_QUERY_POINTS``)
   because query cost grows with the coordinate count.
 - Public instances rate limit aggressively; responses are cached under a
-  hash of the decimated shape so retries of the same route are free.
+  hash of the full route shape so retries of the same route are free.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ import math
 from collections.abc import Sequence
 
 import httpx
+from pydantic import ValidationError
 
 from bike_routing_agent.enrichment.base import SurfaceEnricher, SurfaceSummary
 from bike_routing_agent.enrichment.geometry import (
@@ -101,8 +102,11 @@ class OverpassEnricher(SurfaceEnricher):
                 provider=self.name,
             )
 
+        # Key on the full route shape, not the decimated query shape: two
+        # different routes can decimate to the same points while their
+        # segment matching (the actual summary input) still differs.
+        cache_key = self._build_cache_key(route_points)
         query_points = _decimate(route_points, _MAX_QUERY_POINTS)
-        cache_key = self._build_cache_key(query_points)
         if self._cache is not None:
             cached = await self._cache.get(cache_key)
             if isinstance(cached, SurfaceSummary):
@@ -143,10 +147,10 @@ class OverpassEnricher(SurfaceEnricher):
             await self._cache.set(cache_key, summary, ttl_s=self._cache_ttl_s)
         return summary
 
-    def _build_cache_key(self, query_points: Sequence[Coordinate]) -> str:
+    def _build_cache_key(self, route_points: Sequence[Coordinate]) -> str:
         digest = hashlib.sha256()
         digest.update(f"buffer={self._buffer_m:.1f};".encode())
-        for point in query_points:
+        for point in route_points:
             digest.update(
                 f"{round(point.lat, _COORD_PRECISION)},"
                 f"{round(point.lon, _COORD_PRECISION)};".encode()
@@ -323,7 +327,11 @@ def _parse_way(element: object) -> ObservedWay | None:
 
 
 def _parse_geometry_point(item: object) -> Coordinate | None:
-    """One ``out geom`` point: ``{"lat": .., "lon": ..}`` (lat-first)."""
+    """One ``out geom`` point: ``{"lat": .., "lon": ..}`` (lat-first).
+
+    Out-of-range coordinates are possible in corrupted extracts and mirror
+    the numeric-type checks: the way is skipped, not the whole corridor.
+    """
     if isinstance(item, dict):
         lat = item.get("lat")
         lon = item.get("lon")
@@ -333,7 +341,7 @@ def _parse_geometry_point(item: object) -> Coordinate | None:
             and isinstance(lon, (int, float))
             and not isinstance(lon, bool)
         ):
-            return Coordinate(lon=float(lon), lat=float(lat))
+            return _coordinate_or_none(lon, lat)
         return None
     # Lenient fallback for [lat, lon] array forms some gateways emit.
     if (
@@ -342,5 +350,13 @@ def _parse_geometry_point(item: object) -> Coordinate | None:
         and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in item)
     ):
         lat, lon = item
-        return Coordinate(lon=float(lon), lat=float(lat))
+        return _coordinate_or_none(lon, lat)
     return None
+
+
+def _coordinate_or_none(lon: float, lat: float) -> Coordinate | None:
+    """Build a ``Coordinate``, or ``None`` if the model rejects the values."""
+    try:
+        return Coordinate(lon=float(lon), lat=float(lat))
+    except ValidationError:
+        return None

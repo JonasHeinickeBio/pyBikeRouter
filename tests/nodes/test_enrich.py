@@ -25,6 +25,7 @@ SUMMARY = SurfaceSummary(
     inferred_fraction=0.25,
     conflict_fraction=0.0,
     highway_fractions={"residential": 0.75},
+    access_fractions={"private": 0.25},
 )
 
 
@@ -89,6 +90,7 @@ async def test_success_writes_coverage_and_provenance() -> None:
         "inferred_fraction": 0.25,
         "conflict_fraction": 0.0,
         "highway_fractions": {"residential": 0.75},
+        "access_fractions": {"private": 0.25},
     }
     # Nothing else about the candidate changed.
     assert updated.provider == "fake"
