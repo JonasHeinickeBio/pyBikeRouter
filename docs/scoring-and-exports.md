@@ -27,11 +27,13 @@ without changing the node ([roadmap.md](roadmap.md)).
 ### What is deliberately *not* scored
 
 Surface preferences (`prefer_surfaces`/`avoid_surfaces`) are accepted and
-validated but do not influence the score yet -- ORS's GeoJSON response does
-not carry per-segment surface coverage in the shape the model anticipates
-(`metrics.surface_coverage` stays empty, `unknown_surface_fraction` stays
-`None`). Scoring on absent data would be arbitrary; this is tracked in
-[roadmap.md](roadmap.md).
+validated but do not influence the score yet. Routing engines do not
+return surface data; the OSM enricher ([enrichment.md](enrichment.md),
+issue #3) can populate `metrics.surface_coverage`/
+`unknown_surface_fraction`, but scoring on that evidence needs weights
+justified by measured evidence -- see the calibration harness below -- so
+it stays unscored until that evidence exists (tracked in
+[roadmap.md](roadmap.md)).
 
 ### Uncertainty notes
 
@@ -44,6 +46,43 @@ not carry per-segment surface coverage in the shape the model anticipates
 
 Missing data is represented as uncertainty, never treated as favorable or
 penalized as if it were known.
+
+## Score calibration (issue #4)
+
+The weights above (`0.65/0.35`) are a reasonable prior, not a calibrated
+value. `calibration.py` plus `benchmarks/core-v1.json` are the measuring
+instrument for revisiting them -- the *measurement*, not an automatic
+retuner: production weights change only as a deliberate, evidenced
+decision informed by a calibration report.
+
+The benchmark is a small, locally curated set of OD pairs (Braunschweig/
+Harz region) whose expectations a rider familiar with the corridor judges
+by hand. Each case pins a request plus **plausibility envelopes** -- what
+any believable good route through that corridor must look like (distance
+band, ascent band, surface profile bounds) -- with a written rationale.
+They are deliberately wide envelopes, not golden geometries; the
+`harz-climb` case is an inverse judgement (a candidate reporting <250 m
+ascent there flags broken elevation data rather than earning a bonus).
+
+Two policies from enrichment carry over into evaluation:
+
+- **unknown is never a failure** -- a check whose data is missing
+  (`ascent_m=None`, empty `surface_coverage`, no `unknown_surface_fraction`)
+  is reported as *skipped*. A disabled enricher surfaces untested
+  judgements; it does not lose the run;
+- **judgements constrain, they do not reward** -- expectations bound what
+  a good route looks like; passing all of them is plausibility, not
+  optimality.
+
+`scripts/calibrate.py` runs every case through all engines
+(`routing_provider="all"`, plus enrichment when enabled) and reports, per
+case: pass/fail/skip per judgement, the ranking under production weights,
+and the ranking under a weight grid (`0.65/0.35`, `0.5/0.5`, `0.8/0.2`,
+`0.35/0.65`). A ranking that flips inside that grid is *weight-sensitive*
+-- the response is more benchmark cases and scrutiny, not a retuned
+constant. `tests/live/test_live_calibration.py` re-checks the envelopes
+against live engines; the offline suite validates the schema and evaluation
+semantics with synthetic candidates.
 
 ## Explanation policy
 
