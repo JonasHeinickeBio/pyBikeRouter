@@ -10,7 +10,8 @@ Documentation for the bike-routing-agent service.
 | [providers.md](providers.md) | Provider protocols, the full openrouteservice client, ORS routing adapter, geocoders, BRouter/Valhalla adapters |
 | [providers-comparison.md](providers-comparison.md) | Real-world ORS vs BRouter measurement, findings, options for running both |
 | [geocoding.md](geocoding.md) | Nominatim vs Pelias backends, confidence semantics, clarification policy, caching |
-| [scoring-and-exports.md](scoring-and-exports.md) | Deterministic scoring, uncertainty notes, explanation policy, GeoJSON/GPX export |
+| [enrichment.md](enrichment.md) | OSM surface enrichment, Overpass prototype, unknown-is-unknown data-quality policy |
+| [scoring-and-exports.md](scoring-and-exports.md) | Deterministic scoring, score calibration benchmark, uncertainty notes, explanation policy, GeoJSON/GPX export |
 | [testing.md](testing.md) | Test layout, mocks vs live tests, CI gates |
 | [roadmap.md](roadmap.md) | Deliberate milestone boundaries and planned follow-up work |
 

@@ -24,13 +24,24 @@ decisions still open.
 
 ## Scoring and map-metadata quality
 
+- **OSM surface enrichment** -- done (issue #3): `SurfaceEnricher`
+  protocol, Overpass prototype, the unknown-is-unknown data-quality
+  policy, and the `enrich_candidates` graph node
+  ([enrichment.md](enrichment.md)). Open follow-ups: production-scale
+  PostGIS enrichment (issue #7) and a compose profile that serves it.
+- **Score calibration** -- done (issue #4): curated benchmark set
+  (`benchmarks/core-v1.json`), evaluation harness and weight-sensitivity
+  report (`calibration.py`, `scripts/calibrate.py`, live tests). The
+  0.65/0.35 weights stay as an evidence-free prior until a calibration
+  run justifies a change. Open follow-ups: more cases (different regions,
+  bike types), and surface-profile cases once enrichment is enabled by
+  default.
 - **Surface/traffic scoring** -- `prefer_surfaces`/`avoid_surfaces` are
-  validated but unscored; `metrics.surface_coverage`/
-  `unknown_surface_fraction` are not populated by the ORS adapter yet.
-  Needs an enrichment source (e.g. ORS `extra_info` for trail difficulty /
-  surface, or per-segment OSM lookups) **and** an explicit data-quality
-  policy for how unknowns influence the score (unknown must stay unknown,
-  not silently favorable).
+  still validated but unscored. The data question is answered (issue #3
+  populates `surface_coverage` under an explicit unknown-is-unknown
+  policy); what remains is a surface component in the score with weights
+  justified by calibration evidence from `scripts/calibrate.py`, not
+  chosen arbitrarily.
 - **`return_to_origin`** -- accepted in `RouteConstraints`, not yet acted
   on. Natural implementation: a loop request (destination snapped back to
   origin) or a route-to-route composition, engine-dependent.

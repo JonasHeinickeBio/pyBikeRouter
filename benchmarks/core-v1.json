@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "region": "Braunschweig / Bad Harzburg, Lower Saxony (the repo's home region)",
+  "judged_by": "manual curation from local route knowledge, 2026-09 (issue #4)",
+  "notes": [
+    "Coordinates are [lon, lat]-order landmarks shared with scripts/compare_backends.py and the live tests.",
+    "Expectations encode what a rider familiar with each corridor judges a good engine route to look like;",
+    "they are plausibility envelopes, not golden geometries. Missing data never fails a check -- it is",
+    "reported as skipped (unknown must stay unknown, see docs/enrichment.md and docs/scoring-and-exports.md)."
+  ],
+  "cases": [
+    {
+      "id": "bs-city-hop",
+      "title": "Braunschweig Hbf -> Bürgerpark (city hop)",
+      "request": {
+        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
+        "destination": { "lon": 10.541, "lat": 52.2735 },
+        "constraints": { "bike_type": "city", "max_ascent_m": 60 }
+      },
+      "expectations": {
+        "distance_m": { "min": 1200, "max": 4000 },
+        "ascent_m": { "min": 0, "max": 80 },
+        "max_unknown_surface_fraction": 0.5,
+        "surface": {
+          "min_known_share": 0.5,
+          "min_combined": { "categories": ["paved", "compacted"], "share": 0.5 },
+          "max_by_category": { "natural_soft": 0.4 }
+        }
+      },
+      "rationale": "Straight line is ~1.0 km through a dense, well-tagged city grid; a good city route is a short street-level hop, almost entirely hard-surfaced, with only marginal ascent."
+    },
+    {
+      "id": "bs-oldtown-cobble",
+      "title": "Braunschweig Hbf -> Burg Dankwarderode / Domplatz (historic centre)",
+      "request": {
+        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
+        "destination": { "lon": 10.5275, "lat": 52.2634 },
+        "constraints": { "bike_type": "city" }
+      },
+      "expectations": {
+        "distance_m": { "min": 600, "max": 2500 },
+        "ascent_m": { "min": 0, "max": 60 },
+        "max_unknown_surface_fraction": 0.5,
+        "surface": {
+          "min_known_share": 0.5,
+          "min_by_category": { "masonry": 0.03 },
+          "min_combined": { "categories": ["paved", "masonry"], "share": 0.7 }
+        }
+      },
+      "rationale": "The castle-square area around the Burg and Dom is famously cobbled; a route whose surface profile has zero masonry here indicates missing enrichment data or a bad match, not a genuinely smooth approach. Overall the old town remains hard-surfaced (paved + masonry dominate)."
+    },
+    {
+      "id": "bs-wf-tour",
+      "title": "Braunschweig Hbf -> Schloss Wolfenbüttel (flat valley tour)",
+      "request": {
+        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
+        "destination": { "lon": 10.5361, "lat": 52.1688 },
+        "constraints": { "bike_type": "touring" }
+      },
+      "expectations": {
+        "distance_m": { "min": 11500, "max": 20000 },
+        "ascent_m": { "min": 0, "max": 250 },
+        "max_unknown_surface_fraction": 0.6,
+        "surface": {
+          "min_known_share": 0.4,
+          "min_combined": { "categories": ["paved", "compacted"], "share": 0.5 }
+        }
+      },
+      "rationale": "~11.2 km straight line down the Oker valley; real routes run 12-18 km along valley paths and quiet roads. The valley is gentle: a credible touring route does not accumulate hundreds of metres of climbing."
+    },
+    {
+      "id": "harz-climb",
+      "title": "Bad Harzburg Bhf -> Braunlage Marktplatz (Harz plateau climb)",
+      "request": {
+        "origin": { "lon": 10.5555, "lat": 51.8883 },
+        "destination": { "lon": 10.5816, "lat": 51.7269 },
+        "constraints": { "bike_type": "touring", "max_ascent_m": 800 }
+      },
+      "expectations": {
+        "distance_m": { "min": 18000, "max": 34000 },
+        "ascent_m": { "min": 250, "max": 1200 },
+        "max_unknown_surface_fraction": 0.7
+      },
+      "rationale": "The inverse case: ~18 km straight line but the towns sit at very different elevations, so every credible route climbs onto the Harz plateau. A candidate reporting less than ~250 m ascent here has broken or missing elevation data -- flagged, not silently rewarded (ascent is an expectation, never a bonus)."
+    },
+    {
+      "id": "bs-okerradweg",
+      "title": "Braunschweig Hbf -> Riddagshausen Klosterkirche (Oker path leisure ride)",
+      "request": {
+        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
+        "destination": { "lon": 10.5863, "lat": 52.2436 },
+        "constraints": { "bike_type": "gravel" }
+      },
+      "expectations": {
+        "distance_m": { "min": 5500, "max": 12000 },
+        "ascent_m": { "min": 0, "max": 120 },
+        "max_unknown_surface_fraction": 0.6,
+        "surface": {
+          "min_known_share": 0.4,
+          "min_combined": { "categories": ["compacted", "natural_soft", "loose"], "share": 0.15 },
+          "max_by_category": { "masonry": 0.3 }
+        }
+      },
+      "rationale": "~5.0 km straight line; the natural ride follows the Oker river paths southeast through the Riddagshausen nature reserve, so some unpaved share (compacted/soft/loose) is a hallmark of the expected route, and masonry should stay marginal."
+    }
+  ]
+}
