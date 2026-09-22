@@ -194,3 +194,39 @@ async def test_parametrized_ambiguity_gap_is_always_ambiguous(gap: float):
     )
 
     assert update["status"] == "awaiting_clarification"
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+async def test_loop_request_snaps_the_destination_onto_the_resolved_origin():
+    geocoder = RecordingGeocoder({"A": [cand("A", 1.0, 2.0, 0.9)]})
+    node = build_geocode_node(geocode_provider=geocoder)
+
+    update = await node(
+        {
+            "origin_input": {"query": "A"},
+            "destination_input": None,
+            "via_inputs": [],
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+        }
+    )
+
+    assert update["status"] == "in_progress"
+    assert update["resolved_destination"] == {"lon": 1.0, "lat": 2.0}
+    # The snapped destination must never trigger a second geocoding call.
+    assert geocoder.calls == ["A"]
+
+
+async def test_non_loop_request_does_not_snap_anything_onto_the_origin():
+    # A destination-less non-loop request is caught upstream by validate;
+    # geocode itself stays neutral and must not invent an origin-snapped stop.
+    geocoder = RecordingGeocoder({"A": [cand("A", 1.0, 2.0, 0.9)]})
+    node = build_geocode_node(geocode_provider=geocoder)
+
+    update = await node(
+        {"origin_input": {"query": "A"}, "destination_input": None, "via_inputs": []}
+    )
+
+    assert update["status"] == "in_progress"
+    assert update["resolved_destination"] is None

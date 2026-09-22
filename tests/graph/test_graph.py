@@ -308,3 +308,80 @@ async def test_graph_without_enricher_leaves_candidates_untouched(tmp_path: Path
     assert result["status"] == "ready"
     assert "surface_enrichment" not in result["selected_candidate"]["provenance"]
     assert result["selected_candidate"]["metrics"]["surface_coverage"] == {}
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+class CapturingFakeRouter(FakeRouter):
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.requests = []
+
+    async def route(self, request):
+        self.requests.append(request)
+        return await super().route(request)
+
+
+async def test_loop_completes_end_to_end_with_synthesized_waypoints(tmp_path: Path):
+    braunschweig = unambiguous("Braunschweig", 10.5267, 52.2689)
+    geocoder = FakeGeocoder(by_query={"Braunschweig": braunschweig})
+    router = CapturingFakeRouter(candidate=sample_candidate())
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
+
+    result = await graph.ainvoke(
+        {
+            "raw_input": {
+                "origin": "Braunschweig",
+                "constraints": {"return_to_origin": True, "target_distance_km": 15},
+            }
+        }
+    )
+
+    assert result["status"] == "ready"
+    assert result["resolved_destination"] == result["resolved_origin"]
+    request = router.requests[0]
+    assert request.destination == request.origin
+    assert len(request.via) == 2
+    assert result["loop_plan"]["direction"] == "clockwise"
+    assert "loop back to the start" in result["explanation"]
+
+
+async def test_loop_with_caller_vias_is_routed_through_exactly_those_points(tmp_path: Path):
+    geocoder = FakeGeocoder(
+        by_query={
+            "Braunschweig": unambiguous("Braunschweig", 10.5267, 52.2689),
+            "Wolfenbuettel": unambiguous("Wolfenbuettel", 10.5450, 52.2201),
+        }
+    )
+    router = CapturingFakeRouter(candidate=sample_candidate())
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
+
+    result = await graph.ainvoke(
+        {
+            "raw_input": {
+                "origin": "Braunschweig",
+                "via": ["Wolfenbuettel"],
+                "constraints": {"return_to_origin": True, "target_distance_km": 15},
+            }
+        }
+    )
+
+    assert result["status"] == "ready"
+    assert len(router.requests[0].via) == 1
+    assert result["loop_plan"] is None
+    assert "waypoints you supplied" in result["explanation"]
+
+
+async def test_loop_without_target_distance_is_invalid_without_any_io(tmp_path: Path):
+    geocoder = FakeGeocoder()
+    router = CapturingFakeRouter(candidate=sample_candidate())
+    graph = build_graph(geocode_provider=geocoder, routing_providers=[router], export_dir=tmp_path)
+
+    result = await graph.ainvoke(
+        {"raw_input": {"origin": "Braunschweig", "constraints": {"return_to_origin": True}}}
+    )
+
+    assert result["status"] == "invalid"
+    assert geocoder.calls == []
+    assert router.calls == 0

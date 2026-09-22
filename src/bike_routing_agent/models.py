@@ -10,6 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 MAX_VIA_POINTS = 10
 PlaceString = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
 
+# Sweep direction of a synthesized loop around its origin (issue #5); the
+# geometry lives in loops.py, this is just the shared vocabulary.
+LoopDirection = Literal["clockwise", "counterclockwise"]
+
 
 class BikeType(StrEnum):
     ROAD = "road"
@@ -39,6 +43,7 @@ class RouteConstraints(BaseModel):
     avoid_high_traffic_roads: bool = True
     avoid_ferries: bool = True
     return_to_origin: bool = False
+    loop_direction: LoopDirection = "clockwise"
 
     @model_validator(mode="after")
     def _check_distance_consistency(self) -> RouteConstraints:
@@ -54,6 +59,11 @@ class RouteConstraints(BaseModel):
         overlap = set(self.prefer_surfaces) & set(self.avoid_surfaces)
         if overlap:
             raise ValueError(f"surfaces listed in both prefer and avoid: {sorted(overlap)}")
+        if self.return_to_origin and self.target_distance_km is None:
+            raise ValueError(
+                "return_to_origin requires target_distance_km to size the loop "
+                "(there is no silently invented loop length)"
+            )
         return self
 
 
@@ -111,9 +121,22 @@ class RoutePlanAPIRequest(BaseModel):
     """Top-level request body for POST /v1/route/plan."""
 
     origin: PlaceString | Coordinate
-    destination: PlaceString | Coordinate
+    destination: PlaceString | Coordinate | None = None
     via: list[PlaceString | Coordinate] = Field(default_factory=list, max_length=MAX_VIA_POINTS)
     constraints: RouteConstraints = Field(default_factory=RouteConstraints)
+
+    @model_validator(mode="after")
+    def _check_loop_contract(self) -> RoutePlanAPIRequest:
+        """A loop is a single-origin request (issue #5)."""
+        if self.constraints.return_to_origin:
+            if self.destination is not None:
+                raise ValueError(
+                    "destination must be omitted when return_to_origin is set "
+                    "(a loop starts and ends at the origin)"
+                )
+        elif self.destination is None:
+            raise ValueError("destination is required unless return_to_origin is set")
+        return self
 
 
 PlanStatus = Literal[

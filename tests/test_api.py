@@ -55,7 +55,9 @@ async def test_frontend_static_assets_are_served(client):
 async def test_plan_route_missing_field_rejected_before_graph_runs(client):
     response = await client.post("/v1/route/plan", json={"origin": "Berlin"})
     assert response.status_code == 422
-    assert response.json()["detail"][0]["loc"] == ["body", "destination"]
+    # The destination requirement is a model-level contract now (issue #5),
+    # so the error speaks about the whole body, not one field.
+    assert any("destination is required" in err["msg"] for err in response.json()["detail"])
 
 
 async def test_plan_route_invalid_constraints_rejected_before_graph_runs(client):
@@ -168,3 +170,52 @@ async def test_artifact_route_rejects_anything_off_the_safe_filename_pattern(cli
 async def test_artifact_route_rejects_path_traversal(client):
     response = await client.get("/v1/routes/..%2F..%2F..%2Fetc%2Fpasswd.geojson")
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+async def test_loop_with_destination_is_rejected(client):
+    response = await client.post(
+        "/v1/route/plan",
+        json={
+            "origin": "Berlin",
+            "destination": "Potsdam",
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+        },
+    )
+    assert response.status_code == 422
+    assert any("destination must be omitted" in err["msg"] for err in response.json()["detail"])
+
+
+async def test_loop_without_target_distance_is_rejected(client):
+    response = await client.post(
+        "/v1/route/plan",
+        json={"origin": "Berlin", "constraints": {"return_to_origin": True}},
+    )
+    assert response.status_code == 422
+    assert any("target_distance_km" in err["msg"] for err in response.json()["detail"])
+
+
+@respx.mock
+async def test_plan_route_loop_ready_end_to_end(
+    client, ors_directions_response, nominatim_single_response
+):
+    respx.get(NOMINATIM_URL).mock(
+        return_value=httpx.Response(200, json=nominatim_single_response[:1])
+    )
+    respx.post(ORS_URL).mock(return_value=httpx.Response(200, json=ors_directions_response))
+
+    shutil.rmtree(_export_dir, ignore_errors=True)
+    response = await client.post(
+        "/v1/route/plan",
+        json={
+            "origin": "Braunschweig Hauptbahnhof",
+            "constraints": {"return_to_origin": True, "target_distance_km": 15},
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert "loop back to the start" in body["explanation"]

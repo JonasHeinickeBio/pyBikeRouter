@@ -128,3 +128,48 @@ def test_bike_type_accepts_string_coercion_in_request():
         origin="A", destination="B", constraints={"bike_type": "mountain"}
     )
     assert request.constraints.bike_type.value == "mountain"
+
+
+# ---------------------------------------------------------------- loops (issue #5)
+
+
+def test_route_constraints_loop_requires_target_distance():
+    with pytest.raises(ValidationError, match="requires target_distance_km"):
+        RouteConstraints(return_to_origin=True)
+
+
+def test_route_constraints_accepts_loop_with_target_distance():
+    constraints = RouteConstraints(return_to_origin=True, target_distance_km=25)
+    assert constraints.loop_direction == "clockwise"
+
+
+def test_route_constraints_rejects_unknown_loop_direction():
+    with pytest.raises(ValidationError):
+        RouteConstraints(return_to_origin=True, target_distance_km=10, loop_direction="sideways")
+
+
+def test_loop_api_request_is_single_origin_by_contract():
+    request = RoutePlanAPIRequest(
+        origin="Braunschweig",
+        constraints={"return_to_origin": True, "target_distance_km": 15},
+    )
+    assert request.destination is None
+
+
+def test_loop_api_request_rejects_a_destination():
+    with pytest.raises(ValidationError, match="destination must be omitted"):
+        RoutePlanAPIRequest(
+            origin="A",
+            destination="B",
+            constraints={"return_to_origin": True, "target_distance_km": 15},
+        )
+
+
+def test_loop_api_request_without_target_distance_is_rejected():
+    with pytest.raises(ValidationError, match="requires target_distance_km"):
+        RoutePlanAPIRequest(origin="A", constraints={"return_to_origin": True})
+
+
+def test_api_request_still_requires_destination_without_loop():
+    with pytest.raises(ValidationError, match="destination is required"):
+        RoutePlanAPIRequest(origin="A")
