@@ -432,7 +432,9 @@ async def test_plan_id_is_null_without_history(
     assert body["plan_id"] is None
 
 
-@pytest.mark.parametrize("path", ["/v1/history/plans", f"/v1/history/plans/{'a' * 32}"])
+@pytest.mark.parametrize(
+    "path", ["/v1/history/plans", "/v1/history/stats", f"/v1/history/plans/{'a' * 32}"]
+)
 async def test_history_endpoints_are_503_without_a_database(client, monkeypatch, path):
     from bike_routing_agent import api as api_module
 
@@ -520,3 +522,64 @@ async def test_artifacts_are_served_through_the_artifact_store(client, monkeypat
     assert geojson.headers["content-type"].startswith("application/geo+json")
     assert gpx.headers["content-type"].startswith("application/gpx+xml")
     assert missing.status_code == 404
+
+
+@respx.mock
+async def test_history_stats_reflect_recorded_plans(
+    client, history, ors_directions_response, nominatim_single_response
+):
+    await _plan_ready(client, nominatim_single_response, ors_directions_response)
+
+    response = await client.get("/v1/history/stats")
+
+    assert response.status_code == 200
+    stats = response.json()
+    assert stats["total_plans"] == 1
+    assert stats["by_status"] == {"ready": 1}
+    assert stats["ready_rate"] == 1.0
+    [ors] = stats["providers"]
+    assert (ors["provider"], ors["candidates"], ors["selected"], ors["win_rate"]) == (
+        "ors",
+        1,
+        1,
+        1.0,
+    )
+    assert ors["mean_score"] is not None
+    assert len(stats["daily"]) == 1 and stats["daily"][0]["total"] == 1
+
+
+async def test_history_stats_passes_filters_through(client, history):
+    seen = {}
+
+    def fake_stats(stats_filter):
+        seen["filter"] = stats_filter
+        return history.__class__().stats(stats_filter)
+
+    history.stats = fake_stats
+
+    response = await client.get(
+        "/v1/history/stats",
+        params={
+            "bike_type": "road",
+            "since": "2026-09-01T00:00:00Z",
+            "until": "2026-10-01T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    f = seen["filter"]
+    assert f.bike_type == "road"
+    assert f.since is not None and f.until is not None
+
+
+async def test_history_stats_rejects_malformed_timestamps(client, history):
+    assert (await client.get("/v1/history/stats", params={"since": "yesterday"})).status_code == 422
+
+
+async def test_dashboard_page_is_served(client):
+    page = await client.get("/dashboard.html")
+    script = await client.get("/dashboard.js")
+
+    assert page.status_code == 200
+    assert "history/stats" in script.text
+    assert "dashboard.js" in page.text

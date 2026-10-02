@@ -1,0 +1,58 @@
+/* Evaluation dashboard (issue #7). Reuses the planner's tokens and panels. */
+
+html, body.dashboard-page { height: auto; min-height: 100%; }
+
+.dashboard {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.2rem 1.1rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.dash-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.dash-header h1 { margin: 0; font-size: 1.35rem; }
+.dash-header .tagline { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.85rem; }
+.back-link { color: var(--accent); text-decoration: none; font-size: 0.9rem; white-space: nowrap; }
+.back-link:hover { text-decoration: underline; }
+
+.filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.8rem; }
+.filters label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.8rem; color: var(--muted); }
+.filters input, .filters select { font: inherit; padding: 0.3rem 0.4rem; }
+.filters button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+
+.kpis { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+.kpi .value { display: block; font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpi .label { font-size: 0.75rem; color: var(--muted); }
+
+.table-scroll { overflow-x: auto; }
+.table-scroll table { min-width: 560px; }
+
+.winbar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 70px;
+  height: 8px;
+  margin-right: 0.4rem;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.winbar > span { display: block; height: 100%; background: var(--accent); }
+
+.daily { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding-top: 0.5rem; overflow-x: auto; }
+.day { flex: 0 0 26px; display: flex; flex-direction: column; justify-content: flex-end; height: 100%; text-align: center; }
+.day .stack { display: flex; flex-direction: column-reverse; width: 100%; }
+.day .seg-ready { background: var(--accent); }
+.day .seg-other { background: #d97706; }
+.day .stamp { font-size: 0.6rem; color: var(--muted); margin-top: 0.2rem; }
+.day:focus-visible { outline: 2px solid var(--accent); }

@@ -12,6 +12,7 @@ import pytest
 from bike_routing_agent.storage.history import (
     InMemoryRouteHistory,
     PlanFilter,
+    StatsFilter,
     record_from_state,
 )
 
@@ -248,3 +249,110 @@ def test_query_pagination(history):
 def test_plan_filter_rejects_unbounded_pages():
     with pytest.raises(ValueError):
         PlanFilter(limit=10_000)
+
+
+# ---------------------------------------------------------------------------
+# Evaluation aggregates (issue #7 dashboards)
+# ---------------------------------------------------------------------------
+
+
+def engine(stats, provider):
+    [match] = [p for p in stats.providers if p.provider == provider]
+    return match
+
+
+def test_stats_on_an_empty_history(history):
+    stats = history.stats(StatsFilter())
+
+    assert stats.total_plans == 0
+    assert stats.ready_rate is None
+    assert (stats.by_status, stats.providers, stats.daily) == ({}, [], [])
+
+
+def test_stats_count_outcomes_including_failures(history):
+    seed(history)
+
+    stats = history.stats(StatsFilter())
+
+    assert stats.total_plans == 3
+    assert stats.by_status == {"ready": 2, "provider_failure": 1}
+    assert stats.ready_rate == pytest.approx(2 / 3)
+
+
+def test_stats_per_engine_win_rate_and_means(history):
+    seed(history)
+
+    stats = history.stats(StatsFilter())
+
+    assert [(p.provider, p.provider_profile) for p in stats.providers] == [
+        ("brouter", "custom_gravel-v1"),
+        ("ors", "cycling-regular"),
+        ("valhalla", "bicycle"),
+    ]
+    brouter, ors = engine(stats, "brouter"), engine(stats, "ors")
+    assert (ors.candidates, ors.selected, ors.win_rate) == (1, 1, 1.0)
+    assert (brouter.candidates, brouter.selected, brouter.win_rate) == (1, 0, 0.0)
+    assert ors.mean_score == pytest.approx(0.9)
+    assert brouter.mean_score == pytest.approx(0.8)
+    assert ors.mean_distance_m == pytest.approx(12_000.0)
+    assert ors.mean_duration_s == pytest.approx(2_400.0)
+    assert ors.mean_ascent_m == pytest.approx(80.0)
+    assert ors.mean_score_breakdown == {"distance_fit": pytest.approx(1.0)}
+
+
+def test_stats_win_rate_aggregates_across_plans_and_means_skip_nulls(history):
+    # ors wins plan 1 (0.9) but loses plan 2 to brouter; one ascent is unknown.
+    low = candidate("ors", "cycling-regular", 0.5, ascent_m=None)
+    high = candidate("brouter", "trekking", 0.7)
+    win = ready_state([candidate("ors", score=0.9)])
+    history.save(record_from_state(pid(1), win, created_at=T0))
+    history.save(
+        record_from_state(pid(2), ready_state([low, high], selected=high), created_at=T0)
+    )
+
+    ors = engine(history.stats(StatsFilter()), "ors")
+
+    assert (ors.candidates, ors.selected, ors.win_rate) == (2, 1, 0.5)
+    assert ors.mean_score == pytest.approx(0.7)
+    # Absence is not zero: only the plan that reported an ascent counts.
+    assert ors.mean_ascent_m == pytest.approx(80.0)
+
+
+def test_stats_mean_is_null_when_no_candidate_has_the_value(history):
+    unscored = candidate("ors", score=None, ascent_m=None)
+    history.save(record_from_state(pid(1), ready_state([unscored]), created_at=T0))
+
+    ors = engine(history.stats(StatsFilter()), "ors")
+
+    assert (ors.mean_score, ors.mean_ascent_m) == (None, None)
+
+
+def test_stats_daily_volume_is_grouped_by_utc_day_and_status(history):
+    seed(history)
+    history.save(
+        record_from_state(
+            pid(4), ready_state([candidate()]), created_at=T0 + timedelta(days=2, hours=3)
+        )
+    )
+
+    daily = history.stats(StatsFilter()).daily
+
+    assert [(d.date.isoformat(), d.total, d.by_status) for d in daily] == [
+        ("2026-09-01", 3, {"ready": 2, "provider_failure": 1}),
+        ("2026-09-03", 1, {"ready": 1}),
+    ]
+
+
+def test_stats_filters_narrow_every_aggregate(history):
+    seed(history)
+
+    road = history.stats(StatsFilter(bike_type="road"))
+    window = history.stats(
+        StatsFilter(since=T0 + timedelta(hours=1), until=T0 + timedelta(hours=3))
+    )
+
+    assert (road.total_plans, [p.provider for p in road.providers]) == (1, ["valhalla"])
+    assert road.by_status == {"ready": 1}
+    assert window.total_plans == 2
+    assert [p.provider for p in window.providers] == ["valhalla"]
+    assert window.by_status == {"ready": 1, "provider_failure": 1}

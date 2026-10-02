@@ -56,6 +56,31 @@ is logged and reported as `plan_id: null` instead of failing the request.
 aggregate (`candidates.provider`, `provider_profile`, `score`,
 `score_breakdown`, ...).
 
+## Evaluation dashboard
+
+`GET /v1/history/stats` (see [api.md](api.md)) aggregates the recorded
+plans, optionally narrowed by `bike_type`, `since` and `until`:
+
+- **Outcomes**: total plans, counts per final status, and the `ready` rate.
+- **Per engine/profile** (over `ready` plans): how many plans it took part
+  in, how often its candidate was the one returned (`win_rate`), and mean
+  score, distance, duration and ascent. Means skip candidates that did not
+  report a value -- a missing ascent is not counted as 0 -- and are `null`
+  when nobody reported one.
+- **Mean score breakdown** per engine/profile, i.e. what a weight
+  calibration (`scripts/calibrate.py`) reasons about, measured on real
+  requests instead of the curated benchmark.
+- **Daily volume** by UTC day and status.
+
+`/dashboard.html` (linked from the planner's sidebar) renders these. It
+shows a clear message instead of an empty page when no database is
+configured (`503`) or no plans match the filters. The in-memory and PostGIS
+backends are tested against the same aggregate contract.
+
+Interpretation caveat: a win rate describes what happened in the recorded
+traffic, scored by the current heuristic -- it says which engine the scorer
+prefers, not which route is better or safer.
+
 ## Running it
 
 ```bash
@@ -73,9 +98,8 @@ credentials in the compose file are for local development only.
 
 ## Open follow-ups
 
-- **Evaluation dashboards** (the last bullet of issue #7): the schema and
-  query endpoint are the foundation; aggregate endpoints and a frontend
-  page are not built.
+- **Dashboard depth**: the aggregates are fixed-shape. Percentiles, score
+  distributions, per-region breakdowns and CSV export are not built.
 - **Schema migrations**: tables are created with `CREATE ... IF NOT EXISTS`
   on first use. There is no migration tool yet, so a column change needs
   one (Alembic or plain versioned SQL) before the schema evolves.

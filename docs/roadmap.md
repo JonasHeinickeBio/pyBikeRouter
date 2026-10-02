@@ -74,8 +74,8 @@ decisions still open.
 
 - **Persistence** -- done (issue #7): PostGIS route history, an
   `ArtifactStore` abstraction (local disk or database), and provenance
-  queries ([persistence.md](persistence.md)). Open follow-ups: evaluation
-  dashboards, schema migrations, retention, recording from the CLI.
+  queries and an evaluation dashboard ([persistence.md](persistence.md)). Open
+  follow-ups: schema migrations, retention, recording from the CLI.
 
 - **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
   similar) implementation is needed for multi-instance deployments to share
