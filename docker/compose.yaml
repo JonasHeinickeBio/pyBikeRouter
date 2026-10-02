@@ -14,7 +14,8 @@ services:
     image: pybikerouter-api:latest
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8000}:8000"
+      # APP_BIND=127.0.0.1 keeps the app off the LAN (use with tailscale, docs/mobile.md).
+      - "${APP_BIND:-0.0.0.0}:${APP_PORT:-8000}:8000"
     env_file:
       - path: ../.env
         required: false

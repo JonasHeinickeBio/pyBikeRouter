@@ -6,6 +6,7 @@ const API_BASE = "";  // same origin
 const $ = (id) => document.getElementById(id);
 
 const els = {
+  locateOrigin: $("locate-origin"),
   origin: $("origin-input"),
   destination: $("destination-input"),
   viaList: $("via-list"),
@@ -94,6 +95,49 @@ function onMapClick(ev) {
   }
   stopPicking();
   redrawPlaceMarkers();
+}
+
+/* ------------------------- phone / geolocation --------------------------- */
+
+const isPhoneLayout = () => window.matchMedia("(max-width: 800px)").matches;
+
+// On the stacked phone layout the results sit below the map; bring them into
+// view so a finished plan is not hidden under the fold.
+function revealOnPhone(panel) {
+  if (isPhoneLayout()) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function useMyLocation() {
+  // Browsers only expose geolocation on secure origins (https or localhost);
+  // over Tailscale that means `tailscale serve` (docs/mobile.md).
+  if (!window.isSecureContext) {
+    setStatus(
+      "error",
+      "Location needs a secure (https) connection. Open this app through <code>tailscale serve</code> (see docs/mobile.md).",
+    );
+    return;
+  }
+  els.locateOrigin.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      els.locateOrigin.disabled = false;
+      const { latitude, longitude } = pos.coords;
+      els.origin.value = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+      markCoordInput(els.origin);
+      redrawPlaceMarkers();
+      state.map.setView([latitude, longitude], Math.max(state.map.getZoom(), 14));
+      setStatus("", "");
+    },
+    (err) => {
+      els.locateOrigin.disabled = false;
+      const reason =
+        err.code === err.PERMISSION_DENIED
+          ? "Location permission was denied. Allow it for this site in iOS Settings."
+          : "Could not get your location.";
+      setStatus("error", escapeHtml(reason));
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
 }
 
 function startPicking(target, kindLabel, btn) {
@@ -332,6 +376,7 @@ function renderErrors(errors) {
 
 function renderClarification(data) {
   els.clarificationPanel.hidden = false;
+  revealOnPhone(els.clarificationPanel);
   els.clarificationList.innerHTML = "";
   for (const group of data.clarification) {
     const wrap = document.createElement("div");
@@ -399,6 +444,7 @@ function renderRoute(data) {
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
+  revealOnPhone(els.resultsPanel);
   els.explanation.textContent = data.explanation || "";
 
   renderCandidatesTable();
@@ -665,6 +711,11 @@ function wireEvents() {
       if (!active) startPicking(target, target, btn);
     });
   });
+
+  if ("geolocation" in navigator) {
+    els.locateOrigin.hidden = false;
+    els.locateOrigin.addEventListener("click", useMyLocation);
+  }
 
   els.mapModeCancel.addEventListener("click", (ev) => {
     ev.preventDefault();

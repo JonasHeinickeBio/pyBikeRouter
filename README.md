@@ -25,6 +25,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
+| [iPhone / Tailscale](docs/mobile.md) | Use the planner from an iPhone as a home-screen app over your tailnet |
 | [Roadmap](docs/roadmap.md) | Planned work and explicit non-goals |
 
 ## Architecture
