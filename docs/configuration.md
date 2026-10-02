@@ -34,6 +34,9 @@ cp .env.example .env
 | `VALHALLA_TIMEOUT_S` | per-request Valhalla timeout (seconds) | `30.0` |
 | `VALHALLA_MAX_RETRIES` | retries for Valhalla timeouts/5xx | `1` |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
+| `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
+| `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
+| `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`) or `database` (requires `DATABASE_URL`) | `local` |
 | `LOG_LEVEL` | log level | `INFO` |
 
 ## Startup validation

@@ -51,5 +51,7 @@ class RouteAgentState(TypedDict, total=False):
     status: PlanStatus
     errors: list[dict[str, Any]]
     clarification: list[dict[str, Any]]
+    # Id shared by the exported artifacts and the history record (issue #7).
+    route_id: str
     explanation: str | None
     artifacts: dict[str, str]

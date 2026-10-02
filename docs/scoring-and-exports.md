@@ -104,7 +104,7 @@ never implies one.
 
 Both exporters are pure functions over `RouteCandidate`
 (`exporters/geojson.py`, `exporters/gpx.py`). The export node writes both to
-`EXPORT_DIR` under one `route_id` (uuid4 hex) and the API serves them at
+the artifact store (`EXPORT_DIR` by default, see [persistence.md](persistence.md)) under one `route_id` (uuid4 hex) and the API serves them at
 `/v1/routes/{route_id}.{geojson|gpx}`.
 
 ### GeoJSON

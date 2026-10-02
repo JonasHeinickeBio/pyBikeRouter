@@ -62,7 +62,7 @@ provider unless validation **and** geocoding have both succeeded.
 | `geocode_locations` | `nodes/geocode.py` | Resolve free-text places to coordinates via a `GeocodeProvider`. Direct coordinates bypass it. Ambiguity/emptiness -> clarification, never a guess. |
 | `route_with_provider` | `nodes/route.py` | Build an engine-neutral `RoutingRequest`, call the `RoutingProvider`. `no_route` vs `provider_failure` distinguished here. |
 | `score_candidates` | `nodes/score.py` | Score and rank candidates deterministically; select the best. |
-| `explain_and_export` | `nodes/export.py` | Facts-only explanation + GeoJSON/GPX artifacts written to `EXPORT_DIR`. |
+| `explain_and_export` | `nodes/export.py` | Facts-only explanation + GeoJSON/GPX artifacts written through the `ArtifactStore` (`EXPORT_DIR` by default; see [persistence.md](persistence.md)). |
 
 ### The parse step and the LLM boundary
 

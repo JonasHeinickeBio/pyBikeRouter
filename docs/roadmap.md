@@ -72,6 +72,11 @@ decisions still open.
 
 ## Operations
 
+- **Persistence** -- done (issue #7): PostGIS route history, an
+  `ArtifactStore` abstraction (local disk or database), and provenance
+  queries ([persistence.md](persistence.md)). Open follow-ups: evaluation
+  dashboards, schema migrations, retention, recording from the CLI.
+
 - **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
   similar) implementation is needed for multi-instance deployments to share
   geocode results.
@@ -79,7 +84,8 @@ decisions still open.
   combined readiness endpoint (distinct from the process-level `/healthz`)
   is open.
 - **Artifact lifecycle** -- exports accumulate under `EXPORT_DIR` with no
-  cleanup/quota today; needs TTL-based pruning or object storage.
+  cleanup/quota today (the same holds for history and the database artifact
+  backend); needs TTL-based pruning or an object-storage `ArtifactStore`.
 - **Self-hosted ORS stack** -- a compose profile running ORS (+ Pelias)
   locally would remove public-API rate limits and unlock boundary-pinned
   geocoding.

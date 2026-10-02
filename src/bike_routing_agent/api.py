@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from bike_routing_agent.config import Settings, settings
@@ -17,6 +21,7 @@ from bike_routing_agent.graph import build_graph
 from bike_routing_agent.models import (
     ClarificationOption,
     Coordinate,
+    PlanStatus,
     RouteCandidate,
     RoutePlanAPIRequest,
     RoutePlanResponse,
@@ -33,8 +38,24 @@ from bike_routing_agent.providers.ors import OpenRouteServiceAdapter
 from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
 from bike_routing_agent.providers.pelias import PeliasGeocoder
 from bike_routing_agent.providers.valhalla import ValhallaAdapter
+from bike_routing_agent.storage.artifacts import (
+    ArtifactStore,
+    LocalArtifactStore,
+    media_type_for,
+)
+from bike_routing_agent.storage.history import (
+    BBox,
+    PlanFilter,
+    PlanRecord,
+    PlanSummary,
+    RouteHistory,
+    record_from_state,
+)
 
 _SAFE_FILENAME = re.compile(r"^[0-9a-f]{32}\.(geojson|gpx)$")
+_PLAN_ID = re.compile(r"^[0-9a-f]{32}$")
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="bike-routing-agent", version="0.1.0")
 
@@ -157,14 +178,42 @@ def build_surface_enricher(
     )
 
 
+def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
+    """Artifact store and route history for a configuration (issue #7).
+
+    Without ``database_url`` the exports stay under ``export_dir`` and no
+    history is kept (the pre-#7 behavior). With it, plans are recorded in
+    PostGIS; ``artifact_backend="database"`` moves the exports there too so
+    several API instances can serve each other's artifacts.
+    """
+    if not cfg.database_url:
+        return LocalArtifactStore(Path(cfg.export_dir)), None
+
+    # Imported here so a deployment without a database never needs psycopg.
+    from bike_routing_agent.storage.postgres import (
+        PostgresArtifactStore,
+        PostgresDatabase,
+        PostgresRouteHistory,
+    )
+
+    database = PostgresDatabase(cfg.database_url, max_size=cfg.database_pool_max_size)
+    store: ArtifactStore = (
+        PostgresArtifactStore(database)
+        if cfg.artifact_backend == "database"
+        else LocalArtifactStore(Path(cfg.export_dir))
+    )
+    return store, PostgresRouteHistory(database)
+
+
 _export_dir = Path(settings.export_dir)
 
 _geocode_provider, _routing_providers = build_providers(settings)
+_artifact_store, _history = build_storage(settings)
 
 _graph = build_graph(
     geocode_provider=_geocode_provider,
     routing_providers=_routing_providers,
-    export_dir=_export_dir,
+    artifact_store=_artifact_store,
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
     surface_enricher=build_surface_enricher(settings),
@@ -174,10 +223,11 @@ _graph = build_graph(
 def build_graph_for_settings(cfg: Settings) -> Any:
     """Build a fresh graph from the given settings (used by the CLI)."""
     geocode_provider, routing_providers = build_providers(cfg)
+    artifact_store, _ = build_storage(cfg)
     return build_graph(
         geocode_provider=geocode_provider,
         routing_providers=routing_providers,
-        export_dir=Path(cfg.export_dir),
+        artifact_store=artifact_store,
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,
         surface_enricher=build_surface_enricher(cfg),
@@ -244,17 +294,100 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         artifacts=artifacts,
         clarification=clarification,
         errors=final_state.get("errors", []),
+        plan_id=await _record_plan(final_state),
     )
 
 
+async def _record_plan(final_state: dict[str, Any]) -> str | None:
+    """Record a finished plan in the route history, if one is configured.
+
+    Best effort by design: the plan was already computed, so a history
+    outage is logged and reported as ``plan_id: null`` rather than turned
+    into a failed request.
+    """
+    if _history is None:
+        return None
+    plan_id = final_state.get("route_id") or uuid.uuid4().hex
+    try:
+        await run_in_threadpool(_history.save, record_from_state(plan_id, final_state))
+    except Exception:
+        logger.exception("failed to record plan %s in route history", plan_id)
+        return None
+    return str(plan_id)
+
+
 @app.get("/v1/routes/{filename}")
-async def get_route_artifact(filename: str) -> FileResponse:
+async def get_route_artifact(filename: str) -> Response:
     if not _SAFE_FILENAME.match(filename):
         raise HTTPException(status_code=404, detail="artifact not found")
-    path = _export_dir / filename
-    if not path.is_file():
+    content = await run_in_threadpool(_artifact_store.get, filename)
+    if content is None:
         raise HTTPException(status_code=404, detail="artifact not found")
-    return FileResponse(path)
+    return Response(content=content, media_type=media_type_for(filename))
+
+
+def _require_history() -> RouteHistory:
+    if _history is None:
+        raise HTTPException(
+            status_code=503,
+            detail="route history is not configured (set DATABASE_URL)",
+        )
+    return _history
+
+
+def _parse_bbox(raw: str | None) -> BBox | None:
+    if raw is None:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(part) for part in raw.split(","))
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="bbox must be 'min_lon,min_lat,max_lon,max_lat'"
+        ) from None
+    if not (-180 <= x0 <= x1 <= 180 and -90 <= y0 <= y1 <= 90):
+        raise HTTPException(status_code=422, detail="bbox is out of range or min > max")
+    return (x0, y0, x1, y1)
+
+
+@app.get("/v1/history/plans", response_model=list[PlanSummary])
+async def list_history(
+    provider: str | None = None,
+    profile: str | None = None,
+    status: PlanStatus | None = None,
+    bike_type: str | None = None,
+    selected_only: bool = False,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    bbox: Annotated[str | None, Query(description="min_lon,min_lat,max_lon,max_lat")] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[PlanSummary]:
+    """Past plans, newest first, filtered by provenance (issue #7)."""
+    history = _require_history()
+    plan_filter = PlanFilter(
+        provider=provider,
+        profile=profile,
+        status=status,
+        bike_type=bike_type,
+        selected_only=selected_only,
+        since=since,
+        until=until,
+        bbox=_parse_bbox(bbox),
+        limit=limit,
+        offset=offset,
+    )
+    return await run_in_threadpool(history.query, plan_filter)
+
+
+@app.get("/v1/history/plans/{plan_id}", response_model=PlanRecord)
+async def get_history_plan(plan_id: str) -> PlanRecord:
+    history = _require_history()
+    if not _PLAN_ID.match(plan_id):
+        raise HTTPException(status_code=404, detail="plan not found")
+    record = await run_in_threadpool(history.get, plan_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="plan not found")
+    return record
 
 
 @app.get("/healthz")

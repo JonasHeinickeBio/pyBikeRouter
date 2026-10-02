@@ -29,11 +29,26 @@ so the default run never touches the network and always reports coverage.
 | `tests/providers/` | ORS client, ORS adapter, Nominatim and Pelias geocoders | `respx`-mocked HTTP |
 | `tests/exporters/` | GeoJSON/GPX output shapes | none |
 | `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous) | -- |
+| `tests/storage/` | Artifact stores and the route-history contract. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends | none (PostGIS params are `live`) |
 | `tests/live/` | Real ORS/Nominatim calls through the API | **real** |
 
 `tests/conftest.py` exposes the fixtures as `ors_directions_response`,
 `ors_no_route_response`, `nominatim_single_response`,
 `nominatim_ambiguous_response`.
+
+### PostGIS tests
+
+The `postgres` params of `tests/storage/test_history.py` and everything in
+`tests/storage/test_postgres.py` are `live` and need a PostGIS server
+(they drop and recreate their tables, so never point them at real data):
+
+```bash
+docker run --rm -d --name pg-test -p 127.0.0.1:55432:5432 -e POSTGRES_USER=test \
+    -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgis/postgis:16-3.4
+TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55432/test pytest -m live tests/storage
+```
+
+Without `TEST_DATABASE_URL` they skip.
 
 ## Conventions
 

@@ -138,6 +138,10 @@ Notes:
 - `raw_provider_response` is always neutralised in API responses, on
   `route` and on every entry of `candidates` (the key remains, but is
   always `null`; the raw payload never leaves the server).
+- `plan_id` (issue #7) identifies the recorded history entry
+  (`GET /v1/history/plans/{plan_id}`) and, for `ready` plans, equals the
+  artifact id. It is `null` when no database is configured or recording
+  failed -- recording never fails a plan.
 - `clarification` entries are `{field, candidates, hint}`; `candidates` are
   `GeocodeCandidate`s (`label`, `coordinate`, `confidence`, `source`) to
   choose from -- resend the request with a chosen `{"lon": ..., "lat": ...}`
@@ -152,9 +156,48 @@ Notes:
 
 Serves an exported artifact. Filenames are `<uuid4 hex>.geojson` /
 `.gpx`; the handler matches `^[0-9a-f]{32}\.(geojson|gpx)$` before touching
-the filesystem, so path traversal and anything else are `404`. Missing files
-are `404` as well. Files are served from `EXPORT_DIR` (mounted as
-`./exports` under Docker).
+any storage, so path traversal and anything else are `404`. Missing files
+are `404` as well. Artifacts come from the configured artifact store: files
+under `EXPORT_DIR` (mounted as `./exports` under Docker) by default, or the
+database with `ARTIFACT_BACKEND=database` ([persistence.md](persistence.md)).
+Content types are `application/geo+json` and `application/gpx+xml`.
+
+## GET /v1/history/plans
+
+Provenance query over recorded plans, newest first (issue #7). Only
+available when `DATABASE_URL` is configured -- otherwise `503`. Returns a
+list of summaries (no geometry):
+
+```json
+[{ "plan_id": "<32-hex>", "created_at": "2026-09-30T12:00:00Z",
+   "status": "ready", "bike_type": "gravel",
+   "origin": {"lon": 10.52, "lat": 52.26}, "destination": {"lon": 10.53, "lat": 52.16},
+   "candidates": [
+     { "provider": "ors", "provider_profile": "cycling-regular", "score": 0.91,
+       "distance_m": 12500.0, "duration_s": 2700.0, "ascent_m": 84.3,
+       "selected": true, "rank": 1 } ] }]
+```
+
+| Query parameter | Meaning |
+| --- | --- |
+| `provider`, `profile` | plans with a recorded candidate from this engine / provider profile |
+| `selected_only` | with the above: only count the candidate that was returned to the caller |
+| `status` | one of the plan statuses (failures are recorded too) |
+| `bike_type` | the requested bike type |
+| `since`, `until` | ISO-8601 timestamps; `since` inclusive, `until` exclusive |
+| `bbox` | `min_lon,min_lat,max_lon,max_lat`; candidates whose geometry bounding box intersects it |
+| `limit` (1-200, default 50), `offset` | pagination |
+
+Malformed `bbox`/`status`/paging values are `422`.
+
+## GET /v1/history/plans/{plan_id}
+
+One recorded plan in full: the request as received, parsed constraints,
+resolved endpoints, errors, explanation, artifact file names, and every
+candidate with its full geometry, score breakdown and provenance (never raw
+provider payloads). `404` for unknown or malformed ids, `503` without a
+database. `plan_id` is the `plan_id` of a plan response, which is also the
+artifact id.
 
 ## GET /healthz
 

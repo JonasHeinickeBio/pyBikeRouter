@@ -166,3 +166,7 @@ class RoutePlanResponse(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
     clarification: list[ClarificationOption] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    # Id of the recorded history entry (issue #7), usable with
+    # GET /v1/history/plans/{plan_id}; null when history is not configured
+    # or recording failed (recording never fails a plan).
+    plan_id: str | None = None
