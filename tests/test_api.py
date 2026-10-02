@@ -107,6 +107,13 @@ async def test_plan_route_ready_end_to_end(
     assert gpx_resp.status_code == 200
     assert b"<gpx" in gpx_resp.content
 
+    # Issue #6: single-engine mode still exposes the candidate list -- the
+    # selected route, repeated, with raw provider payloads stripped.
+    assert len(body["candidates"]) == 1
+    assert body["candidates"][0]["provider"] == "ors"
+    assert body["candidates"][0]["raw_provider_response"] is None
+    assert body["route"] == body["candidates"][0]
+
 
 @respx.mock
 async def test_plan_route_ambiguous_geocoding_returns_clarification(
@@ -170,6 +177,102 @@ async def test_artifact_route_rejects_anything_off_the_safe_filename_pattern(cli
 async def test_artifact_route_rejects_path_traversal(client):
     response = await client.get("/v1/routes/..%2F..%2F..%2Fetc%2Fpasswd.geojson")
     assert response.status_code == 404
+
+
+# ------------------------------------------------- candidates (issue #6)
+
+
+class _StubGraph:
+    """Stands in for the compiled LangGraph: returns a fixed final state."""
+
+    def __init__(self, final_state: dict) -> None:
+        self._final_state = final_state
+
+    async def ainvoke(self, _initial_state: dict) -> dict:
+        return self._final_state
+
+
+def _candidate_dict(provider: str, score: float | None, geometry: dict) -> dict:
+    return {
+        "provider": provider,
+        "provider_profile": f"{provider}-profile",
+        "geometry_geojson": geometry,
+        "metrics": {"distance_m": 1000.0, "duration_s": 600.0},
+        "score": score,
+        "score_breakdown": {},
+        "warnings": [],
+        "provenance": {},
+        "raw_provider_response": {"internal": "must-not-leak"},
+    }
+
+
+def _line(coords: list[tuple[float, float]]) -> dict:
+    return {"type": "LineString", "coordinates": [list(c) for c in coords]}
+
+
+def _ready_state(entries: list[tuple[str, float | None]]) -> dict:
+    """A ready final state where each provider scores its own line."""
+    candidates = [
+        _candidate_dict(provider, score, _line([(0.0, float(i)), (1.0, float(i))]))
+        for i, (provider, score) in enumerate(entries)
+    ]
+    best = max(
+        candidates,
+        key=lambda c: c["score"] if c["score"] is not None else float("-inf"),
+    )
+    return {
+        "status": "ready",
+        "selected_candidate": best,
+        "candidates": candidates,
+        "explanation": "ok",
+        "artifacts": {},
+        "errors": [],
+    }
+
+
+def _best_first(entries: list[tuple[str, float | None]]) -> list[str]:
+    return [
+        provider
+        for provider, _ in sorted(
+            entries,
+            key=lambda entry: entry[1] if entry[1] is not None else float("-inf"),
+            reverse=True,
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [("ors", 0.9), ("brouter", 0.7), ("valhalla", 0.5)],
+        # Input order deliberately shuffled: sorting must not depend on it.
+        [("valhalla", 0.8), ("ors", 0.9), ("brouter", 0.6)],
+        # A null-scored candidate (scorer could not score it) sorts last.
+        [("ors", 0.9), ("brouter", None), ("valhalla", 0.7)],
+    ],
+)
+async def test_plan_route_candidates_sorted_best_first(
+    client, monkeypatch, entries
+) -> None:
+    import bike_routing_agent.api as api_module
+
+    monkeypatch.setattr(api_module, "_graph", _StubGraph(_ready_state(entries)))
+
+    response = await client.post(
+        "/v1/route/plan",
+        json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert [c["provider"] for c in body["candidates"]] == _best_first(entries)
+    # The selected candidate is repeated verbatim as the first entry.
+    assert body["route"] == body["candidates"][0]
+    # Raw provider payloads never leave the API.
+    assert body["route"]["raw_provider_response"] is None
+    for cand in body["candidates"]:
+        assert cand["raw_provider_response"] is None
 
 
 # ---------------------------------------------------------------- loops (issue #5)
