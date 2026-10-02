@@ -14,7 +14,8 @@ neutralised candidates the API returns.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections import Counter, defaultdict
+from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
@@ -120,6 +121,54 @@ class PlanFilter(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
+class StatsFilter(BaseModel):
+    """Which plans an evaluation aggregate covers (issue #7 dashboards)."""
+
+    bike_type: str | None = None
+    since: datetime | None = None
+    until: datetime | None = None
+
+
+class ProviderStats(BaseModel):
+    """One engine/profile's record across the covered ``ready`` plans.
+
+    ``win_rate`` is ``selected / candidates``: of the plans this engine and
+    profile took part in, the share where it was the candidate returned to
+    the caller. Means skip candidates lacking the value (``null`` when none
+    have it) -- absence is not zero.
+    """
+
+    provider: str
+    provider_profile: str
+    candidates: int
+    selected: int
+    win_rate: float
+    mean_score: float | None
+    mean_distance_m: float | None
+    mean_duration_s: float | None
+    mean_ascent_m: float | None
+    # Mean of each score-breakdown component, the input a weight
+    # calibration (scripts/calibrate.py) reasons about.
+    mean_score_breakdown: dict[str, float] = Field(default_factory=dict)
+
+
+class DailyStats(BaseModel):
+    """Plans answered on one UTC day, split by final status."""
+
+    date: date
+    total: int
+    by_status: dict[str, int]
+
+
+class HistoryStats(BaseModel):
+    total_plans: int
+    by_status: dict[str, int]
+    # Share of plans that ended ``ready``; null when there are no plans.
+    ready_rate: float | None
+    providers: list[ProviderStats]
+    daily: list[DailyStats]
+
+
 class RouteHistory(Protocol):
     def save(self, record: PlanRecord) -> None:
         """Persist a plan; saving an existing ``plan_id`` replaces it."""
@@ -129,6 +178,10 @@ class RouteHistory(Protocol):
 
     def query(self, plan_filter: PlanFilter) -> list[PlanSummary]:
         """Matching plans, newest first."""
+        ...
+
+    def stats(self, stats_filter: StatsFilter) -> HistoryStats:
+        """Aggregates over the matching plans (outcomes, engines, volume)."""
         ...
 
 
@@ -173,6 +226,40 @@ class InMemoryRouteHistory:
         page = matches[plan_filter.offset : plan_filter.offset + plan_filter.limit]
         return [r.summary() for r in page]
 
+    def stats(self, stats_filter: StatsFilter) -> HistoryStats:
+        f = stats_filter
+        records = [
+            r
+            for r in self._records.values()
+            if (f.bike_type is None or r.bike_type == f.bike_type)
+            and (f.since is None or r.created_at >= f.since)
+            and (f.until is None or r.created_at < f.until)
+        ]
+        by_status: Counter[str] = Counter(r.status for r in records)
+
+        per_engine: dict[tuple[str, str], list[StoredCandidate]] = defaultdict(list)
+        for r in records:
+            for s in r.candidates:
+                per_engine[(s.candidate.provider, s.candidate.provider_profile)].append(s)
+
+        daily: dict[date, Counter[str]] = defaultdict(Counter)
+        for r in records:
+            daily[r.created_at.astimezone(UTC).date()][r.status] += 1
+
+        return HistoryStats(
+            total_plans=len(records),
+            by_status=dict(by_status),
+            ready_rate=by_status["ready"] / len(records) if records else None,
+            providers=[
+                _provider_stats(provider, profile, stored)
+                for (provider, profile), stored in sorted(per_engine.items())
+            ],
+            daily=[
+                DailyStats(date=day, total=sum(counts.values()), by_status=dict(counts))
+                for day, counts in sorted(daily.items())
+            ],
+        )
+
     @staticmethod
     def _matches(record: PlanRecord, f: PlanFilter) -> bool:
         if f.status is not None and record.status != f.status:
@@ -198,6 +285,37 @@ class InMemoryRouteHistory:
             )
             for s in record.candidates
         )
+
+
+def _mean(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _provider_stats(provider: str, profile: str, stored: list[StoredCandidate]) -> ProviderStats:
+    candidates = [s.candidate for s in stored]
+    selected = sum(1 for s in stored if s.selected)
+
+    def mean_of(values: list[float | None]) -> float | None:
+        return _mean([v for v in values if v is not None])
+
+    breakdown: dict[str, list[float]] = defaultdict(list)
+    for c in candidates:
+        for name, value in c.score_breakdown.items():
+            breakdown[name].append(value)
+    return ProviderStats(
+        provider=provider,
+        provider_profile=profile,
+        candidates=len(stored),
+        selected=selected,
+        win_rate=selected / len(stored),
+        mean_score=mean_of([c.score for c in candidates]),
+        mean_distance_m=mean_of([c.metrics.distance_m for c in candidates]),
+        mean_duration_s=mean_of([c.metrics.duration_s for c in candidates]),
+        mean_ascent_m=mean_of([c.metrics.ascent_m for c in candidates]),
+        mean_score_breakdown={
+            name: sum(values) / len(values) for name, values in sorted(breakdown.items())
+        },
+    )
 
 
 def _coordinate(raw: Any) -> Coordinate | None:

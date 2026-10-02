@@ -45,10 +45,12 @@ from bike_routing_agent.storage.artifacts import (
 )
 from bike_routing_agent.storage.history import (
     BBox,
+    HistoryStats,
     PlanFilter,
     PlanRecord,
     PlanSummary,
     RouteHistory,
+    StatsFilter,
     record_from_state,
 )
 
@@ -377,6 +379,18 @@ async def list_history(
         offset=offset,
     )
     return await run_in_threadpool(history.query, plan_filter)
+
+
+@app.get("/v1/history/stats", response_model=HistoryStats)
+async def history_stats(
+    bike_type: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> HistoryStats:
+    """Evaluation aggregates over recorded plans (issue #7 dashboards)."""
+    history = _require_history()
+    stats_filter = StatsFilter(bike_type=bike_type, since=since, until=until)
+    return await run_in_threadpool(history.stats, stats_filter)
 
 
 @app.get("/v1/history/plans/{plan_id}", response_model=PlanRecord)

@@ -190,6 +190,30 @@ list of summaries (no geometry):
 
 Malformed `bbox`/`status`/paging values are `422`.
 
+## GET /v1/history/stats
+
+Evaluation aggregates over recorded plans (issue #7); `503` without a
+database. Optional filters: `bike_type`, `since` (inclusive) and `until`
+(exclusive) as ISO-8601 timestamps.
+
+```json
+{ "total_plans": 61,
+  "by_status": {"ready": 53, "provider_failure": 8},
+  "ready_rate": 0.87,
+  "providers": [
+    { "provider": "ors", "provider_profile": "cycling-regular",
+      "candidates": 53, "selected": 15, "win_rate": 0.28,
+      "mean_score": 0.77, "mean_distance_m": 13800.0,
+      "mean_duration_s": 2940.0, "mean_ascent_m": 115.0,
+      "mean_score_breakdown": {"distance_fit": 0.54, "elevation_fit": 0.53, "warning_penalty": 0.10} } ],
+  "daily": [ {"date": "2026-09-25", "total": 7, "by_status": {"ready": 6, "provider_failure": 1}} ] }
+```
+
+`providers` covers `ready` plans only. `win_rate` is `selected / candidates`
+for that engine/profile. Means skip candidates lacking the value and are
+`null` when none have it. `daily` buckets by UTC day. `ready_rate` is `null`
+when no plans match. A page rendering this is served at `/dashboard.html`.
+
 ## GET /v1/history/plans/{plan_id}
 
 One recorded plan in full: the request as received, parsed constraints,
