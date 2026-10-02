@@ -1,0 +1,32 @@
+name: Set up Python and Poetry
+description: Python, Poetry (pinned), a lock-file-keyed virtualenv cache, and the project installed with the db extra.
+
+inputs:
+  python-version:
+    description: Python version to install
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: "2.3.2"
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Cache virtualenv
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('poetry.lock') }}
+
+    - name: Install dependencies
+      shell: bash
+      run: poetry install --no-interaction --extras db

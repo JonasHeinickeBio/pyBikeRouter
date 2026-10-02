@@ -4,42 +4,184 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  # Weekly run on main: catches upstream drift (new dependency releases, base
+  # image changes) that no commit triggered.
+  schedule:
+    - cron: "17 5 * * 1"
+
+# Least privilege: every job here only reads the repository.
+permissions:
+  contents: read
+
+# A newer push to the same PR supersedes the older run; main always completes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  POETRY_VERSION: "2.3.2"
 
 jobs:
-  test:
+  lint:
+    name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: "3.12"
+      - name: Ruff
+        run: poetry run ruff check . --output-format=github
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: "3.12"
+      - name: Mypy
+        run: poetry run mypy src
+
+  # Job names are kept as "test (3.11)" / "test (3.12)" so any existing
+  # required-status-check configuration keeps matching.
+  test:
+    name: test (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-poetry
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
+      - name: Run tests with coverage
+        run: poetry run pytest --maxfail=1 --cov-report=xml
+      - name: Coverage summary
+        if: always() && matrix.python-version == '3.12'
+        run: |
+          {
+            echo "### Coverage (Python ${{ matrix.python-version }})"
+            echo
+            echo '```'
+            poetry run coverage report --skip-covered --skip-empty 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage report
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
         with:
-          version: "2.3.2"
-          virtualenvs-create: true
-          virtualenvs-in-project: true
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
+          retention-days: 14
 
-      - name: Cache dependencies
-        uses: actions/cache@v4
+  # The PostGIS backend (route history, artifact store, evaluation aggregates)
+  # is `live`-marked, so the default test run never touches it. This job runs
+  # it against a real PostGIS server.
+  postgis:
+    name: postgis (route history + artifacts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgis:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-poetry
         with:
-          path: .venv
-          key: venv-${{ runner.os }}-py${{ matrix.python-version }}-${{ hashFiles('poetry.lock') }}
+          python-version: "3.12"
+      - name: PostGIS storage tests
+        env:
+          TEST_DATABASE_URL: postgresql://test:test@127.0.0.1:5432/test
+        run: poetry run pytest -m live tests/storage --no-cov -q
 
-      - name: Install dependencies
-        run: poetry install --no-interaction --extras db
+  frontend:
+    name: frontend (js syntax)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: node --check
+        run: |
+          shopt -s nullglob
+          files=(src/bike_routing_agent/frontend/*.js)
+          [ "${#files[@]}" -gt 0 ] || { echo "no frontend scripts found"; exit 1; }
+          for f in "${files[@]}"; do
+            echo "checking $f"
+            node --check "$f"
+          done
 
-      - name: Lint with ruff
-        run: poetry run ruff check .
+  scripts:
+    name: shellcheck + workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shellcheck scripts/
+        run: find scripts -name '*.sh' -print0 | xargs -0 -r shellcheck --severity=warning
+      - name: Lint the workflows themselves
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -color
 
-      - name: Type check with mypy
-        run: poetry run mypy src
+  docker:
+    name: docker build + smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          push: false
+          tags: pybikerouter-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 8000:8000 pybikerouter-api:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/healthz && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/healthz
+          curl -fsS -o /dev/null http://127.0.0.1:8000/
+          curl -fsS -o /dev/null http://127.0.0.1:8000/dashboard.html
+          # No database is configured, so history endpoints must say so (503).
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/v1/history/stats)" = "503"
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs api
 
-      - name: Run tests
-        run: poetry run pytest --maxfail=1
+  # One stable name to require in branch protection instead of every job above.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [lint, typecheck, test, postgis, frontend, scripts, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check every job succeeded
+        run: |
+          echo '${{ toJSON(needs) }}'
+          test "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "false"
