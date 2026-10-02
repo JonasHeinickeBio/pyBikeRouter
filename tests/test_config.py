@@ -259,3 +259,66 @@ def test_build_surface_enricher_wires_settings_when_enabled():
     assert enricher._timeout_s == pytest.approx(7.5)
     assert enricher._max_retries == 2
     assert enricher._buffer_m == pytest.approx(40.0)
+
+
+# ----------------------------------------------------------------------
+# Persistence settings and storage wiring (issue #7)
+# ----------------------------------------------------------------------
+
+
+def test_persistence_is_off_by_default():
+    cfg = Settings(_env_file=None)
+
+    assert cfg.database_url is None
+    assert cfg.artifact_backend == "local"
+
+
+def test_database_artifact_backend_requires_a_database_url():
+    with pytest.raises(ValidationError, match="DATABASE_URL"):
+        Settings(_env_file=None, artifact_backend="database")
+
+
+def test_database_pool_size_must_be_positive():
+    with pytest.raises(ValidationError, match="database_pool_max_size"):
+        Settings(
+            _env_file=None, database_url="postgresql://x/y", database_pool_max_size=0
+        )
+
+
+def test_build_storage_without_a_database_is_local_and_stateless(tmp_path):
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.storage.artifacts import LocalArtifactStore
+
+    store, history = build_storage(Settings(_env_file=None, export_dir=str(tmp_path)))
+
+    assert isinstance(store, LocalArtifactStore)
+    assert store.directory == tmp_path
+    assert history is None
+
+
+def test_build_storage_with_a_database_keeps_local_artifacts_by_default(tmp_path):
+    pytest.importorskip("psycopg")
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.storage.artifacts import LocalArtifactStore
+    from bike_routing_agent.storage.postgres import PostgresRouteHistory
+
+    # The pool is lazy: building the storage never connects.
+    store, history = build_storage(
+        Settings(_env_file=None, export_dir=str(tmp_path), database_url="postgresql://x/y")
+    )
+
+    assert isinstance(store, LocalArtifactStore)
+    assert isinstance(history, PostgresRouteHistory)
+
+
+def test_build_storage_can_move_artifacts_into_the_database():
+    pytest.importorskip("psycopg")
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.storage.postgres import PostgresArtifactStore, PostgresRouteHistory
+
+    store, history = build_storage(
+        Settings(_env_file=None, database_url="postgresql://x/y", artifact_backend="database")
+    )
+
+    assert isinstance(store, PostgresArtifactStore)
+    assert isinstance(history, PostgresRouteHistory)

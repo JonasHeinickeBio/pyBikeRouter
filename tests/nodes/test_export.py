@@ -2,6 +2,8 @@
 
 from xml.etree import ElementTree as ET
 
+import pytest
+
 from bike_routing_agent.nodes.export import build_export_node
 
 GPX_NS = "{http://www.topografix.com/GPX/1/1}"
@@ -141,3 +143,35 @@ def test_non_loop_explanation_carries_no_loop_language(tmp_path):
     update = node({"selected_candidate": selected_candidate(), "constraints": {}})
 
     assert "loop" not in update["explanation"].lower()
+
+
+class MemoryStore:
+    def __init__(self):
+        self.data: dict[str, str] = {}
+
+    def put(self, name, content):
+        self.data[name] = content
+
+    def get(self, name):
+        return self.data[name].encode() if name in self.data else None
+
+
+def test_export_writes_through_any_artifact_store_and_reports_the_route_id():
+    store = MemoryStore()
+    node = build_export_node(artifact_store=store)
+
+    update = node({"selected_candidate": selected_candidate()})
+
+    route_id = update["route_id"]
+    assert update["artifacts"] == {
+        "geojson_file": f"{route_id}.geojson",
+        "gpx_file": f"{route_id}.gpx",
+    }
+    assert set(store.data) == {f"{route_id}.geojson", f"{route_id}.gpx"}
+
+
+def test_export_requires_exactly_one_destination(tmp_path):
+    with pytest.raises(ValueError, match="exactly one"):
+        build_export_node()
+    with pytest.raises(ValueError, match="exactly one"):
+        build_export_node(export_dir=tmp_path, artifact_store=MemoryStore())

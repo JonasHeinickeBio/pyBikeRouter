@@ -219,3 +219,201 @@ async def test_plan_route_loop_ready_end_to_end(
     body = response.json()
     assert body["status"] == "ready"
     assert "loop back to the start" in body["explanation"]
+
+
+# ---------------------------------------------------------------------------
+# Route history and artifact store wiring (issue #7)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def history(monkeypatch):
+    from bike_routing_agent import api as api_module
+    from bike_routing_agent.storage.history import InMemoryRouteHistory
+
+    store = InMemoryRouteHistory()
+    monkeypatch.setattr(api_module, "_history", store)
+    return store
+
+
+async def _plan_ready(client, nominatim_single_response, ors_directions_response):
+    respx.get(NOMINATIM_URL).mock(
+        return_value=httpx.Response(200, json=nominatim_single_response[:1])
+    )
+    respx.post(ORS_URL).mock(return_value=httpx.Response(200, json=ors_directions_response))
+    response = await client.post(
+        "/v1/route/plan",
+        json={"origin": "Braunschweig Hauptbahnhof", "destination": "Wolfenbuettel"},
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+@respx.mock
+async def test_ready_plan_is_recorded_and_queryable(
+    client, history, ors_directions_response, nominatim_single_response
+):
+    body = await _plan_ready(client, nominatim_single_response, ors_directions_response)
+
+    # The history id is the artifact id, so a download links back to its plan.
+    assert body["plan_id"] is not None
+    assert body["artifacts"]["geojson_url"] == f"/v1/routes/{body['plan_id']}.geojson"
+
+    listing = await client.get("/v1/history/plans", params={"provider": "ors"})
+    assert listing.status_code == 200
+    [summary] = listing.json()
+    assert summary["plan_id"] == body["plan_id"]
+    assert summary["status"] == "ready"
+    assert summary["candidates"][0]["provider"] == "ors"
+    assert summary["candidates"][0]["selected"] is True
+    assert "geometry_geojson" not in summary["candidates"][0]
+
+    detail = await client.get(f"/v1/history/plans/{body['plan_id']}")
+    assert detail.status_code == 200
+    record = detail.json()
+    assert record["request"]["origin"] == "Braunschweig Hauptbahnhof"
+    assert record["artifacts"]["geojson_file"] == f"{body['plan_id']}.geojson"
+    stored = record["candidates"][0]["candidate"]
+    assert stored["geometry_geojson"]["type"] == "LineString"
+    assert stored["raw_provider_response"] is None
+
+
+@respx.mock
+async def test_non_ready_plans_are_recorded_too(client, history, nominatim_ambiguous_response):
+    respx.get(NOMINATIM_URL).mock(
+        return_value=httpx.Response(200, json=nominatim_ambiguous_response)
+    )
+
+    response = await client.post(
+        "/v1/route/plan", json={"origin": "Springfield", "destination": "Chicago"}
+    )
+
+    body = response.json()
+    assert body["status"] == "awaiting_clarification"
+    assert body["plan_id"] is not None
+    listing = await client.get("/v1/history/plans", params={"status": "awaiting_clarification"})
+    assert [p["plan_id"] for p in listing.json()] == [body["plan_id"]]
+    assert listing.json()[0]["candidates"] == []
+
+
+@respx.mock
+async def test_history_failure_never_fails_the_plan(
+    client, monkeypatch, caplog, ors_directions_response, nominatim_single_response
+):
+    from bike_routing_agent import api as api_module
+
+    class BrokenHistory:
+        def save(self, record):
+            raise RuntimeError("database is down")
+
+    monkeypatch.setattr(api_module, "_history", BrokenHistory())
+
+    body = await _plan_ready(client, nominatim_single_response, ors_directions_response)
+
+    assert body["status"] == "ready"
+    assert body["plan_id"] is None
+    assert "failed to record plan" in caplog.text
+
+
+@respx.mock
+async def test_plan_id_is_null_without_history(
+    client, monkeypatch, ors_directions_response, nominatim_single_response
+):
+    from bike_routing_agent import api as api_module
+
+    monkeypatch.setattr(api_module, "_history", None)
+
+    body = await _plan_ready(client, nominatim_single_response, ors_directions_response)
+
+    assert body["status"] == "ready"
+    assert body["plan_id"] is None
+
+
+@pytest.mark.parametrize("path", ["/v1/history/plans", f"/v1/history/plans/{'a' * 32}"])
+async def test_history_endpoints_are_503_without_a_database(client, monkeypatch, path):
+    from bike_routing_agent import api as api_module
+
+    monkeypatch.setattr(api_module, "_history", None)
+
+    response = await client.get(path)
+
+    assert response.status_code == 503
+    assert "DATABASE_URL" in response.json()["detail"]
+
+
+async def test_history_unknown_or_malformed_plan_id_is_404(client, history):
+    assert (await client.get(f"/v1/history/plans/{'a' * 32}")).status_code == 404
+    assert (await client.get("/v1/history/plans/not-an-id")).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"bbox": "1,2,3"},
+        {"bbox": "a,b,c,d"},
+        {"bbox": "5,0,1,1"},
+        {"bbox": "0,0,1,95"},
+        {"limit": 0},
+        {"limit": 1000},
+        {"offset": -1},
+        {"status": "bogus"},
+    ],
+)
+async def test_history_query_validation(client, history, params):
+    response = await client.get("/v1/history/plans", params=params)
+
+    assert response.status_code == 422
+
+
+async def test_history_query_passes_every_filter_through(client, history):
+    seen = {}
+    history.query = lambda f: seen.setdefault("filter", f) and []
+
+    response = await client.get(
+        "/v1/history/plans",
+        params={
+            "provider": "ors",
+            "profile": "cycling-road",
+            "status": "ready",
+            "bike_type": "road",
+            "selected_only": "true",
+            "since": "2026-09-01T00:00:00Z",
+            "until": "2026-10-01T00:00:00Z",
+            "bbox": "10,52,11,53",
+            "limit": 5,
+            "offset": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    f = seen["filter"]
+    assert (f.provider, f.profile) == ("ors", "cycling-road")
+    assert (f.status, f.bike_type) == ("ready", "road")
+    assert f.selected_only is True
+    assert f.bbox == (10.0, 52.0, 11.0, 53.0)
+    assert (f.limit, f.offset) == (5, 10)
+    assert f.since is not None and f.since.tzinfo is not None and f.until is not None
+
+
+async def test_artifacts_are_served_through_the_artifact_store(client, monkeypatch):
+    from bike_routing_agent import api as api_module
+
+    class DictStore:
+        data = {"a" * 32 + ".geojson": b"{}", "a" * 32 + ".gpx": b"<gpx/>"}
+
+        def put(self, name, content):
+            raise AssertionError("read-only here")
+
+        def get(self, name):
+            return self.data.get(name)
+
+    monkeypatch.setattr(api_module, "_artifact_store", DictStore())
+
+    geojson = await client.get(f"/v1/routes/{'a' * 32}.geojson")
+    gpx = await client.get(f"/v1/routes/{'a' * 32}.gpx")
+    missing = await client.get(f"/v1/routes/{'b' * 32}.geojson")
+
+    assert geojson.status_code == 200
+    assert geojson.headers["content-type"].startswith("application/geo+json")
+    assert gpx.headers["content-type"].startswith("application/gpx+xml")
+    assert missing.status_code == 404

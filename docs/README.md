@@ -12,6 +12,7 @@ Documentation for the bike-routing-agent service.
 | [geocoding.md](geocoding.md) | Nominatim vs Pelias backends, confidence semantics, clarification policy, caching |
 | [enrichment.md](enrichment.md) | OSM surface enrichment, Overpass prototype, unknown-is-unknown data-quality policy |
 | [scoring-and-exports.md](scoring-and-exports.md) | Deterministic scoring, score calibration benchmark, uncertainty notes, explanation policy, GeoJSON/GPX export |
+| [persistence.md](persistence.md) | PostGIS route history, artifact storage backends, provenance queries |
 | [testing.md](testing.md) | Test layout, mocks vs live tests, CI gates |
 | [roadmap.md](roadmap.md) | Deliberate milestone boundaries and planned follow-up work |
 

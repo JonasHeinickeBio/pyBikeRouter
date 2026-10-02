@@ -142,8 +142,41 @@ services:
           memory: 4g
     logging: *default-logging
 
+  # ---------------------------------------------------------------------------
+  # PostgreSQL + PostGIS for the route history and (optionally) shared
+  # artifact storage (issue #7). Use with the `postgis` profile and, in .env:
+  #
+  #   DATABASE_URL=postgresql://bikerouter:bikerouter@postgis:5432/bikerouter
+  #   ARTIFACT_BACKEND=database   # optional: exports live in the database too
+  #
+  #   docker compose -f docker/compose.yaml --profile postgis up
+  #
+  # The API creates its tables on first use. Change the demo credentials for
+  # anything beyond local development; the port is bound to loopback only.
+  # ---------------------------------------------------------------------------
+  postgis:
+    profiles: ["postgis"]
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${POSTGIS_LOCAL_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: bikerouter
+      POSTGRES_PASSWORD: bikerouter
+      POSTGRES_DB: bikerouter
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bikerouter -d bikerouter"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
 volumes:
   exports:
     name: pybikerouter-exports
+  pgdata:
+    name: pybikerouter-pgdata
   ors-graphs:
     name: pybikerouter-ors-graphs

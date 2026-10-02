@@ -63,7 +63,27 @@ class Settings(BaseSettings):
     overpass_cache_ttl_s: int = 86_400
 
     export_dir: str = "exports"
+
+    # Persistence (issue #7). With a DATABASE_URL (PostgreSQL + PostGIS) every
+    # answered plan is recorded in the route history and the /v1/history
+    # endpoints are enabled. artifact_backend "database" additionally keeps
+    # the GeoJSON/GPX exports in the database so several API instances can
+    # share them; "local" (default) keeps them under EXPORT_DIR.
+    database_url: str | None = None
+    database_pool_max_size: int = 5
+    artifact_backend: Literal["local", "database"] = "local"
+
     log_level: str = "INFO"
+
+    @model_validator(mode="after")
+    def _check_database_settings(self) -> Settings:
+        if self.artifact_backend == "database" and not self.database_url:
+            raise ValueError("artifact_backend='database' requires DATABASE_URL to be set")
+        if self.database_url and self.database_pool_max_size < 1:
+            raise ValueError(
+                f"database_pool_max_size must be >= 1 (got {self.database_pool_max_size})"
+            )
+        return self
 
     @model_validator(mode="after")
     def _check_pelias_requires_self_hosted_ors(self) -> Settings:

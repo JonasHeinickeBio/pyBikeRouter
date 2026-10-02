@@ -19,6 +19,7 @@ from bike_routing_agent.exporters.gpx import to_gpx_str
 from bike_routing_agent.models import RouteCandidate
 from bike_routing_agent.scoring.basic import uncertainty_notes
 from bike_routing_agent.state import RouteAgentState
+from bike_routing_agent.storage.artifacts import ArtifactStore, LocalArtifactStore
 
 ExportNodeFn = Callable[[RouteAgentState], dict[str, Any]]
 
@@ -73,7 +74,24 @@ def _build_explanation(
     return " ".join(sentences)
 
 
-def build_export_node(*, export_dir: Path) -> ExportNodeFn:
+def build_export_node(
+    *, export_dir: Path | None = None, artifact_store: ArtifactStore | None = None
+) -> ExportNodeFn:
+    """Export node writing GeoJSON/GPX through an :class:`ArtifactStore`.
+
+    ``export_dir`` is the local-disk shorthand (a ``LocalArtifactStore``);
+    pass ``artifact_store`` for any other backend (issue #7). Exactly one of
+    the two must be given.
+    """
+    if (export_dir is None) == (artifact_store is None):
+        raise ValueError("pass exactly one of export_dir or artifact_store")
+    store: ArtifactStore
+    if artifact_store is not None:
+        store = artifact_store
+    else:
+        assert export_dir is not None
+        store = LocalArtifactStore(export_dir)
+
     def explain_and_export(state: RouteAgentState) -> dict[str, Any]:
         selected = state.get("selected_candidate")
         if selected is None:
@@ -89,19 +107,19 @@ def build_export_node(*, export_dir: Path) -> ExportNodeFn:
             loop_plan=state.get("loop_plan"),
         )
 
-        export_dir.mkdir(parents=True, exist_ok=True)
         route_id = uuid.uuid4().hex
-        geojson_path = export_dir / f"{route_id}.geojson"
-        gpx_path = export_dir / f"{route_id}.gpx"
-        geojson_path.write_text(to_geojson_str(candidate))
-        gpx_path.write_text(to_gpx_str(candidate, name=route_id))
+        geojson_name = f"{route_id}.geojson"
+        gpx_name = f"{route_id}.gpx"
+        store.put(geojson_name, to_geojson_str(candidate))
+        store.put(gpx_name, to_gpx_str(candidate, name=route_id))
 
         return {
             "status": "ready",
+            "route_id": route_id,
             "explanation": explanation,
             "artifacts": {
-                "geojson_file": geojson_path.name,
-                "gpx_file": gpx_path.name,
+                "geojson_file": geojson_name,
+                "gpx_file": gpx_name,
             },
         }
 

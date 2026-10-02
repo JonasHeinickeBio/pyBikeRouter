@@ -14,6 +14,10 @@ dependencies = [
     "langchain-core>=0.3",
 ]
 
+[project.optional-dependencies]
+# PostgreSQL/PostGIS persistence (issue #7): route history + artifact storage.
+db = ["psycopg[binary,pool]>=3.2"]
+
 [project.scripts]
 bike-router = "bike_routing_agent.cli:main"
 

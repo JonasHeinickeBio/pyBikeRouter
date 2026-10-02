@@ -30,6 +30,7 @@ from bike_routing_agent.nodes.score import score_candidates
 from bike_routing_agent.nodes.validate import validate_request
 from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
 from bike_routing_agent.state import RouteAgentState
+from bike_routing_agent.storage.artifacts import ArtifactStore
 
 _TERMINAL_AFTER_PARSE = {"invalid"}
 _TERMINAL_AFTER_VALIDATE = {"invalid", "awaiting_clarification"}
@@ -62,7 +63,8 @@ def build_graph(
     *,
     geocode_provider: GeocodeProvider,
     routing_providers: Sequence[RoutingProvider],
-    export_dir: Path,
+    export_dir: Path | None = None,
+    artifact_store: ArtifactStore | None = None,
     llm_parser: LLMParser | None = None,
     ambiguity_margin: float = 0.05,
     min_confidence: float = 0.3,
@@ -86,7 +88,10 @@ def build_graph(
     # directly; a no-op pass-through when no enricher is configured (issue #3).
     graph.add_node("enrich_candidates", build_enrich_node(surface_enricher=surface_enricher))
     graph.add_node("score_candidates", score_candidates)
-    graph.add_node("explain_and_export", build_export_node(export_dir=export_dir))
+    graph.add_node(
+        "explain_and_export",
+        build_export_node(export_dir=export_dir, artifact_store=artifact_store),
+    )
 
     graph.add_edge(START, "parse_request")
     graph.add_conditional_edges("parse_request", _after_parse, ["validate_request", END])

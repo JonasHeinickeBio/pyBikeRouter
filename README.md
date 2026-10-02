@@ -97,6 +97,8 @@ Edit `.env` and set `ORS_API_KEY` to a valid
 | `VALHALLA_TIMEOUT_S` | Per-request Valhalla timeout (seconds) | `30.0` |
 | `VALHALLA_MAX_RETRIES` | Retries for Valhalla timeouts/5xx | `1` |
 | `EXPORT_DIR` | Local directory for GeoJSON/GPX artifacts | `exports` |
+| `DATABASE_URL` | PostgreSQL/PostGIS URL: records route history, enables `/v1/history/*` ([docs/persistence.md](docs/persistence.md)) | unset |
+| `ARTIFACT_BACKEND` | `local` or `database` (artifacts stored in PostgreSQL) | `local` |
 | `LOG_LEVEL` | Log level | `INFO` |
 
 ## Running the API
