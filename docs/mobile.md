@@ -42,7 +42,12 @@ and prints it. Open that URL in **Safari** on the iPhone, then
 | --- | --- |
 | `scripts/tailscale-serve.sh` | start proxying |
 | `scripts/tailscale-serve.sh status` | show what `tailscale serve` is exposing |
-| `scripts/tailscale-serve.sh off` | stop (removes only this script's HTTPS port) |
+| `scripts/tailscale-serve.sh off` | stop (removes only an endpoint that proxies to this app) |
+
+`start` and `off` first read `tailscale serve status` and **refuse to replace
+or remove** anything on that HTTPS port that is not a proxy to this app
+(another service's proxy, a TCP forward, extra paths), or if the status
+cannot be read. `off` therefore needs the same `APP_PORT` you started with.
 
 Environment: `APP_PORT` (local port, default `8000`) and `TS_HTTPS_PORT`
 (`443`, `8443` or `10000`; default `8443` so an existing `tailscale serve` on

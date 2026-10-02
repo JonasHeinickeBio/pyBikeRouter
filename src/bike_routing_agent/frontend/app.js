@@ -64,6 +64,9 @@ const state = {
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
   aborted: null,
+  // Bumped by every location request and by Reset, so a slow geolocation
+  // callback that outlives a Reset cannot rewrite the cleared form.
+  locationRequest: 0,
 };
 
 /* ------------------------------- map setup ------------------------------- */
@@ -118,8 +121,10 @@ function useMyLocation() {
     return;
   }
   els.locateOrigin.disabled = true;
+  const request = ++state.locationRequest;
   navigator.geolocation.getCurrentPosition(
     (pos) => {
+      if (request !== state.locationRequest) return;
       els.locateOrigin.disabled = false;
       const { latitude, longitude } = pos.coords;
       els.origin.value = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
@@ -129,6 +134,7 @@ function useMyLocation() {
       setStatus("", "");
     },
     (err) => {
+      if (request !== state.locationRequest) return;
       els.locateOrigin.disabled = false;
       const reason =
         err.code === err.PERMISSION_DENIED
@@ -742,6 +748,8 @@ function wireEvents() {
 }
 
 function resetAll() {
+  state.locationRequest++; // drop any location lookup still in flight
+  els.locateOrigin.disabled = false;
   stopPicking();
   els.origin.value = "";
   els.destination.value = "";
