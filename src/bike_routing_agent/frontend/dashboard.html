@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>pyBikeRouter — evaluation dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body class="dashboard-page">
+  <main class="dashboard">
+    <header class="dash-header">
+      <div>
+        <h1>Evaluation dashboard</h1>
+        <p class="tagline">How the routing engines have done across recorded plans</p>
+      </div>
+      <a class="back-link" href="./">&larr; Route planner</a>
+    </header>
+
+    <form id="filters" class="panel filters">
+      <label>Bike type
+        <select id="f-bike-type">
+          <option value="">any</option>
+          <option>road</option>
+          <option>gravel</option>
+          <option>touring</option>
+          <option>mountain</option>
+          <option>city</option>
+          <option>ebike</option>
+          <option>commuter</option>
+          <option>recumbent</option>
+        </select>
+      </label>
+      <label>From <input id="f-since" type="date" /></label>
+      <label>Until (inclusive) <input id="f-until" type="date" /></label>
+      <button type="submit">Refresh</button>
+    </form>
+
+    <p id="dash-status" class="status" role="status" hidden></p>
+
+    <div id="dash-body" hidden>
+      <section class="panel" id="kpis"></section>
+
+      <section class="panel">
+        <h2>Engines</h2>
+        <p class="hint">
+          Win rate is the share of plans an engine/profile took part in where its
+          candidate was the one returned. Means skip candidates that did not report
+          a value.
+        </p>
+        <div class="table-scroll"><table id="engines"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>Mean score breakdown</h2>
+        <p class="hint">Average of each scoring component per engine/profile.</p>
+        <div class="table-scroll"><table id="breakdown"></table></div>
+      </section>
+
+      <section class="panel">
+        <h2>Plans per day (UTC)</h2>
+        <div id="daily" class="daily"></div>
+      </section>
+    </div>
+  </main>
+  <script src="dashboard.js"></script>
+</body>
+</html>

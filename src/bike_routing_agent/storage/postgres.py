@@ -28,9 +28,13 @@ from typing import Any
 from bike_routing_agent.models import Coordinate
 from bike_routing_agent.storage.history import (
     CandidateSummary,
+    DailyStats,
+    HistoryStats,
     PlanFilter,
     PlanRecord,
     PlanSummary,
+    ProviderStats,
+    StatsFilter,
     StoredCandidate,
 )
 
@@ -144,6 +148,35 @@ class PostgresDatabase:
                 self._pool = None
 
 
+def _plan_conditions(
+    params: dict[str, Any],
+    *,
+    status: str | None = None,
+    bike_type: str | None = None,
+    since: Any = None,
+    until: Any = None,
+) -> list[str]:
+    """WHERE fragments over ``plans p`` shared by queries and aggregates."""
+    where: list[str] = []
+    if status is not None:
+        where.append("p.status = %(status)s")
+        params["status"] = status
+    if bike_type is not None:
+        where.append("p.bike_type = %(bike_type)s")
+        params["bike_type"] = bike_type
+    if since is not None:
+        where.append("p.created_at >= %(since)s")
+        params["since"] = since
+    if until is not None:
+        where.append("p.created_at < %(until)s")
+        params["until"] = until
+    return where
+
+
+def _where(conditions: list[str]) -> str:
+    return " WHERE " + " AND ".join(conditions) if conditions else ""
+
+
 def _point_sql(name: str) -> str:
     return (
         f"CASE WHEN %({name}_lon)s::float8 IS NULL THEN NULL "
@@ -252,20 +285,14 @@ class PostgresRouteHistory:
         )
 
     def query(self, plan_filter: PlanFilter) -> list[PlanSummary]:
-        where: list[str] = []
         params: dict[str, Any] = {}
-        if plan_filter.status is not None:
-            where.append("p.status = %(status)s")
-            params["status"] = plan_filter.status
-        if plan_filter.bike_type is not None:
-            where.append("p.bike_type = %(bike_type)s")
-            params["bike_type"] = plan_filter.bike_type
-        if plan_filter.since is not None:
-            where.append("p.created_at >= %(since)s")
-            params["since"] = plan_filter.since
-        if plan_filter.until is not None:
-            where.append("p.created_at < %(until)s")
-            params["until"] = plan_filter.until
+        where = _plan_conditions(
+            params,
+            status=plan_filter.status,
+            bike_type=plan_filter.bike_type,
+            since=plan_filter.since,
+            until=plan_filter.until,
+        )
 
         cand_where: list[str] = []
         if plan_filter.selected_only:
@@ -292,7 +319,7 @@ class PostgresRouteHistory:
             "SELECT p.plan_id, p.created_at, p.status, p.bike_type, "
             "ST_X(p.origin), ST_Y(p.origin), ST_X(p.destination), ST_Y(p.destination) "
             "FROM plans p"
-            + (" WHERE " + " AND ".join(where) if where else "")
+            + _where(where)
             + " ORDER BY p.created_at DESC, p.plan_id LIMIT %(limit)s OFFSET %(offset)s"
         )
         params["limit"] = plan_filter.limit
@@ -335,6 +362,74 @@ class PostgresRouteHistory:
             )
             for pid, created_at, status, bike_type, o_lon, o_lat, d_lon, d_lat in plans
         ]
+
+
+    def stats(self, stats_filter: StatsFilter) -> HistoryStats:
+        params: dict[str, Any] = {}
+        where = _where(
+            _plan_conditions(
+                params,
+                bike_type=stats_filter.bike_type,
+                since=stats_filter.since,
+                until=stats_filter.until,
+            )
+        )
+        with self._db.connection() as conn:
+            daily_rows = conn.execute(
+                "SELECT (p.created_at AT TIME ZONE 'UTC')::date, p.status, count(*) "
+                f"FROM plans p{where} GROUP BY 1, 2 ORDER BY 1, 2",
+                params,
+            ).fetchall()
+            engine_rows = conn.execute(
+                "SELECT c.provider, c.provider_profile, count(*), "
+                "count(*) FILTER (WHERE c.selected), avg(c.score), avg(c.distance_m), "
+                "avg(c.duration_s), avg(c.ascent_m) "
+                f"FROM candidates c JOIN plans p USING (plan_id){where} "
+                "GROUP BY 1, 2 ORDER BY 1, 2",
+                params,
+            ).fetchall()
+            breakdown_rows = conn.execute(
+                "SELECT c.provider, c.provider_profile, kv.key, avg(kv.value::float8) "
+                "FROM candidates c JOIN plans p USING (plan_id), "
+                f"LATERAL jsonb_each_text(c.score_breakdown) AS kv{where} "
+                "GROUP BY 1, 2, 3 ORDER BY 1, 2, 3",
+                params,
+            ).fetchall()
+
+        breakdowns: dict[tuple[str, str], dict[str, float]] = {}
+        for provider, profile, name, mean in breakdown_rows:
+            breakdowns.setdefault((provider, profile), {})[name] = mean
+
+        by_status: dict[str, int] = {}
+        daily: dict[Any, dict[str, int]] = {}
+        for day, status, count in daily_rows:
+            by_status[status] = by_status.get(status, 0) + count
+            daily.setdefault(day, {})[status] = count
+        total = sum(by_status.values())
+        return HistoryStats(
+            total_plans=total,
+            by_status=by_status,
+            ready_rate=by_status.get("ready", 0) / total if total else None,
+            providers=[
+                ProviderStats(
+                    provider=provider,
+                    provider_profile=profile,
+                    candidates=n,
+                    selected=selected,
+                    win_rate=selected / n,
+                    mean_score=score,
+                    mean_distance_m=distance,
+                    mean_duration_s=duration,
+                    mean_ascent_m=ascent,
+                    mean_score_breakdown=breakdowns.get((provider, profile), {}),
+                )
+                for provider, profile, n, selected, score, distance, duration, ascent in engine_rows
+            ],
+            daily=[
+                DailyStats(date=day, total=sum(counts.values()), by_status=counts)
+                for day, counts in daily.items()
+            ],
+        )
 
 
 class PostgresArtifactStore:
