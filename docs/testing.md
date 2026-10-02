@@ -102,6 +102,11 @@ Other workflows:
 - `dependabot.yml` -- weekly updates for pip (minor/patch grouped), GitHub
   Actions (including the local composite action) and the Docker base image.
 
+Third-party actions (anything outside `actions/*` and `github/*`) are pinned
+to a full commit SHA with the version in a trailing comment, because a tag can
+be moved after the fact. Dependabot's `github-actions` ecosystem updates the
+pin and the comment together.
+
 The Python/Poetry setup is shared by the jobs through the local composite
 action `.github/actions/setup-python-poetry` (pinned Poetry, lock-keyed venv
 cache, `--extras db`). Live tests that need external services or secrets (ORS,
