@@ -183,6 +183,10 @@ curl -X POST http://localhost:8000/v1/route/plan \
     "warnings": [],
     "provenance": {"provider": "ors", "profile": "cycling-regular"}
   },
+  "candidates": [
+    {"provider": "ors", "provider_profile": "cycling-regular", "score": 0.91},
+    {"provider": "brouter", "provider_profile": "trekking", "score": 0.84}
+  ],
   "explanation": "...",
   "artifacts": {
     "geojson_url": "/v1/routes/<id>.geojson",

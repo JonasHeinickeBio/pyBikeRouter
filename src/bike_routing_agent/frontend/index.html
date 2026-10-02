@@ -103,8 +103,16 @@
 
       <section class="panel" id="results-panel" hidden>
         <h2>Result</h2>
+        <p id="viewing-note" class="viewing-note" hidden></p>
         <p id="explanation" class="explanation"></p>
         <div class="metrics" id="metrics"></div>
+        <details id="candidates-details" hidden>
+          <summary><h2>Candidates</h2></summary>
+          <div class="candidates-scroll">
+            <table id="candidates-table"></table>
+          </div>
+          <p class="hint">Click a row to inspect that candidate on the map. The explanation and export files always refer to the selected candidate.</p>
+        </details>
         <details id="breakdown-details" hidden>
           <summary>Score breakdown</summary>
           <table id="score-breakdown"></table>
