@@ -224,6 +224,47 @@ th, td { text-align: left; padding: 0.25rem 0.4rem; border-bottom: 1px solid var
 th { color: var(--muted); font-weight: 600; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
+.viewing-note {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  color: #8a6d1a;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+}
+
+.candidates-scroll { overflow-x: auto; }
+#candidates-table { min-width: 430px; }
+
+.cand-row { cursor: pointer; }
+.cand-row:hover { background: #f2faf6; }
+.cand-row.active { background: #e8f6ee; }
+.cand-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.cand-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 0.1rem 0.4rem;
+}
+
+.warn-count { color: #8a6d1a; font-weight: 600; }
+
 .warnings, .errors { margin: 0.3rem 0 0.6rem; padding-left: 1.1rem; font-size: 0.85rem; }
 .warnings li { color: #8a6d1a; margin-bottom: 0.2rem; }
 .errors li { color: #a33; margin-bottom: 0.2rem; }

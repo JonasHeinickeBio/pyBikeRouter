@@ -157,6 +157,11 @@ class ClarificationOption(BaseModel):
 class RoutePlanResponse(BaseModel):
     status: PlanStatus
     route: RouteCandidate | None = None
+    # All scored candidates for the request (issue #6): in multi-engine mode
+    # (ROUTING_PROVIDER="all") this lets clients compare providers side by
+    # side. `route` is the selected (highest-scoring) entry, repeated here.
+    # Sorted by score, best first; null-scored candidates last.
+    candidates: list[RouteCandidate] = Field(default_factory=list)
     explanation: str | None = None
     artifacts: dict[str, str] = Field(default_factory=dict)
     clarification: list[ClarificationOption] = Field(default_factory=list)

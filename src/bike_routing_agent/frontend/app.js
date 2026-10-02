@@ -26,8 +26,11 @@ const els = {
   clarificationPanel: $("clarification-panel"),
   clarificationList: $("clarification-list"),
   resultsPanel: $("results-panel"),
+  viewingNote: $("viewing-note"),
   explanation: $("explanation"),
   metrics: $("metrics"),
+  candidatesDetails: $("candidates-details"),
+  candidatesTable: $("candidates-table"),
   breakdownDetails: $("breakdown-details"),
   scoreBreakdown: $("score-breakdown"),
   surfacesDetails: $("surfaces-details"),
@@ -45,9 +48,17 @@ const els = {
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
 
+// The selected candidate is drawn in the accent colour; alternatives use a
+// distinct palette so users can tell them apart on the map (issue #6).
+const SELECTED_COLOR = "#0e7a4a";
+const CANDIDATE_COLORS = ["#2563eb", "#d97706", "#db2777", "#7c3aed", "#0891b2", "#65a30d"];
+
 const state = {
   map: null,
-  routeLayer: null,
+  candidateLayers: [], // [{ candidate, layer, color, selected }]
+  candidates: [],
+  selectedRoute: null,
+  activeIndex: 0, // index into candidateLayers currently being inspected
   placeMarkers: L.layerGroup(),
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
@@ -270,10 +281,14 @@ async function safeErrorText(resp) {
 /* ------------------------------ render results --------------------------- */
 
 function clearResults() {
-  if (state.routeLayer) {
-    state.map.removeLayer(state.routeLayer);
-    state.routeLayer = null;
+  for (const entry of state.candidateLayers) {
+    state.map.removeLayer(entry.layer);
   }
+  state.candidateLayers = [];
+  state.candidates = [];
+  state.selectedRoute = null;
+  state.activeIndex = 0;
+  els.viewingNote.hidden = true;
   els.resultsPanel.hidden = true;
   els.errorsPanel.hidden = true;
   els.clarificationPanel.hidden = true;
@@ -364,34 +379,30 @@ function renderRoute(data) {
   const route = data.route;
   if (!route) return;
 
-  state.routeLayer = L.geoJSON(route.geometry_geojson, {
-    style: { color: "#0e7a4a", weight: 5, opacity: 0.85 },
-  }).addTo(state.map);
-  state.map.fitBounds(state.routeLayer.getBounds().pad(0.12));
+  state.selectedRoute = route;
+  const list = Array.isArray(data.candidates) && data.candidates.length ? data.candidates : [route];
+  const selectedIndex = findCandidateIndex(list, route);
+  state.candidates = list;
+  state.activeIndex = selectedIndex;
+
+  state.candidateLayers = list.map((candidate, i) => ({
+    candidate,
+    layer: L.geoJSON(candidate.geometry_geojson, { style: candidateStyle(i) }).addTo(state.map),
+    color: colorForIndex(i, selectedIndex),
+    selected: i === selectedIndex,
+  }));
+  state.candidateLayers[selectedIndex].layer.bringToFront();
+
+  const allBounds = boundsOfAllCandidates();
+  if (allBounds) state.map.fitBounds(allBounds.pad(0.12));
 
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
   els.explanation.textContent = data.explanation || "";
 
-  const m = route.metrics || {};
-  const metric = (value, label) =>
-    `<div class="metric"><div class="value">${value}</div><div class="label">${label}</div></div>`;
-  els.metrics.innerHTML =
-    metric(fmtKm(m.distance_m), "Distance") +
-    metric(fmtDuration(m.duration_s), "Time") +
-    metric(fmtM(m.ascent_m), "Ascent") +
-    metric(fmtM(m.descent_m), "Descent") +
-    metric(route.score != null ? route.score.toFixed(2) : "—", "Score") +
-    metric(escapeHtml(route.provider_profile || "—"), "Profile");
-
-  renderScoreBreakdown(route.score_breakdown);
-  renderSurfaces(m.surface_coverage, m.unknown_surface_fraction);
-
-  els.warnings.innerHTML = (route.warnings || [])
-    .map((w) => `<li>${escapeHtml(w)}</li>`)
-    .join("");
-
+  renderCandidatesTable();
+  updateActiveView();
   renderArtifacts(data.artifacts);
 
   const provBits = [];
@@ -401,6 +412,134 @@ function renderRoute(data) {
     if (prov[key] !== undefined) provBits.push(`${key}: ${JSON.stringify(prov[key])}`);
   }
   els.provenance.textContent = provBits.join(" · ");
+}
+
+/* --------------------------- candidate comparison ------------------------ */
+
+function findCandidateIndex(candidates, route) {
+  const routeGeo = JSON.stringify(route.geometry_geojson);
+  const idx = candidates.findIndex(
+    (c) => c.provider === route.provider && JSON.stringify(c.geometry_geojson) === routeGeo,
+  );
+  return idx >= 0 ? idx : 0;
+}
+
+function colorForIndex(index, selectedIndex) {
+  if (index === selectedIndex) return SELECTED_COLOR;
+  const ordinal = index < selectedIndex ? index : index - 1;
+  return CANDIDATE_COLORS[ordinal % CANDIDATE_COLORS.length];
+}
+
+function candidateStyle(index) {
+  const entry = state.candidateLayers[index];
+  if (!entry) return { color: SELECTED_COLOR, weight: 5, opacity: 0.85 };
+  const isActive = index === state.activeIndex;
+  return {
+    color: entry.color,
+    weight: isActive ? 5 : 2.5,
+    opacity: isActive ? 0.85 : 0.5,
+  };
+}
+
+function boundsOfAllCandidates() {
+  let bounds = null;
+  for (const entry of state.candidateLayers) {
+    const b = entry.layer.getBounds();
+    if (!b.isValid()) continue;
+    bounds = bounds ? bounds.extend(b) : b;
+  }
+  return bounds && bounds.isValid() ? bounds : null;
+}
+
+function activateCandidate(index) {
+  if (!state.candidateLayers[index]) return;
+  state.activeIndex = index;
+  state.candidateLayers.forEach((entry, i) => entry.layer.setStyle(candidateStyle(i)));
+  state.candidateLayers[index].layer.bringToFront();
+  els.candidatesTable.querySelectorAll("tr.cand-row").forEach((tr, i) => {
+    tr.classList.toggle("active", i === index);
+  });
+  updateActiveView();
+}
+
+function renderCandidatesTable() {
+  if (state.candidates.length < 2) {
+    els.candidatesDetails.hidden = true;
+    return;
+  }
+  els.candidatesDetails.hidden = false;
+  els.candidatesDetails.open = true;
+
+  const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
+  const head =
+    "<tr><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
+    "<th class='num'>Ascent</th><th class='num'>Score</th><th class='num'>Warnings</th></tr>";
+  const rows = state.candidates
+    .map((cand, i) => {
+      const m = cand.metrics || {};
+      const warnTitle = cand.warnings && cand.warnings.length
+        ? escapeHtml(cand.warnings.join("; "))
+        : "No warnings";
+      const selectedBadge = i === selectedIndex ? " <span class='badge'>selected</span>" : "";
+      const active = i === state.activeIndex;
+      return (
+        `<tr class="cand-row${active ? " active" : ""}" data-index="${i}" tabindex="0">` +
+        `<td><span class="cand-dot" style="background:${state.candidateLayers[i].color}"></span>${escapeHtml(cand.provider)}${selectedBadge}</td>` +
+        `<td>${escapeHtml(cand.provider_profile || "—")}</td>` +
+        `<td class="num">${fmtKm(m.distance_m)}</td>` +
+        `<td class="num">${fmtDuration(m.duration_s)}</td>` +
+        `<td class="num">${fmtM(m.ascent_m)}</td>` +
+        `<td class="num">${cand.score != null ? cand.score.toFixed(2) : "—"}</td>` +
+        `<td class="num"><span class="warn-count" title="${warnTitle}">${(cand.warnings || []).length || 0}</span></td>` +
+        "</tr>"
+      );
+    })
+    .join("");
+  els.candidatesTable.innerHTML = head + rows;
+
+  els.candidatesTable.querySelectorAll("tr.cand-row").forEach((tr) => {
+    const i = Number(tr.dataset.index);
+    tr.addEventListener("click", () => activateCandidate(i));
+    tr.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        activateCandidate(i);
+      }
+    });
+  });
+}
+
+function updateActiveView() {
+  const entry = state.candidateLayers[state.activeIndex];
+  if (!entry) return;
+  const cand = entry.candidate;
+  const m = cand.metrics || {};
+  const metric = (value, label) =>
+    `<div class="metric"><div class="value">${value}</div><div class="label">${label}</div></div>`;
+  els.metrics.innerHTML =
+    metric(fmtKm(m.distance_m), "Distance") +
+    metric(fmtDuration(m.duration_s), "Time") +
+    metric(fmtM(m.ascent_m), "Ascent") +
+    metric(fmtM(m.descent_m), "Descent") +
+    metric(cand.score != null ? cand.score.toFixed(2) : "—", "Score") +
+    metric(escapeHtml(cand.provider_profile || "—"), "Profile");
+
+  renderScoreBreakdown(cand.score_breakdown);
+  renderSurfaces(m.surface_coverage, m.unknown_surface_fraction);
+
+  els.warnings.innerHTML = (cand.warnings || [])
+    .map((w) => `<li>${escapeHtml(w)}</li>`)
+    .join("");
+
+  const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
+  if (state.activeIndex === selectedIndex) {
+    els.viewingNote.hidden = true;
+  } else {
+    els.viewingNote.hidden = false;
+    els.viewingNote.innerHTML =
+      `Showing <strong>${escapeHtml(cand.provider)}</strong> &mdash; the explanation and export ` +
+      `files below refer to the selected candidate (<strong>${escapeHtml(state.selectedRoute.provider)}</strong>).`;
+  }
 }
 
 function renderScoreBreakdown(breakdown) {

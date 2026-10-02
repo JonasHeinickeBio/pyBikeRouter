@@ -205,6 +205,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
 
     status = final_state.get("status", "provider_failure")
     route = None
+    candidates: list[RouteCandidate] = []
     explanation = None
     artifacts: dict[str, str] = {}
     clarification = [
@@ -214,6 +215,19 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
     if status == "ready":
         route = RouteCandidate.model_validate(final_state["selected_candidate"]).model_copy(
             update={"raw_provider_response": None}
+        )
+        # Every scored candidate (issue #6) so the web UI can compare
+        # providers side by side; the selected candidate is included.
+        # Sorted best-first so index 0 always matches `route`.
+        candidates = sorted(
+            (
+                RouteCandidate.model_validate(c).model_copy(
+                    update={"raw_provider_response": None}
+                )
+                for c in final_state.get("candidates", [])
+            ),
+            key=lambda c: c.score if c.score is not None else float("-inf"),
+            reverse=True,
         )
         explanation = final_state.get("explanation")
         exported = final_state.get("artifacts", {})
@@ -225,6 +239,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
     return RoutePlanResponse(
         status=status,
         route=route,
+        candidates=candidates,
         explanation=explanation,
         artifacts=artifacts,
         clarification=clarification,
