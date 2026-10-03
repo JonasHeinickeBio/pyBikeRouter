@@ -46,7 +46,12 @@ async def test_frontend_index_is_served_at_root(client):
 
 
 async def test_frontend_static_assets_are_served(client):
-    for path, marker in [("/app.js", "route/plan"), ("/styles.css", "--accent")]:
+    for path, marker in [
+        ("/app.js", "route/plan"),
+        ("/app.js", "max_alternatives"),
+        ("/index.html", 'id="max-alternatives"'),
+        ("/styles.css", "--accent"),
+    ]:
         response = await client.get(path)
         assert response.status_code == 200
         assert marker in response.text
@@ -612,3 +617,124 @@ async def test_index_declares_the_iphone_home_screen_app(client):
     apple_icon = await client.get("/icons/apple-touch-icon.png")
     assert apple_icon.status_code == 200
     assert 'rel="apple-touch-icon" href="icons/apple-touch-icon.png"' in page
+
+
+# ------------------------------------------- ranked alternatives (issue #24)
+
+
+class _CapturingGraph(_StubGraph):
+    def __init__(self, final_state: dict) -> None:
+        super().__init__(final_state)
+        self.initial_states: list[dict] = []
+
+    async def ainvoke(self, initial_state: dict) -> dict:
+        self.initial_states.append(initial_state)
+        return await super().ainvoke(initial_state)
+
+
+@pytest.mark.parametrize("bad", [0, 6, -1, "many"])
+async def test_max_alternatives_is_validated_before_the_graph_runs(client, bad):
+    response = await client.post(
+        "/v1/route/plan",
+        json={"origin": "A", "destination": "B", "max_alternatives": bad},
+    )
+    assert response.status_code == 422
+
+
+async def test_max_alternatives_reaches_the_graph(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
+    monkeypatch.setattr(api_module, "_graph", graph)
+
+    await client.post(
+        "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"}
+    )
+    await client.post(
+        "/v1/route/plan",
+        json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "max_alternatives": 3},
+    )
+    assert graph.initial_states[0]["raw_input"]["max_alternatives"] is None
+    assert graph.initial_states[1]["raw_input"]["max_alternatives"] == 3
+
+
+async def test_response_orders_by_rank_and_exposes_rank_fields(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    state = _ready_state([("ors", 0.9), ("brouter", 0.8)])
+    # Ranked by the score node: the better-scored candidate is NOT first here,
+    # proving the API trusts rank over a re-sort by score.
+    state["candidates"][0].update(rank=2, rank_rationale="rank 2: x", duplicate_of="b/p")
+    state["candidates"][1].update(
+        rank=1, rank_rationale="rank 1: y", duplicates=["ors/ors-profile"]
+    )
+    monkeypatch.setattr(api_module, "_graph", _StubGraph(state))
+
+    body = (
+        await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
+    ).json()
+    assert [c["provider"] for c in body["candidates"]] == ["brouter", "ors"]
+    assert [c["rank"] for c in body["candidates"]] == [1, 2]
+    assert body["candidates"][0]["duplicates"] == ["ors/ors-profile"]
+    assert body["candidates"][1]["duplicate_of"] == "b/p"
+    assert body["candidates"][1]["rank_rationale"] == "rank 2: x"
+
+
+async def test_full_graph_ranks_duplicate_engine_results(client, monkeypatch):
+    """Real score node inside the real graph: two engines, one street."""
+    import bike_routing_agent.api as api_module
+    from bike_routing_agent.graph import build_graph
+
+    class _Geocoder:
+        name = "fake"
+
+        async def geocode(self, query, *, limit=5):  # pragma: no cover - coordinates only
+            raise AssertionError("coordinates need no geocoding")
+
+    class _Engine:
+        def __init__(self, name, lat_offset, distance_m):
+            self.name = name
+            self._offset = lat_offset
+            self._distance = distance_m
+
+        async def route(self, request):
+            from bike_routing_agent.models import RouteCandidate, RouteMetrics
+
+            lat = 52.0 + self._offset
+            return RouteCandidate(
+                provider=self.name,
+                provider_profile="p",
+                geometry_geojson={
+                    "type": "LineString",
+                    "coordinates": [[10.0, lat], [10.01, lat], [10.02, lat]],
+                },
+                metrics=RouteMetrics(distance_m=self._distance, ascent_m=5.0),
+            )
+
+        async def health(self):  # pragma: no cover
+            return {"status": "ok"}
+
+    graph = build_graph(
+        geocode_provider=_Geocoder(),
+        routing_providers=[
+            _Engine("ors", 0.0, 1_400.0),
+            _Engine("brouter", 0.00003, 1_401.0),  # ~3 m north: the same street
+            _Engine("valhalla", 0.01, 1_600.0),  # ~1.1 km north: a different route
+        ],
+        artifact_store=api_module._artifact_store,
+    )
+    monkeypatch.setattr(api_module, "_graph", graph)
+    request = {
+        "origin": {"lon": 10.0, "lat": 52.0},
+        "destination": {"lon": 10.02, "lat": 52.0},
+        "constraints": {"target_distance_km": 1.4},
+    }
+
+    everything = (await client.post("/v1/route/plan", json=request)).json()
+    assert [c["provider"] for c in everything["candidates"]] == ["ors", "brouter", "valhalla"]
+    assert everything["candidates"][1]["duplicate_of"] == "ors/p"
+
+    distinct = (await client.post("/v1/route/plan", json={**request, "max_alternatives": 5})).json()
+    assert [c["provider"] for c in distinct["candidates"]] == ["ors", "valhalla"]
+    assert distinct["candidates"][0]["duplicates"] == ["brouter/p"]
+    assert distinct["route"] == distinct["candidates"][0]

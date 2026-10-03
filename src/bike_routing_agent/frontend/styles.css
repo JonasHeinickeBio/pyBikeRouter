@@ -250,6 +250,13 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   margin-right: 0.4rem;
 }
 
+.similar {
+  margin-left: 0.35rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
 .badge {
   display: inline-block;
   margin-left: 0.35rem;

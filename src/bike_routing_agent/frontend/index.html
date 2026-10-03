@@ -93,6 +93,11 @@
             <label for="avoid-surfaces">Avoid surfaces (comma separated)</label>
             <input id="avoid-surfaces" type="text" placeholder="gravel, sand" />
           </div>
+          <div class="field">
+            <label for="max-alternatives">Distinct alternatives (1&ndash;5)</label>
+            <input id="max-alternatives" type="number" inputmode="numeric" min="1" max="5" step="1" placeholder="all candidates" />
+            <p class="hint">With several routing engines, near-identical routes count as one. Leave empty to see every candidate.</p>
+          </div>
           <div class="check-grid">
             <label class="check"><input id="avoid-traffic" type="checkbox" checked /> Avoid high-traffic roads</label>
             <label class="check"><input id="avoid-ferries" type="checkbox" checked /> Avoid ferries</label>

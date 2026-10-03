@@ -219,6 +219,7 @@ _graph = build_graph(
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
     surface_enricher=build_surface_enricher(settings),
+    alternative_dedup_threshold_m=settings.alternative_dedup_threshold_m,
 )
 
 
@@ -233,6 +234,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,
         surface_enricher=build_surface_enricher(cfg),
+        alternative_dedup_threshold_m=cfg.alternative_dedup_threshold_m,
     )
 
 
@@ -251,6 +253,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "destination": _place_to_raw(request.destination),
         "via": [_place_to_raw(v) for v in request.via],
         "constraints": request.constraints.model_dump(mode="json"),
+        "max_alternatives": request.max_alternatives,
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
@@ -270,7 +273,9 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         )
         # Every scored candidate (issue #6) so the web UI can compare
         # providers side by side; the selected candidate is included.
-        # Sorted best-first so index 0 always matches `route`.
+        # The score node already ranked them (issue #24), best first, so
+        # index 0 is `route`; states without ranks fall back to score order
+        # (null-scored last).
         candidates = sorted(
             (
                 RouteCandidate.model_validate(c).model_copy(
@@ -278,8 +283,10 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
                 )
                 for c in final_state.get("candidates", [])
             ),
-            key=lambda c: c.score if c.score is not None else float("-inf"),
-            reverse=True,
+            key=lambda c: (
+                c.rank if c.rank is not None else 10**9,
+                -(c.score if c.score is not None else float("-inf")),
+            ),
         )
         explanation = final_state.get("explanation")
         exported = final_state.get("artifacts", {})

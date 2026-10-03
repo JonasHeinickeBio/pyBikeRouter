@@ -33,6 +33,7 @@ cp .env.example .env
 | `VALHALLA_BASE_URL` | base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |
 | `VALHALLA_TIMEOUT_S` | per-request Valhalla timeout (seconds) | `30.0` |
 | `VALHALLA_MAX_RETRIES` | retries for Valhalla timeouts/5xx | `1` |
+| `ALTERNATIVE_DEDUP_THRESHOLD_M` | routes within this many metres of each other (discrete Frechet distance) count as one alternative; see [API](api.md#alternatives) | `50` |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |

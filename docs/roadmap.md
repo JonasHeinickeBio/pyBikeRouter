@@ -17,10 +17,15 @@ decisions still open.
   service, versioned custom profiles for gravel/touring. Open follow-ups:
   serving the profile-backed engine beyond local dev (production hosting)
   and per-request profile overrides instead of the config-table mapping.
-- **Multi-candidate scoring** -- the state, the `score_candidates` node,
-  and the scorer handle N candidates, and `routing_provider="all"` now
-  feeds them from ors + brouter + valhalla in parallel. Still open:
-  (optionally) returning ranked alternatives instead of a single winner.
+- **Multi-candidate scoring and ranked alternatives** -- done (issue #24):
+  the score node ranks every candidate (`rank`, facts-only `rank_rationale`),
+  recognises near-identical routes across engines (discrete Frechet distance
+  within `ALTERNATIVE_DEDUP_THRESHOLD_M`) and, on request
+  (`max_alternatives`), returns only N distinct alternatives
+  ([api.md](api.md#alternatives)). Open follow-ups: tuning the dedup
+  threshold on real multi-engine outputs, asking a single engine for its own
+  alternatives (ORS `alternative_routes`, Valhalla `alternates`), and
+  exporting every alternative rather than only rank 1.
 
 ## Scoring and map-metadata quality
 

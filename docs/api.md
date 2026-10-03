@@ -38,6 +38,7 @@ FastAPI with `422` and never reaches the workflow.
 | `destination` | non-empty string **or** `Coordinate` | yes* | Same. Omit for loop requests -- see `return_to_origin` below. |
 | `via` | list, max 10 | no | Same shape as `origin`. |
 | `constraints` | `RouteConstraints` | no | Defaults apply when omitted. |
+| `max_alternatives` | integer `1..5` | no | Return at most this many *distinct* routes; see [Alternatives](#alternatives). Omitted: every scored candidate is returned. |
 
 `Coordinate` is `{"lon": -180..180, "lat": -90..90}`. Constraint fields and
 defaults:
@@ -53,6 +54,32 @@ defaults:
 | `avoid_ferries` | `true` | |
 | `return_to_origin` | `false` | loop request: `destination` must be omitted and `target_distance_km` is required. |
 | `loop_direction` | `"clockwise"` | one of `clockwise`, `counterclockwise`; only meaningful with `return_to_origin`. |
+
+### Alternatives
+
+With several routing engines (`ROUTING_PROVIDER=all`) the same corridor
+often comes back more than once, snapped slightly differently. The score
+node ranks all candidates (best score first; ties: shorter, then provider)
+and recognises *near-identical* routes: two routes whose discrete Frechet
+distance is within `ALTERNATIVE_DEDUP_THRESHOLD_M` (default 50 m) are one
+alternative, and the better-scored one is kept.
+
+- **`max_alternatives` omitted** (default): behaviour is unchanged -- every
+  scored candidate is returned. Near-copies are still annotated:
+  `duplicate_of` names the better route, and that route lists them under
+  `duplicates`.
+- **`max_alternatives = N`**: near-copies are dropped (still listed under the
+  kept route's `duplicates`) and at most `N` distinct routes are returned.
+  `route` is always `candidates[0]`, rank 1.
+- `rank_rationale` is built from facts only, e.g. `rank 2: score 0.84 (0.07
+  below rank 1); 1.2 km longer; 40 m less ascent`. It never claims a route
+  is safer or better for you; it states how the routes differ.
+- It only has an effect when more than one engine is configured; with one
+  engine the single candidate is simply rank 1.
+- Exports and the explanation always describe rank 1.
+- The web UI exposes this as *Distinct alternatives (1-5)* in the constraints
+  panel (empty sends no cap) and marks merged routes in the comparison table
+  (`+N similar` on the kept route, `near-copy` on a listed duplicate).
 
 ### Loop requests
 
@@ -128,13 +155,17 @@ Notes:
 
 - `metrics.ascent_m` / `descent_m` / `duration_s` may be `null` when the
   provider does not supply them -- absence is reported as absence.
-- `candidates` (issue #6) carries **every** scored candidate for the
-  request, sorted by `score` best first (null-scored candidates last).
+- `candidates` (issue #6) carries the scored candidates for the
+  request, ranked best first (see [Alternatives](#alternatives)).
   `candidates[0]` is the selected candidate and equals `route`; the rest are
   the alternatives a multi-engine run produced, so clients can compare
   providers side by side. With a single routing provider the list has
   exactly one entry. `candidates` is `[]` whenever `status` is not
   `ready`.
+- Every candidate carries `rank` (1-based position in the returned list),
+  `rank_rationale` (a facts-only comparison to rank 1) and the duplicate
+  bookkeeping `duplicates` / `duplicate_of`; all are optional additions,
+  so existing clients can ignore them.
 - `raw_provider_response` is always neutralised in API responses, on
   `route` and on every entry of `candidates` (the key remains, but is
   always `null`; the raw payload never leaves the server).

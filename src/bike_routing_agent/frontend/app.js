@@ -16,6 +16,7 @@ const els = {
   targetDistance: $("target-distance"),
   maxDistance: $("max-distance"),
   maxAscent: $("max-ascent"),
+  maxAlternatives: $("max-alternatives"),
   preferSurfaces: $("prefer-surfaces"),
   avoidSurfaces: $("avoid-surfaces"),
   avoidTraffic: $("avoid-traffic"),
@@ -250,13 +251,25 @@ function buildConstraints() {
   return constraints;
 }
 
+// Optional cap on distinct alternatives; empty means "every candidate" and
+// is omitted from the request so the server default applies (issue #24).
+function maxAlternatives() {
+  const raw = els.maxAlternatives.value.trim();
+  if (raw === "") return null;
+  const n = Math.trunc(Number(raw));
+  return Number.isFinite(n) ? Math.min(5, Math.max(1, n)) : null;
+}
+
 function buildRequest() {
-  return {
+  const request = {
     origin: placeValue(els.origin.value),
     destination: placeValue(els.destination.value),
     via: viaInputs().map((i) => placeValue(i.value)).filter((v) => v !== ""),
     constraints: buildConstraints(),
   };
+  const alternatives = maxAlternatives();
+  if (alternatives !== null) request.max_alternatives = alternatives;
+  return request;
 }
 
 /* -------------------------------- requests ------------------------------- */
@@ -524,7 +537,7 @@ function renderCandidatesTable() {
 
   const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
   const head =
-    "<tr><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
+    "<tr><th class='num'>Rank</th><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
     "<th class='num'>Ascent</th><th class='num'>Score</th><th class='num'>Warnings</th></tr>";
   const rows = state.candidates
     .map((cand, i) => {
@@ -533,10 +546,22 @@ function renderCandidatesTable() {
         ? escapeHtml(cand.warnings.join("; "))
         : "No warnings";
       const selectedBadge = i === selectedIndex ? " <span class='badge'>selected</span>" : "";
+      const similar = (cand.duplicates || []).length
+        ? ` <span class="similar" title="${escapeHtml("Near-identical routes merged into this one: " + cand.duplicates.join(", "))}">+${cand.duplicates.length} similar</span>`
+        : "";
+      const copyOf = cand.duplicate_of
+        ? ` <span class="similar" title="${escapeHtml("Near-identical to " + cand.duplicate_of)}">near-copy</span>`
+        : "";
       const active = i === state.activeIndex;
+      const rankTitle = cand.rank_rationale ? escapeHtml(cand.rank_rationale) : "";
+      const rankCell = cand.rank != null
+        ? `<span title="${rankTitle}">${cand.rank}</span>`
+        : "—";
       return (
-        `<tr class="cand-row${active ? " active" : ""}" data-index="${i}" tabindex="0">` +
-        `<td><span class="cand-dot" style="background:${state.candidateLayers[i].color}"></span>${escapeHtml(cand.provider)}${selectedBadge}</td>` +
+        `<tr class="cand-row${active ? " active" : ""}" data-index="${i}" tabindex="0"` +
+        `${rankTitle ? ` title="${rankTitle}"` : ""}>` +
+        `<td class="num">${rankCell}</td>` +
+        `<td><span class="cand-dot" style="background:${state.candidateLayers[i].color}"></span>${escapeHtml(cand.provider)}${selectedBadge}${similar}${copyOf}</td>` +
         `<td>${escapeHtml(cand.provider_profile || "—")}</td>` +
         `<td class="num">${fmtKm(m.distance_m)}</td>` +
         `<td class="num">${fmtDuration(m.duration_s)}</td>` +
@@ -755,7 +780,7 @@ function resetAll() {
   els.destination.value = "";
   els.viaList.innerHTML = "";
   els.bikeType.value = "gravel";
-  for (const id of ["target-distance", "max-distance", "max-ascent", "prefer-surfaces", "avoid-surfaces"]) {
+  for (const id of ["target-distance", "max-distance", "max-ascent", "max-alternatives", "prefer-surfaces", "avoid-surfaces"]) {
     $(id).value = "";
   }
   els.avoidTraffic.checked = true;
