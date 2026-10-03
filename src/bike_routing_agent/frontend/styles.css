@@ -337,3 +337,63 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   #sidebar { border-right: none; border-bottom: 1px solid var(--line); }
   #map-mode-banner { left: 50%; }
 }
+
+/* ----------------------------- phone layout ------------------------------ */
+/* iPhone-sized screens (portrait and most landscape): map on top, the form
+   and results scroll underneath, 16px inputs so iOS Safari does not zoom on
+   focus, 44px touch targets, and notch / home-indicator safe areas. */
+
+@media (max-width: 800px) {
+  html, body { height: 100%; overscroll-behavior: none; }
+
+  #app {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 42vh minmax(0, 1fr);
+    grid-template-rows: 42dvh minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  #map { order: -1; }
+
+  #sidebar {
+    border-right: none;
+    border-top: 1px solid var(--line);
+    padding-left: max(1.1rem, env(safe-area-inset-left));
+    padding-right: max(1.1rem, env(safe-area-inset-right));
+    padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  input[type="text"],
+  input[type="number"],
+  select { font-size: 16px; min-height: 44px; }
+
+  button, .icon-btn { min-height: 44px; }
+  .icon-btn { min-width: 44px; }
+  .via-row .via-remove { min-width: 44px; }
+  .check { min-height: 36px; }
+  .check input { width: 20px; height: 20px; }
+  .artifacts a { padding: 0.55rem 0.9rem; }
+
+  #map-mode-banner {
+    top: calc(12px + env(safe-area-inset-top));
+    max-width: calc(100vw - 24px);
+    transform: translateX(-50%);
+    text-align: center;
+  }
+
+  .leaflet-touch .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; }
+}
+
+/* Landscape phones are short: give the map more of the width instead. */
+@media (max-width: 800px) and (orientation: landscape) and (max-height: 500px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 45%);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #map { order: 0; }
+  #sidebar { border-top: none; border-left: 1px solid var(--line); order: 1; }
+}

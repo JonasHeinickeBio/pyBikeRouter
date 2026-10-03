@@ -583,3 +583,32 @@ async def test_dashboard_page_is_served(client):
     assert page.status_code == 200
     assert "history/stats" in script.text
     assert "dashboard.js" in page.text
+
+# ---------------------------------------------------------------------------
+# iPhone / home-screen app (docs/mobile.md)
+# ---------------------------------------------------------------------------
+
+
+async def test_pwa_manifest_is_served_and_references_real_icons(client):
+    response = await client.get("/manifest.webmanifest")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/manifest+json")
+    manifest = response.json()
+    assert manifest["display"] == "standalone"
+    assert manifest["start_url"] == "./"
+    for icon in manifest["icons"]:
+        asset = await client.get("/" + icon["src"])
+        assert asset.status_code == 200
+        assert asset.headers["content-type"] == "image/png"
+
+
+async def test_index_declares_the_iphone_home_screen_app(client):
+    page = (await client.get("/")).text
+
+    assert "viewport-fit=cover" in page
+    assert 'name="apple-mobile-web-app-capable"' in page
+    assert 'rel="manifest" href="manifest.webmanifest"' in page
+    apple_icon = await client.get("/icons/apple-touch-icon.png")
+    assert apple_icon.status_code == 200
+    assert 'rel="apple-touch-icon" href="icons/apple-touch-icon.png"' in page
