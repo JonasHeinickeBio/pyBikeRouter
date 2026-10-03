@@ -11,8 +11,11 @@ OSM surface enricher, when enabled), then reports for each case:
   inside plausible weights is the signal to gather more evidence, not to
   retune a constant.
 
-The script only *measures*: changing ``scoring/basic.py`` weights should be
-a deliberate, evidenced decision informed by this report.
+The script only *measures*: changing ``scoring/basic.py`` weights (including
+switching the surface component on, ``SURFACE_WEIGHT``) should be a
+deliberate, evidenced decision informed by this report -- run it with
+``OSM_ENRICHMENT_ENABLED=true`` and compare the ``surface_sensitivity``
+rankings and the per-case "surface evidence" counts.
 
 Usage (from the repo root; needs a working .env, and BRouter/Valhalla
 containers for those engines to appear):
@@ -39,6 +42,7 @@ from bike_routing_agent.calibration import (
     evaluation_rows,
     load_benchmark,
     ranked_candidates,
+    surface_weight_sensitivity,
     weight_sensitivity,
 )
 from bike_routing_agent.config import Settings
@@ -122,6 +126,15 @@ async def run_case(
             [c.name for c in top_evaluation.skipped] if top_evaluation else []
         ),
         "weight_sensitivity": weight_sensitivity(scored, constraints),
+        "surface_sensitivity": surface_weight_sensitivity(scored, constraints),
+        "surface_evidence": {
+            c.provider: {
+                "fit": breakdown.get("surface_fit"),
+                "known_share": breakdown.get("surface_known_share"),
+            }
+            for c in scored
+            for breakdown in [score_candidate(c, constraints)[1]]
+        },
     }
 
 
@@ -149,6 +162,17 @@ def print_markdown(report: dict[str, Any]) -> None:
         if case["ranking"]:
             flip = len({tuple(order) for order in case["weight_sensitivity"].values()}) > 1
             flag = "  (weight-sensitive!)" if flip else ""
+            surface_flip = (
+                len({tuple(order) for order in case["surface_sensitivity"].values()}) > 1
+            )
+            flag += "  (surface-weight-sensitive!)" if surface_flip else ""
+            with_data = sum(
+                1 for e in case["surface_evidence"].values() if e["fit"] is not None
+            )
+            flag += (
+                f"  [surface evidence: {with_data}/{len(case['surface_evidence'])} "
+                "candidates]"
+            )
             print(
                 f"{case['case']}: best={case['top_provider']} "
                 f"passes_judgement={case['top_passes_judgement']} "

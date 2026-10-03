@@ -173,3 +173,17 @@ def test_loop_api_request_without_target_distance_is_rejected():
 def test_api_request_still_requires_destination_without_loop():
     with pytest.raises(ValidationError, match="destination is required"):
         RoutePlanAPIRequest(origin="A")
+
+
+def test_route_constraints_rejects_prefer_and_avoid_resolving_to_one_category():
+    # different OSM tags, same surface category -> a contradictory request
+    with pytest.raises(ValidationError, match="same surface categories"):
+        RouteConstraints(prefer_surfaces=["asphalt"], avoid_surfaces=["concrete"])
+    with pytest.raises(ValidationError):
+        RouteConstraints(prefer_surfaces=["paved"], avoid_surfaces=["asphalt"])
+
+
+def test_route_constraints_tolerates_engine_specific_surface_words():
+    # "unpaved" is engine vocabulary we cannot resolve: accepted, simply unscored
+    constraints = RouteConstraints(prefer_surfaces=["gravel", "unpaved"])
+    assert constraints.prefer_surfaces == ["gravel", "unpaved"]

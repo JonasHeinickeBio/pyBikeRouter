@@ -17,6 +17,7 @@ from bike_routing_agent.calibration import (
     evaluate_candidate,
     load_benchmark,
     ranked_candidates,
+    surface_weight_sensitivity,
     weight_sensitivity,
 )
 from bike_routing_agent.models import (
@@ -319,3 +320,59 @@ def test_build_request_mirrors_case():
                                         lat=case.request.origin.lat)
     assert request.destination == case.request.destination
     assert request.constraints == case.request.constraints
+
+
+# -- surface scoring calibration (issue #23) ----------------------------------
+
+
+def _surface_metrics(distance_m: float, coverage: dict[str, float]) -> RouteMetrics:
+    return RouteMetrics(
+        distance_m=distance_m,
+        ascent_m=20.0,
+        surface_coverage=coverage,
+        unknown_surface_fraction=round(1 - sum(coverage.values()), 6),
+    )
+
+
+def test_benchmark_has_surface_preference_cases(benchmark: BenchmarkSet):
+    preference_cases = [
+        c
+        for c in benchmark.cases
+        if c.request.constraints.prefer_surfaces or c.request.constraints.avoid_surfaces
+    ]
+    assert len(preference_cases) >= 4
+    # every preference token must be one the scorer can resolve
+    from bike_routing_agent.config import resolve_surface_tokens
+
+    for case in preference_cases:
+        constraints = case.request.constraints
+        _, unknown = resolve_surface_tokens(
+            [*constraints.prefer_surfaces, *constraints.avoid_surfaces]
+        )
+        assert unknown == [], case.case_id
+
+
+def test_surface_weight_sensitivity_flips_a_surface_dependent_ranking():
+    constraints = RouteConstraints(prefer_surfaces=["paved"], target_distance_km=10)
+    shorter_loose = _candidate("loose-direct", _surface_metrics(10_000, {"loose": 1.0}))
+    longer_paved = _candidate("paved-detour", _surface_metrics(10_800, {"paved": 1.0}))
+    report = surface_weight_sensitivity([shorter_loose, longer_paved], constraints)
+    assert report["surface=0.00"] == ["loose-direct", "paved-detour"]
+    assert report["surface=0.30"] == ["paved-detour", "loose-direct"]
+
+
+def test_surface_weight_sensitivity_is_flat_without_evidence():
+    constraints = RouteConstraints(prefer_surfaces=["paved"])
+    a = _candidate("a", RouteMetrics(distance_m=10_000, ascent_m=10))
+    b = _candidate("b", RouteMetrics(distance_m=10_000, ascent_m=10))
+    report = surface_weight_sensitivity([a, b], constraints)
+    assert len({tuple(order) for order in report.values()}) == 1
+
+
+def test_ranked_candidates_applies_surface_term_all_or_nothing():
+    constraints = RouteConstraints(prefer_surfaces=["paved"])
+    enriched = _candidate("enriched", _surface_metrics(10_000, {"loose": 1.0}))
+    bare = _candidate("bare", RouteMetrics(distance_m=10_000, ascent_m=10))
+    ranked = ranked_candidates([enriched, bare], constraints, surface_weight=0.5)
+    assert all("surface_weight_applied" not in c.score_breakdown for c in ranked)
+    assert ranked[0].score == pytest.approx(ranked[1].score)

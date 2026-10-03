@@ -51,14 +51,15 @@ influence the surface category.
 
 ## Scoring and calibration interaction
 
-The deterministic scorer still does not score surfaces (see
-[scoring-and-exports.md](scoring-and-exports.md)); enrichment output is
-currently explanation/uncertainty material plus the evidence base for the
-calibration harness in `benchmarks/` and
-[calibration](scoring-and-exports.md#score-calibration-issue-4). A future
-surface-aware score must consume `surface_coverage` through the same
-unknown-is-unknown policy, and its weights must be justified with
-`scripts/calibrate.py` evidence, not chosen arbitrarily.
+Enrichment output feeds the surface fit of the scorer (issue #23):
+`surface_coverage` is consumed through this same unknown-is-unknown policy
+(re-based onto the known length, never counting `unknown_fraction` for or
+against a route) -- see
+[scoring-and-exports.md](scoring-and-exports.md#surface-preferences-issue-23).
+The component ships inactive (`SURFACE_WEIGHT = 0.0`) until
+`scripts/calibrate.py` evidence justifies a weight, so enrichment is still
+chiefly explanation/uncertainty material plus the evidence base for the
+calibration harness in `benchmarks/`.
 
 ## Configuration
 

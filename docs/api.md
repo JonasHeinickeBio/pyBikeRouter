@@ -48,7 +48,7 @@ defaults:
 | `target_distance_km` | `null` | `0 < x <= 1000` |
 | `max_distance_km` | `null` | `0 < x <= 1000`; must be >= `target_distance_km` |
 | `max_ascent_m` | `null` | `0 <= x <= 10000` |
-| `prefer_surfaces` / `avoid_surfaces` | `[]` | a surface may not appear in both |
+| `prefer_surfaces` / `avoid_surfaces` | `[]` | surface categories (`paved`, `masonry`, `compacted`, `loose`, `natural_soft`) or OSM `surface` values; the two lists may not resolve to the same category. Unrecognised words are accepted but unscored. Scored from OSM enrichment only when enabled and calibrated (see [scoring](scoring-and-exports.md#surface-preferences-issue-23)) |
 | `avoid_high_traffic_roads` | `true` | |
 | `avoid_ferries` | `true` | |
 | `return_to_origin` | `false` | loop request: `destination` must be omitted and `target_distance_km` is required. |
