@@ -6,7 +6,8 @@
     "Coordinates are [lon, lat]-order landmarks shared with scripts/compare_backends.py and the live tests.",
     "Expectations encode what a rider familiar with each corridor judges a good engine route to look like;",
     "they are plausibility envelopes, not golden geometries. Missing data never fails a check -- it is",
-    "reported as skipped (unknown must stay unknown, see docs/enrichment.md and docs/scoring-and-exports.md)."
+    "reported as skipped (unknown must stay unknown, see docs/enrichment.md and docs/scoring-and-exports.md).",
+    "Cases whose id ends in a surface-preference suffix (issue #23) carry prefer/avoid_surfaces but no surface expectations; see their rationale."
   ],
   "cases": [
     {
@@ -102,6 +103,62 @@
         }
       },
       "rationale": "~5.0 km straight line; the natural ride follows the Oker river paths southeast through the Riddagshausen nature reserve, so some unpaved share (compacted/soft/loose) is a hallmark of the expected route, and masonry should stay marginal."
+    },
+    {
+      "id": "bs-city-hop-prefer-paved",
+      "title": "Braunschweig Hbf -> Bürgerpark, prefer paved",
+      "request": {
+        "origin": {"lon": 10.5267132, "lat": 52.2689081},
+        "destination": {"lon": 10.541, "lat": 52.2735},
+        "constraints": {"bike_type": "city", "max_ascent_m": 60, "prefer_surfaces": ["paved"]}
+      },
+      "expectations": {
+        "distance_m": {"min": 1200, "max": 4000},
+        "ascent_m": {"min": 0, "max": 80}
+      },
+      "rationale": "A city rider asking for paved surfaces on a short hop through a well-tagged grid. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-city-hop`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
+    },
+    {
+      "id": "bs-oldtown-avoid-cobble",
+      "title": "Braunschweig Hbf -> Domplatz, avoid cobblestone",
+      "request": {
+        "origin": {"lon": 10.5267132, "lat": 52.2689081},
+        "destination": {"lon": 10.5275, "lat": 52.2634},
+        "constraints": {"bike_type": "city", "avoid_surfaces": ["masonry"]}
+      },
+      "expectations": {
+        "distance_m": {"min": 600, "max": 2500},
+        "ascent_m": {"min": 0, "max": 60}
+      },
+      "rationale": "The historic centre is cobbled, so avoiding masonry is the case where a stated avoidance competes hardest with directness. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-oldtown-cobble`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
+    },
+    {
+      "id": "bs-wf-tour-hard-surfaces",
+      "title": "Braunschweig Hbf -> Schloss Wolfenbüttel, prefer hard-packed, avoid loose",
+      "request": {
+        "origin": {"lon": 10.5267132, "lat": 52.2689081},
+        "destination": {"lon": 10.5361, "lat": 52.1688},
+        "constraints": {"bike_type": "touring", "prefer_surfaces": ["paved", "compacted"], "avoid_surfaces": ["loose", "natural_soft"]}
+      },
+      "expectations": {
+        "distance_m": {"min": 11500, "max": 20000},
+        "ascent_m": {"min": 0, "max": 250}
+      },
+      "rationale": "A touring rider preferring paved/compacted and avoiding loose or soft surfaces on the valley corridor (both prefer and avoid terms exercised). Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-wf-tour`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
+    },
+    {
+      "id": "bs-okerradweg-prefer-unpaved",
+      "title": "Braunschweig Hbf -> Riddagshausen, prefer unpaved, avoid cobblestone",
+      "request": {
+        "origin": {"lon": 10.5267132, "lat": 52.2689081},
+        "destination": {"lon": 10.5863, "lat": 52.2436},
+        "constraints": {"bike_type": "gravel", "prefer_surfaces": ["compacted", "loose"], "avoid_surfaces": ["masonry"]}
+      },
+      "expectations": {
+        "distance_m": {"min": 5500, "max": 12000},
+        "ascent_m": {"min": 0, "max": 120}
+      },
+      "rationale": "The inverse preference: a gravel rider choosing the Oker paths over streets, avoiding cobbles. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-okerradweg`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
     }
   ]
 }

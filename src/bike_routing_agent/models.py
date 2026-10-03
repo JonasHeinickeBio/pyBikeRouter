@@ -7,6 +7,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from bike_routing_agent.config import resolve_surface_tokens
+
 MAX_VIA_POINTS = 10
 # Upper bound for the request's max_alternatives (issue #24).
 MAX_ALTERNATIVES = 5
@@ -61,6 +63,16 @@ class RouteConstraints(BaseModel):
         overlap = set(self.prefer_surfaces) & set(self.avoid_surfaces)
         if overlap:
             raise ValueError(f"surfaces listed in both prefer and avoid: {sorted(overlap)}")
+        # The same check at the granularity scoring works at: "asphalt" and
+        # "concrete" are different tags but one category, so preferring one
+        # and avoiding the other would contradict itself.
+        preferred, _ = resolve_surface_tokens(self.prefer_surfaces)
+        avoided, _ = resolve_surface_tokens(self.avoid_surfaces)
+        if preferred & avoided:
+            raise ValueError(
+                "prefer_surfaces and avoid_surfaces resolve to the same surface "
+                f"categories: {sorted(preferred & avoided)}"
+            )
         if self.return_to_origin and self.target_distance_km is None:
             raise ValueError(
                 "return_to_origin requires target_distance_km to size the loop "

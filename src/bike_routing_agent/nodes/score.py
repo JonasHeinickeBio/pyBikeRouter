@@ -14,7 +14,7 @@ from typing import Any
 
 from bike_routing_agent.models import MAX_ALTERNATIVES, RouteCandidate, RouteConstraints
 from bike_routing_agent.scoring.alternatives import DEFAULT_DEDUP_THRESHOLD_M, rank_candidates
-from bike_routing_agent.scoring.basic import score_candidate
+from bike_routing_agent.scoring.basic import score_candidates_together
 from bike_routing_agent.state import RouteAgentState
 
 ScoreNodeFn = Callable[[RouteAgentState], dict[str, Any]]
@@ -41,13 +41,12 @@ def build_score_node(*, dedup_threshold_m: float = DEFAULT_DEDUP_THRESHOLD_M) ->
             }
 
         constraints = RouteConstraints.model_validate(state.get("constraints", {}))
-        scored: list[RouteCandidate] = []
-        for candidate_dict in candidates:
-            candidate = RouteCandidate.model_validate(candidate_dict)
-            score, breakdown = score_candidate(candidate, constraints)
-            scored.append(
-                candidate.model_copy(update={"score": score, "score_breakdown": breakdown})
-            )
+        parsed = [RouteCandidate.model_validate(d) for d in candidates]
+        results = score_candidates_together(parsed, constraints)
+        scored: list[RouteCandidate] = [
+            candidate.model_copy(update={"score": score, "score_breakdown": breakdown})
+            for candidate, (score, breakdown) in zip(parsed, results, strict=True)
+        ]
 
         # Rank (and, when a cap was requested, de-duplicate and cap). The
         # selected candidate is rank 1 -- the best-scored member of its

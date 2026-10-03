@@ -260,6 +260,33 @@ SURFACE_TAXONOMY: dict[str, str] = {
     "rock": "natural_soft",
 }
 
+def surface_category(token: str) -> str | None:
+    """Surface-quality category for a caller-supplied surface token.
+
+    Accepts the category names themselves (``paved``, ``loose``, ...) and raw
+    OSM ``surface`` values (``asphalt``, ``paving_stones:30``); anything else
+    -- a typo, an engine-specific word like ``unpaved`` -- is ``None``, i.e.
+    unknown, never guessed.
+    """
+    normalized = token.strip().lower().split(":", 1)[0]
+    if normalized in SURFACE_TAXONOMY.values():
+        return normalized
+    return SURFACE_TAXONOMY.get(normalized)
+
+
+def resolve_surface_tokens(tokens: list[str]) -> tuple[frozenset[str], list[str]]:
+    """Split surface tokens into (resolved categories, unrecognised tokens)."""
+    categories: set[str] = set()
+    unrecognised: list[str] = []
+    for token in tokens:
+        category = surface_category(token)
+        if category is None:
+            unrecognised.append(token)
+        else:
+            categories.add(category)
+    return frozenset(categories), unrecognised
+
+
 # OSM ``tracktype`` grade -> category. Grades are an ordered OSM vocabulary
 # (grade1 hard-packed/paved .. grade5 impassable for cars), so the mapping
 # is fixed rather than configurable.

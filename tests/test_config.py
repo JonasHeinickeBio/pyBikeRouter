@@ -329,3 +329,15 @@ def test_alternative_dedup_threshold_default_and_validation():
     assert Settings(alternative_dedup_threshold_m=120).alternative_dedup_threshold_m == 120
     with pytest.raises(ValidationError, match="alternative_dedup_threshold_m"):
         Settings(alternative_dedup_threshold_m=0)
+
+
+def test_surface_category_resolves_categories_and_osm_values():
+    from bike_routing_agent.config import resolve_surface_tokens, surface_category
+
+    assert surface_category("paved") == "paved"
+    assert surface_category(" Asphalt ") == "paved"
+    assert surface_category("paving_stones:30") == "masonry"
+    assert surface_category("unpaved") is None
+    categories, unknown = resolve_surface_tokens(["gravel", "asphalt", "unpaved"])
+    assert categories == {"loose", "paved"}
+    assert unknown == ["unpaved"]
