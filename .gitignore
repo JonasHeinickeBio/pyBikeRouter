@@ -10,6 +10,7 @@ exports/
 dist/
 build/
 .coverage*
+coverage.xml
 
 # BRouter road-network segments (downloaded, see docker/brouter/README.md)
 docker/brouter/segments/*.rd5

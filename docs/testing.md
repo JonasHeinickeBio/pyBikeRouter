@@ -77,13 +77,37 @@ respected too -- every module currently sits at 84% or above, most at 100%.
 
 ## CI
 
-`.github/workflows/ci.yml` runs, on every push and pull request:
+`.github/workflows/ci.yml` runs on every push to `main`, every pull request,
+manually (`workflow_dispatch`) and weekly on `main` (to catch upstream
+drift). A newer push to the same PR cancels the older run; every job has a
+timeout and the token is read-only.
 
-```bash
-ruff check .
-mypy src
-pytest --maxfail=1
-```
+| Job | What it does |
+| --- | --- |
+| `lint` | `ruff check .` (annotations appear inline on the PR) |
+| `typecheck` | `mypy src` (tests are linted and run, not mypy-checked) |
+| `test (3.11)`, `test (3.12)` | `pytest --maxfail=1`; coverage gate (80%) comes from `addopts`; 3.12 uploads `coverage.xml` and a coverage table in the run summary |
+| `postgis (route history + artifacts)` | Starts a PostGIS service and runs the `live`-marked `tests/storage` suite -- the PostGIS backend is otherwise never exercised by the default run |
+| `frontend (js syntax)` | `node --check` on every script in `frontend/` |
+| `shellcheck + workflow lint` | `shellcheck` on `scripts/*.sh` and `actionlint` on the workflows |
+| `docker build + smoke test` | Builds `docker/Dockerfile` (layer-cached) and checks the container serves `/healthz`, the planner, the dashboard, and answers `503` on the history endpoints without a database |
+| `CI passed` | Aggregates the jobs above under one name -- require this single check in branch protection instead of each job |
 
-Coverage gating comes from the `addopts` above, so CI enforces it as well.
-Note CI type-checks `src` only; tests are linted and run, but not mypy-checked.
+Other workflows:
+
+- `codeql.yml` -- CodeQL (`security-extended`) for Python, the JavaScript
+  frontend and the workflows themselves, on push, PRs and weekly.
+- `dependency-review.yml` -- on PRs that change dependencies, Dockerfile or
+  workflows, fails on newly introduced `high`+ severity vulnerabilities.
+- `dependabot.yml` -- weekly updates for pip (minor/patch grouped), GitHub
+  Actions (including the local composite action) and the Docker base image.
+
+Third-party actions (anything outside `actions/*` and `github/*`) are pinned
+to a full commit SHA with the version in a trailing comment, because a tag can
+be moved after the fact. Dependabot's `github-actions` ecosystem updates the
+pin and the comment together.
+
+The Python/Poetry setup is shared by the jobs through the local composite
+action `.github/actions/setup-python-poetry` (pinned Poetry, lock-keyed venv
+cache, `--extras db`). Live tests that need external services or secrets (ORS,
+Overpass, BRouter) are still run by hand, not in CI.
