@@ -36,7 +36,10 @@ from bike_routing_agent.models import (
 from bike_routing_agent.scoring.basic import (
     DISTANCE_WEIGHT,
     ELEVATION_WEIGHT,
+    SURFACE_WEIGHT,
     score_candidate,
+    surface_active,
+    weighted_score,
 )
 
 # The surface-quality vocabulary RouteMetrics.surface_coverage keys share
@@ -52,6 +55,13 @@ DEFAULT_WEIGHT_GRID: tuple[tuple[float, float], ...] = (
     (0.80, 0.20),
     (0.35, 0.65),
 )
+
+# Surface-component weights the surface sensitivity report re-ranks under
+# (distance/elevation stay at their shipped values). 0.0 is "surface ignored",
+# the reference every non-zero point is compared against: a ranking that
+# changes between 0.0 and a small weight is exactly the evidence needed to
+# decide whether (and how heavily) the component should be switched on.
+SURFACE_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.10, 0.20, 0.30)
 
 DEFAULT_BENCHMARK_PATH = (
     Path(__file__).resolve().parents[2] / "benchmarks" / "core-v1.json"
@@ -90,8 +100,9 @@ class CombinedShare(BaseModel):
 class SurfaceExpectation(BaseModel):
     """Judged expectations over ``metrics.surface_coverage`` shares.
 
-    Coverage shares are of the *known* route length (coverage + unknown = 1),
-    so every check here is only meaningful when enrichment populated
+    Coverage shares are of the whole route's length and sum with the
+    unknown fraction to 1 (docs/enrichment.md, "Summary semantics"), so every
+    check here is only meaningful when enrichment populated
     ``surface_coverage`` at all; without data every surface check skips.
     """
 
@@ -378,21 +389,29 @@ def ranked_candidates(
     constraints: RouteConstraints,
     distance_weight: float = DISTANCE_WEIGHT,
     elevation_weight: float = ELEVATION_WEIGHT,
+    surface_weight: float | None = None,
 ) -> list[RouteCandidate]:
     """Score candidates and return them best-first, optionally re-weighted.
 
     Components come from ``score_candidate``'s breakdown, so the re-weighted
     view can never disagree with the production scorer about the components
-    themselves -- only about how they trade off. Weights need not sum to 1;
-    the ranking is invariant to their common scale.
+    themselves -- only about how they trade off. Distance/elevation weights
+    need not sum to 1; the ranking is invariant to their common scale.
+    ``surface_weight`` (default: the shipped ``SURFACE_WEIGHT``) follows the
+    production rule: the surface term applies to the whole candidate set or
+    not at all, so a missing-evidence candidate never mixes formulas.
     """
+    weight = SURFACE_WEIGHT if surface_weight is None else surface_weight
+    breakdowns = [score_candidate(c, constraints)[1] for c in candidates]
+    use_surface = surface_active(breakdowns, weight)
     scored: list[RouteCandidate] = []
-    for candidate in candidates:
-        _, breakdown = score_candidate(candidate, constraints)
-        score = (
-            distance_weight * breakdown["distance_fit"]
-            + elevation_weight * breakdown["elevation_fit"]
-            - breakdown["warning_penalty"]
+    for candidate, breakdown in zip(candidates, breakdowns, strict=True):
+        score = weighted_score(
+            breakdown,
+            distance_weight=distance_weight,
+            elevation_weight=elevation_weight,
+            surface_weight=weight,
+            use_surface=use_surface,
         )
         scored.append(
             candidate.model_copy(
@@ -420,6 +439,27 @@ def weight_sensitivity(
         ranked = ranked_candidates(candidates, constraints, w_distance, w_elevation)
         report[label] = [c.provider for c in ranked]
     return report
+
+
+def surface_weight_sensitivity(
+    candidates: list[RouteCandidate],
+    constraints: RouteConstraints,
+    grid: tuple[float, ...] = SURFACE_WEIGHT_GRID,
+) -> dict[str, list[str]]:
+    """Provider ranking per surface weight, for the calibration report.
+
+    Distance/elevation weights stay at their shipped values. Without surface
+    preferences, or without enough surface evidence on every candidate, the
+    component is inactive and every grid point yields the same ranking --
+    reported as such rather than hidden, because "the data cannot speak to
+    this yet" is itself a calibration finding.
+    """
+    return {
+        f"surface={w:.2f}": [
+            c.provider for c in ranked_candidates(candidates, constraints, surface_weight=w)
+        ]
+        for w in grid
+    }
 
 
 def evaluation_rows(

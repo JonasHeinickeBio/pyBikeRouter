@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from bike_routing_agent.models import RouteCandidate, RouteConstraints
-from bike_routing_agent.scoring.basic import score_candidate
+from bike_routing_agent.scoring.basic import score_candidates_together
 from bike_routing_agent.state import RouteAgentState
 
 
@@ -24,11 +24,12 @@ def score_candidates(state: RouteAgentState) -> dict[str, Any]:
         }
 
     constraints = RouteConstraints.model_validate(state.get("constraints", {}))
-    scored: list[RouteCandidate] = []
-    for candidate_dict in candidates:
-        candidate = RouteCandidate.model_validate(candidate_dict)
-        score, breakdown = score_candidate(candidate, constraints)
-        scored.append(candidate.model_copy(update={"score": score, "score_breakdown": breakdown}))
+    parsed = [RouteCandidate.model_validate(d) for d in candidates]
+    results = score_candidates_together(parsed, constraints)
+    scored: list[RouteCandidate] = [
+        candidate.model_copy(update={"score": score, "score_breakdown": breakdown})
+        for candidate, (score, breakdown) in zip(parsed, results, strict=True)
+    ]
 
     best = max(scored, key=lambda c: c.score if c.score is not None else float("-inf"))
 
