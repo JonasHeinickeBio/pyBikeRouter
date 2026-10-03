@@ -19,10 +19,29 @@ score = 0.65 * distance_fit + 0.35 * elevation_fit - warning_penalty
 | `warning_penalty` | `min(0.3, 0.05 * len(candidate.warnings))` -- provider warnings cost 0.05 each, capped so warnings can never dominate the score. |
 
 `score_candidates` (the graph node) scores every candidate, writes
-`score`/`score_breakdown` back onto each, and selects the maximum as
-`selected_candidate`. Today there is exactly one candidate (single provider);
-the list structure is deliberate so multi-engine comparison can be added
-without changing the node ([roadmap.md](roadmap.md)).
+`score`/`score_breakdown` back onto each, then ranks them and selects rank 1
+as `selected_candidate` (with several engines configured, that is the
+multi-engine comparison).
+
+### Ranking and alternatives (issue #24)
+
+`scoring/alternatives.py` orders candidates by score (ties: shorter
+distance, then provider/profile; unscored last) and numbers them from 1.
+Each candidate gets a `rank_rationale` assembled purely from metric deltas
+against rank 1 -- e.g. `rank 2: score 0.80 (0.10 below rank 1); 1.2 km
+longer; 40 m less ascent` -- so it states how routes differ and never
+claims one is safer.
+
+Engines often return the same street-level route, snapped a few metres
+apart, so *near-identical* routes are recognised: both lines are resampled
+to 64 points by arc length (vertex density does not matter) and compared by
+discrete Frechet distance; within `ALTERNATIVE_DEDUP_THRESHOLD_M` (50 m) they
+are one alternative, and the better-scored member is kept, which is why rank
+1 is never a duplicate. Geometries that cannot be read are never merged.
+Without `max_alternatives` every candidate is still returned (duplicates
+annotated via `duplicate_of`/`duplicates`); with it the duplicates are
+dropped and the list capped. The 50 m default is a prior, not a calibrated
+value: tune it from real multi-engine outputs ([roadmap.md](roadmap.md)).
 
 ### What is deliberately *not* scored
 

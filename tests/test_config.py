@@ -322,3 +322,10 @@ def test_build_storage_can_move_artifacts_into_the_database():
 
     assert isinstance(store, PostgresArtifactStore)
     assert isinstance(history, PostgresRouteHistory)
+
+
+def test_alternative_dedup_threshold_default_and_validation():
+    assert Settings().alternative_dedup_threshold_m == 50.0
+    assert Settings(alternative_dedup_threshold_m=120).alternative_dedup_threshold_m == 120
+    with pytest.raises(ValidationError, match="alternative_dedup_threshold_m"):
+        Settings(alternative_dedup_threshold_m=0)

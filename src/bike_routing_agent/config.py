@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     overpass_buffer_m: float = 25.0
     overpass_cache_ttl_s: int = 86_400
 
+    # Two candidates whose routes stay within this many metres of each other
+    # (discrete Frechet distance) are one alternative, not two (issue #24).
+    # Deliberately small: engines snapping to the same streets differ by a
+    # few metres, while a genuinely different route differs by blocks.
+    alternative_dedup_threshold_m: float = 50.0
+
     export_dir: str = "exports"
 
     # Persistence (issue #7). With a DATABASE_URL (PostgreSQL + PostGIS) every
@@ -134,6 +140,15 @@ class Settings(BaseSettings):
                     "overpass_buffer_m must be > 0 when osm_enrichment_enabled "
                     f"(got {self.overpass_buffer_m})"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _check_alternative_dedup_threshold(self) -> Settings:
+        if self.alternative_dedup_threshold_m <= 0:
+            raise ValueError(
+                "alternative_dedup_threshold_m must be > 0 "
+                f"(got {self.alternative_dedup_threshold_m})"
+            )
         return self
 
     @model_validator(mode="after")

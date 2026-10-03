@@ -37,6 +37,8 @@ class RouteAgentState(TypedDict, total=False):
     destination_input: dict[str, Any] | None
     via_inputs: list[dict[str, Any]]
     constraints: dict[str, Any]
+    # Cap on distinct alternatives (issue #24); None keeps every candidate.
+    max_alternatives: int | None
 
     resolved_origin: dict[str, Any] | None
     resolved_destination: dict[str, Any] | None

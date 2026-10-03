@@ -55,6 +55,7 @@ def build_parse_node(*, llm_parser: LLMParser | None = None) -> ParseNodeFn:
             "destination_input": _place_input(raw.get("destination")),
             "via_inputs": [v for v in via_inputs if v is not None],
             "constraints": raw.get("constraints", {}),
+            "max_alternatives": raw.get("max_alternatives"),
             "status": "in_progress",
         }
 

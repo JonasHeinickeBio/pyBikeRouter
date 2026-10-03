@@ -356,3 +356,18 @@ def test_stats_filters_narrow_every_aggregate(history):
     assert window.total_plans == 2
     assert [p.provider for p in window.providers] == ["valhalla"]
     assert window.by_status == {"ready": 1, "provider_failure": 1}
+
+
+def test_record_from_state_prefers_the_score_nodes_rank_over_a_resort():
+    """Issue #24: a ranked state is stored in that rank order."""
+    first = candidate("brouter", "trekking", 0.5)
+    first["rank"] = 1
+    second = candidate("ors", "cycling-regular", 0.9)
+    second["rank"] = 2
+
+    record = record_from_state(pid(1), ready_state([second, first], selected=first), created_at=T0)
+
+    assert [(s.rank, s.candidate.provider) for s in record.candidates] == [
+        (1, "brouter"),
+        (2, "ors"),
+    ]
