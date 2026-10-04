@@ -139,6 +139,29 @@ class NominatimGeocoder:
         await self._cache.set(key, dumped, ttl_s=self._cache_ttl_s)
         return candidates
 
+    async def health(self) -> dict:
+        """Reachability via Nominatim's ``GET /status`` (a one-word answer).
+
+        Deliberately not a search: the public instance's usage policy
+        forbids hammering, and the readiness monitor caches this result for
+        minutes. 200 means up; anything else is reported as degraded.
+        """
+        headers = {"User-Agent": self._user_agent}
+        status_url = f"{self._base_url}/status"
+        try:
+            if self._client is not None:
+                response = await self._client.get(
+                    status_url, headers=headers, timeout=self._timeout_s
+                )
+            else:
+                async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                    response = await client.get(status_url, headers=headers)
+        except httpx.HTTPError:
+            return {"status": "unavailable"}
+        if response.status_code == 200:
+            return {"status": "ok"}
+        return {"status": "degraded", "status_code": response.status_code}
+
     async def _request(self, params: dict[str, str], query: str) -> list[dict]:
         """One /search call; maps transport/HTTP/JSON failures to structured
         provider errors and validates the list response shape."""

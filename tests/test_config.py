@@ -334,3 +334,16 @@ def test_surface_category_resolves_categories_and_osm_values():
     categories, unknown = resolve_surface_tokens(["gravel", "asphalt", "unpaved"])
     assert categories == {"loose", "paved"}
     assert unknown == ["unpaved"]
+
+
+def test_health_settings_defaults_and_validation():
+    s = Settings(_env_file=None)
+    assert (s.health_probe_timeout_s, s.health_cache_ttl_s, s.health_geocoder_cache_ttl_s) == (
+        5.0,
+        30.0,
+        300.0,
+    )
+    with pytest.raises(ValidationError, match="health_probe_timeout_s"):
+        Settings(_env_file=None, health_probe_timeout_s=0)
+    with pytest.raises(ValidationError, match="health cache TTLs"):
+        Settings(_env_file=None, health_cache_ttl_s=-1)

@@ -90,7 +90,7 @@ timeout and the token is read-only.
 | `postgis (route history + artifacts)` | Starts a PostGIS service and runs the `live`-marked `tests/storage` suite -- the PostGIS backend is otherwise never exercised by the default run |
 | `frontend (js syntax)` | `node --check` on every script in `frontend/` |
 | `shellcheck + workflow lint` | `shellcheck` on `scripts/*.sh` and `actionlint` on the workflows |
-| `docker build + smoke test` | Builds `docker/Dockerfile` (layer-cached) and checks the container serves `/healthz`, the planner, the dashboard, and answers `503` on the history endpoints without a database |
+| `docker build + smoke test` | Builds `docker/Dockerfile` (layer-cached) and checks the container serves `/healthz`, answers `/readyz` (200 or 503, never an error), the planner, the dashboard, and answers `503` on the history endpoints without a database |
 | `CI passed` | Aggregates the jobs above under one name -- require this single check in branch protection instead of each job |
 
 Other workflows:

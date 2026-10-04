@@ -168,6 +168,11 @@ jobs:
           curl -fsS http://127.0.0.1:8000/healthz
           curl -fsS -o /dev/null http://127.0.0.1:8000/
           curl -fsS -o /dev/null http://127.0.0.1:8000/dashboard.html
+          # Readiness depends on upstream services the CI runner may not reach,
+          # so only the contract is checked: 200 or 503 with a component list.
+          code="$(curl -s -o /tmp/readyz.json -w '%{http_code}' http://127.0.0.1:8000/readyz)"
+          case "$code" in 200|503) ;; *) echo "unexpected /readyz status $code"; exit 1 ;; esac
+          python3 -c "import json; d = json.load(open('/tmp/readyz.json')); assert d['components'] and d['status'] in ('ok', 'degraded', 'unavailable')"
           # No database is configured, so history endpoints must say so (503).
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/v1/history/stats)" = "503"
       - name: Container logs on failure
