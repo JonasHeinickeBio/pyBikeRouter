@@ -11,13 +11,14 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from bike_routing_agent.config import Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.graph import build_graph
+from bike_routing_agent.health import build_health_monitor
 from bike_routing_agent.models import (
     ClarificationOption,
     Coordinate,
@@ -211,6 +212,19 @@ _export_dir = Path(settings.export_dir)
 
 _geocode_provider, _routing_providers = build_providers(settings)
 _artifact_store, _history = build_storage(settings)
+
+_health_monitor = build_health_monitor(
+    geocoder=_geocode_provider,
+    routing_providers=_routing_providers,
+    artifact_store=_artifact_store,
+    history=_history,
+    # With the exports in the database a database outage fails plans, so it
+    # gates readiness; otherwise history is best effort and only degrades.
+    database_is_critical=settings.artifact_backend == "database",
+    timeout_s=settings.health_probe_timeout_s,
+    ttl_s=settings.health_cache_ttl_s,
+    geocoder_ttl_s=settings.health_geocoder_cache_ttl_s,
+)
 
 _graph = build_graph(
     geocode_provider=_geocode_provider,
@@ -406,7 +420,19 @@ async def get_history_plan(plan_id: str) -> PlanRecord:
 
 @app.get("/healthz")
 async def healthz() -> dict:
+    """Liveness: the process answers. Says nothing about upstream services."""
     return {"status": "ok"}
+
+
+@app.get("/readyz")
+async def readyz() -> JSONResponse:
+    """Readiness: can this instance plan right now? (issue #25)
+
+    200 when ready (``ok`` or ``degraded``), 503 when not. Probe results are
+    cached, so polling this endpoint is cheap for upstream services.
+    """
+    report = await _health_monitor.check()
+    return JSONResponse(report.as_dict(), status_code=200 if report.ready else 503)
 
 
 _frontend_dir = Path(__file__).parent / "frontend"
