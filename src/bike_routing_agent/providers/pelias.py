@@ -57,6 +57,14 @@ class PeliasGeocoder:
         self._boundary_geometries = boundary_geometries
         self._boundary_rect = boundary_rect
 
+    async def health(self) -> dict[str, Any]:
+        """Health of the self-hosted ORS instance that serves Pelias.
+
+        There is no separate Pelias probe: the geocoder lives behind the same
+        server as routing, so its ``/v2/health`` is the best available signal.
+        """
+        return await self._client.health()
+
     async def geocode(self, query: str, *, limit: int = 5) -> list[GeocodeCandidate]:
         """Resolve a query via ``/pelias/v1/search`` (cache-first), raising
         :class:`GeocodingNotFoundError` on an empty feature list."""

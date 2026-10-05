@@ -22,6 +22,7 @@ Schema notes:
 from __future__ import annotations
 
 import json
+import logging
 import threading
 from typing import Any
 
@@ -113,6 +114,9 @@ def _import_psycopg() -> Any:
     return psycopg, psycopg_pool
 
 
+logger = logging.getLogger(__name__)
+
+
 class PostgresDatabase:
     """Lazily opened connection pool plus one-time schema creation."""
 
@@ -140,6 +144,33 @@ class PostgresDatabase:
                     conn.execute(SCHEMA_SQL)
                 self._pool = pool
         return self._pool
+
+    def ping(self, *, timeout_s: float = 5.0) -> dict[str, str]:
+        """``SELECT 1`` for the readiness endpoint (pooled connection when the
+        pool is open, otherwise a single short-lived one).
+
+        Never raises: any failure (unreachable server, pool timeout, missing
+        driver) is an ``unavailable`` answer, logged server-side only.
+        """
+        try:
+            pool = self._pool
+            if pool is not None:
+                with pool.connection(timeout=timeout_s) as conn:
+                    conn.execute("SELECT 1")
+            else:
+                # Pool not opened yet: probe with one short-lived connection
+                # instead of opening the pool, so a dead server costs the
+                # connect timeout (not the pool's 30 s open wait) and a
+                # readiness check never creates the schema as a side effect.
+                psycopg, _ = _import_psycopg()
+                with psycopg.connect(
+                    self._url, connect_timeout=max(1, round(timeout_s))
+                ) as conn:
+                    conn.execute("SELECT 1")
+        except Exception:
+            logger.warning("database ping failed", exc_info=True)
+            return {"status": "unavailable"}
+        return {"status": "ok"}
 
     def close(self) -> None:
         with self._lock:
@@ -187,6 +218,9 @@ def _point_sql(name: str) -> str:
 class PostgresRouteHistory:
     def __init__(self, database: PostgresDatabase) -> None:
         self._db = database
+
+    def ping(self) -> dict[str, str]:
+        return self._db.ping()
 
     def save(self, record: PlanRecord) -> None:
         from psycopg.types.json import Jsonb
@@ -435,6 +469,9 @@ class PostgresRouteHistory:
 class PostgresArtifactStore:
     def __init__(self, database: PostgresDatabase) -> None:
         self._db = database
+
+    def ping(self) -> dict[str, str]:
+        return self._db.ping()
 
     def put(self, name: str, content: str) -> None:
         with self._db.connection() as conn:

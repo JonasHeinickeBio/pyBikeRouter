@@ -90,9 +90,11 @@ decisions still open.
 - **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
   similar) implementation is needed for multi-instance deployments to share
   geocode results.
-- **Provider health over HTTP** -- adapters have `health()`; exposing a
-  combined readiness endpoint (distinct from the process-level `/healthz`)
-  is open.
+- **Provider health over HTTP** -- done (issue #25): `GET /readyz`
+  aggregates cached, time-bounded probes of the routing engines, geocoder,
+  artifact store and database ([api.md](api.md#get-readyz)). Open
+  follow-ups: a UI status badge, reporting the shared cache once it exists,
+  and a real Pelias probe if Pelias is ever served on its own.
 - **Artifact lifecycle** -- exports accumulate under `EXPORT_DIR` with no
   cleanup/quota today (the same holds for history and the database artifact
   backend); needs TTL-based pruning or an object-storage `ArtifactStore`.

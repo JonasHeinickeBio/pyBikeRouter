@@ -34,6 +34,9 @@ cp .env.example .env
 | `VALHALLA_TIMEOUT_S` | per-request Valhalla timeout (seconds) | `30.0` |
 | `VALHALLA_MAX_RETRIES` | retries for Valhalla timeouts/5xx | `1` |
 | `ALTERNATIVE_DEDUP_THRESHOLD_M` | routes within this many metres of each other (discrete Frechet distance) count as one alternative; see [API](api.md#alternatives) | `50` |
+| `HEALTH_PROBE_TIMEOUT_S` | hard timeout per `/readyz` probe | `5.0` |
+| `HEALTH_CACHE_TTL_S` | how long a probe result is reused (seconds; `0` disables) | `30` |
+| `HEALTH_GEOCODER_CACHE_TTL_S` | same for the geocoder, longer because the default is the public Nominatim | `300` |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
@@ -127,7 +130,7 @@ The image is a two-stage Poetry build (dependencies compiled in a builder
 stage, runtime image runs as a non-root user) and ships the web UI, so
 <http://localhost:8000/> serves the map frontend. `APP_HOST`/`APP_PORT`
 environment variables adjust the uvicorn bind address, and the container
-declares a `/healthz` healthcheck. `EXPORT_DIR` is set to `/app/exports` in
+declares a `/healthz` (liveness) healthcheck; use `/readyz` for load balancers. `EXPORT_DIR` is set to `/app/exports` in
 the image and compose mounts the volume there.
 
 The compose file also defines an optional `self-hosted` profile with a

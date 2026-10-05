@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # few metres, while a genuinely different route differs by blocks.
     alternative_dedup_threshold_m: float = 50.0
 
+    # Readiness endpoint (issue #25): each component is probed at most once
+    # per TTL, with a hard per-probe timeout. The geocoder gets a longer TTL
+    # because the default one is the public Nominatim (usage policy).
+    health_probe_timeout_s: float = 5.0
+    health_cache_ttl_s: float = 30.0
+    health_geocoder_cache_ttl_s: float = 300.0
+
     export_dir: str = "exports"
 
     # Persistence (issue #7). With a DATABASE_URL (PostgreSQL + PostGIS) every
@@ -149,6 +156,16 @@ class Settings(BaseSettings):
                 "alternative_dedup_threshold_m must be > 0 "
                 f"(got {self.alternative_dedup_threshold_m})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_health_settings(self) -> Settings:
+        if self.health_probe_timeout_s <= 0:
+            raise ValueError(
+                f"health_probe_timeout_s must be > 0 (got {self.health_probe_timeout_s})"
+            )
+        if self.health_cache_ttl_s < 0 or self.health_geocoder_cache_ttl_s < 0:
+            raise ValueError("health cache TTLs must be >= 0")
         return self
 
     @model_validator(mode="after")

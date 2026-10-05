@@ -13,6 +13,7 @@ reaches a store.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Protocol
 
@@ -46,6 +47,15 @@ class LocalArtifactStore:
     @property
     def directory(self) -> Path:
         return self._dir
+
+    def ping(self) -> dict[str, str]:
+        """Writability of the export directory (or the nearest existing parent,
+        since the directory is created on first write)."""
+        target = self._dir
+        while not target.exists() and target != target.parent:
+            target = target.parent
+        ok = target.is_dir() and os.access(target, os.W_OK)
+        return {"status": "ok" if ok else "unavailable"}
 
     def put(self, name: str, content: str) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)

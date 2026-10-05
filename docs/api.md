@@ -257,9 +257,59 @@ artifact id.
 ## GET /healthz
 
 Liveness probe for the API process itself: `{"status": "ok"}`. It does not
-probe the routing or geocoding providers -- provider health is available
-separately via the adapters' `health()` methods (not exposed over HTTP in
-this milestone).
+probe the routing or geocoding providers (use `/readyz` for that); restarting
+the process would not fix a dead upstream, so this is what container
+healthchecks should call.
+
+## GET /readyz
+
+Readiness (issue #25): *can this instance plan right now?* It probes every
+configured routing engine, the geocoder, the artifact store and, when a
+database is configured, the database.
+
+```json
+{
+  "status": "degraded",
+  "ready": true,
+  "checked_at": "2026-10-03T21:00:16+00:00",
+  "components": [
+    {"name": "ors", "kind": "routing", "required": false, "status": "unknown",
+     "latency_ms": 567, "detail": "no health signal from this deployment",
+     "checked_at": "..."},
+    {"name": "valhalla", "kind": "routing", "required": false,
+     "status": "unavailable", "latency_ms": 84, "detail": "unreachable",
+     "checked_at": "..."},
+    {"name": "nominatim", "kind": "geocoder", "required": true, "status": "ok",
+     "latency_ms": 331, "detail": null, "checked_at": "..."}
+  ]
+}
+```
+
+Component `status` is `ok`, `degraded` (answers, but not healthy, e.g. Valhalla
+still loading tiles), `unavailable`, or `unknown` (no health signal -- the
+public openrouteservice has no health endpoint). `unknown` does not make the
+instance unready.
+
+| Overall `status` | HTTP | Meaning |
+| --- | --- | --- |
+| `ok` | `200` | everything probed is fine |
+| `degraded` | `200` | can plan, but something is not: an engine of several is down, or an optional dependency such as the history database |
+| `unavailable` | `503` | cannot plan: the only engine (or every engine) is down, the geocoder or artifact store is down, or the database is down while it holds the exports (`ARTIFACT_BACKEND=database`) |
+
+Notes:
+
+- With `ROUTING_PROVIDER=all`, one working engine is enough; none of them is
+  individually `required`. With a single engine it is.
+- History is recorded best effort, so the `database` component only gates
+  readiness when the exports live there.
+- Probes are concurrent, time-bounded (`HEALTH_PROBE_TIMEOUT_S`) and **cached**
+  (`HEALTH_CACHE_TTL_S`, and a longer `HEALTH_GEOCODER_CACHE_TTL_S` because the
+  default geocoder is the public Nominatim): polling `/readyz` does not turn
+  into upstream traffic. Failures are cached too.
+- Responses carry names and a fixed phrase per status only -- never URLs,
+  keys or exception text. Details go to the server log.
+- The Nominatim probe is `GET /status`, not a search; the Pelias geocoder is
+  judged by the self-hosted ORS that serves it.
 
 ## Errors and status codes
 
