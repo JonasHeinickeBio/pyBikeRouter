@@ -26,9 +26,10 @@ from bike_routing_agent.nodes.export import build_export_node
 from bike_routing_agent.nodes.geocode import build_geocode_node
 from bike_routing_agent.nodes.parse import LLMParser, build_parse_node
 from bike_routing_agent.nodes.route import build_route_node
-from bike_routing_agent.nodes.score import score_candidates
+from bike_routing_agent.nodes.score import build_score_node
 from bike_routing_agent.nodes.validate import validate_request
 from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
+from bike_routing_agent.scoring.alternatives import DEFAULT_DEDUP_THRESHOLD_M
 from bike_routing_agent.state import RouteAgentState
 from bike_routing_agent.storage.artifacts import ArtifactStore
 
@@ -70,6 +71,7 @@ def build_graph(
     min_confidence: float = 0.3,
     checkpointer: BaseCheckpointSaver | None = None,
     surface_enricher: SurfaceEnricher | None = None,
+    alternative_dedup_threshold_m: float = DEFAULT_DEDUP_THRESHOLD_M,
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
@@ -87,7 +89,9 @@ def build_graph(
     # Always present so routing never talks to scoring's surface assumptions
     # directly; a no-op pass-through when no enricher is configured (issue #3).
     graph.add_node("enrich_candidates", build_enrich_node(surface_enricher=surface_enricher))
-    graph.add_node("score_candidates", score_candidates)
+    graph.add_node(
+        "score_candidates", build_score_node(dedup_threshold_m=alternative_dedup_threshold_m)
+    )
     graph.add_node(
         "explain_and_export",
         build_export_node(export_dir=export_dir, artifact_store=artifact_store),

@@ -10,6 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from bike_routing_agent.config import resolve_surface_tokens
 
 MAX_VIA_POINTS = 10
+# Upper bound for the request's max_alternatives (issue #24).
+MAX_ALTERNATIVES = 5
 PlaceString = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
 
 # Sweep direction of a synthesized loop around its origin (issue #5); the
@@ -104,6 +106,15 @@ class RouteCandidate(BaseModel):
     score_breakdown: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    # Ranking (issue #24): 1-based position in the returned list (null on
+    # candidates that have not been through the score node), a facts-only
+    # sentence comparing it to rank 1, and the near-identical-geometry
+    # bookkeeping -- `duplicates` on a kept route, `duplicate_of` on a
+    # candidate that is itself a near-copy of a better-scored one.
+    rank: int | None = Field(default=None, ge=1)
+    rank_rationale: str | None = None
+    duplicate_of: str | None = None
+    duplicates: list[str] = Field(default_factory=list)
     raw_provider_response: dict[str, Any] | None = Field(default=None, repr=False)
 
 
@@ -136,6 +147,11 @@ class RoutePlanAPIRequest(BaseModel):
     destination: PlaceString | Coordinate | None = None
     via: list[PlaceString | Coordinate] = Field(default_factory=list, max_length=MAX_VIA_POINTS)
     constraints: RouteConstraints = Field(default_factory=RouteConstraints)
+    # Number of distinct alternatives wanted (issue #24). Omitted: every
+    # scored candidate is returned, ranked and annotated, exactly as before.
+    # Set: near-identical routes are dropped and the list is capped. It only
+    # has an effect when more than one routing engine is configured.
+    max_alternatives: int | None = Field(default=None, ge=1, le=MAX_ALTERNATIVES)
 
     @model_validator(mode="after")
     def _check_loop_contract(self) -> RoutePlanAPIRequest:

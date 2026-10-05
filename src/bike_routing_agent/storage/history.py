@@ -332,7 +332,8 @@ def record_from_state(
 
     Candidates are recorded only for ``ready`` plans (that is where scoring
     has produced a verdict). The selected candidate is the one the graph
-    chose; ranking follows the same best-score-first order the API reports.
+    chose; ranking follows the same order the API reports (the score node's
+    rank, best first).
     """
     status = final_state.get("status", "provider_failure")
     stored: list[StoredCandidate] = []
@@ -342,8 +343,13 @@ def record_from_state(
             RouteCandidate.model_validate(c).model_copy(update={"raw_provider_response": None})
             for c in final_state.get("candidates", [])
         ]
+        # The score node already ranked them (issue #24); fall back to score
+        # order for states that never went through it.
         candidates.sort(
-            key=lambda c: c.score if c.score is not None else float("-inf"), reverse=True
+            key=lambda c: (
+                c.rank if c.rank is not None else 10**9,
+                -(c.score if c.score is not None else float("-inf")),
+            )
         )
         selected_index = _selected_index(candidates, selected)
         stored = [
