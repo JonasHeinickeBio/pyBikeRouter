@@ -1,0 +1,3 @@
+# Downloaded OSM extracts (hundreds of MB) never belong in git.
+data/*
+!data/.gitkeep
