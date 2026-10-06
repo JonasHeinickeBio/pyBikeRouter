@@ -37,6 +37,8 @@ cp .env.example .env
 | `HEALTH_PROBE_TIMEOUT_S` | hard timeout per `/readyz` probe | `5.0` |
 | `HEALTH_CACHE_TTL_S` | how long a probe result is reused (seconds; `0` disables) | `30` |
 | `HEALTH_GEOCODER_CACHE_TTL_S` | same for the geocoder, longer because the default is the public Nominatim | `300` |
+| `ORS_XMX` / `ORS_XMS` / `ORS_MEM_LIMIT` | self-hosted ORS container sizing (compose only; defaults `4g` / `128m` / `6g`); a city extract needs far less ([self-hosted.md](self-hosted.md#sizing-knobs)) | see left |
+| `NOMINATIM_THREADS` / `NOMINATIM_MEM_LIMIT` | self-hosted Nominatim import threads and container limit (compose only; defaults `4` / `4g`) | see left |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
@@ -133,13 +135,17 @@ environment variables adjust the uvicorn bind address, and the container
 declares a `/healthz` (liveness) healthcheck; use `/readyz` for load balancers. `EXPORT_DIR` is set to `/app/exports` in
 the image and compose mounts the volume there.
 
-The compose file also defines an optional `self-hosted` profile: a local
+The compose file also defines optional `self-hosted` profiles: a local
 openrouteservice and a local Nominatim built from one OSM extract, with a
-bootstrap script ([self-hosted.md](self-hosted.md); openrouteservice has no
-geocoder of its own, see [geocoding.md](geocoding.md)):
+bootstrap script. You can run both or just one (`--only routing` /
+`--only geocoding`; the other keeps using its public service), which is the
+way to go on a small machine -- [self-hosted.md](self-hosted.md) lists the
+measured memory, disk and time each needs (openrouteservice has no geocoder of
+its own, see [geocoding.md](geocoding.md)):
 
 ```bash
-scripts/self-hosted-bootstrap.sh
+scripts/self-hosted-bootstrap.sh                   # both
+scripts/self-hosted-bootstrap.sh --only routing    # local routing, public geocoding
 ```
 
 And an optional `brouter` profile running a local BRouter RouteServer

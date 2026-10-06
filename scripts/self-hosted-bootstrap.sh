@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Start the self-hosted routing + geocoding stack (docs/self-hosted.md).
 #
-#   scripts/self-hosted-bootstrap.sh            # download extract (if missing), start, wait until ready
-#   scripts/self-hosted-bootstrap.sh status     # health of the two services
-#   scripts/self-hosted-bootstrap.sh --force    # re-download the extract first
+#   scripts/self-hosted-bootstrap.sh                    # download extract (if missing), start both, wait until ready
+#   scripts/self-hosted-bootstrap.sh --only routing     # openrouteservice only (geocoding stays on public Nominatim)
+#   scripts/self-hosted-bootstrap.sh --only geocoding   # Nominatim only (routing stays on the public ORS)
+#   scripts/self-hosted-bootstrap.sh status             # health of the selected services
+#   scripts/self-hosted-bootstrap.sh --force            # re-download the extract first
+#
+# Small machine? --only runs half of the stack; docs/self-hosted.md lists the
+# memory, disk and time each service needs, and how to size them down.
 #
 # What it does: places one OSM extract at docker/self-hosted/data/region.osm.pbf
 # (verified against the MD5 Geofabrik publishes next to it), then runs
@@ -35,14 +40,31 @@ NOMINATIM_STATUS="http://127.0.0.1:${NOMINATIM_PORT}/status"
 
 ACTION="up"
 FORCE=0
-for arg in "$@"; do
-  case "$arg" in
-    up|status) ACTION="$arg" ;;
+ONLY=""
+USAGE="use: up | status | --force | --only routing|geocoding"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    up|status) ACTION="$1" ;;
     --force) FORCE=1 ;;
-    -h|--help) sed -n '2,22p' "${BASH_SOURCE[0]}"; exit 0 ;;
-    *) echo "error: unknown argument '$arg' (use: up | status | --force)" >&2; exit 2 ;;
+    --only)
+      [ $# -ge 2 ] || { echo "error: --only needs a value ($USAGE)" >&2; exit 2; }
+      ONLY="$2"; shift ;;
+    --only=*) ONLY="${1#--only=}" ;;
+    -h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    *) echo "error: unknown argument '$1' ($USAGE)" >&2; exit 2 ;;
   esac
+  shift
 done
+
+# Which services this run manages: both by default, one with --only.
+WANT_ORS=1
+WANT_NOMINATIM=1
+case "$ONLY" in
+  "") ;;
+  routing) WANT_NOMINATIM=0 ;;
+  geocoding) WANT_ORS=0 ;;
+  *) echo "error: --only must be 'routing' or 'geocoding' (got '$ONLY')" >&2; exit 2 ;;
+esac
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -50,13 +72,28 @@ service_ready() {  # <url> <grep pattern>
   curl -fsS --max-time 5 "$1" 2>/dev/null | grep -q "$2"
 }
 
+# Prints one line per selected service; succeeds only when all of them answer.
 print_status() {
-  local ors="not ready" nominatim="not ready"
-  service_ready "$ORS_HEALTH" ready && ors="ready"
-  service_ready "$NOMINATIM_STATUS" OK && nominatim="ready"
-  echo "openrouteservice  ($ORS_HEALTH): $ors"
-  echo "nominatim         ($NOMINATIM_STATUS): $nominatim"
-  [ "$ors" = ready ] && [ "$nominatim" = ready ]
+  local not_ready=0 state
+  if [ "$WANT_ORS" = 1 ]; then
+    state="not ready"
+    if service_ready "$ORS_HEALTH" ready; then state="ready"; else not_ready=1; fi
+    echo "openrouteservice  ($ORS_HEALTH): $state"
+  fi
+  if [ "$WANT_NOMINATIM" = 1 ]; then
+    state="not ready"
+    if service_ready "$NOMINATIM_STATUS" OK; then state="ready"; else not_ready=1; fi
+    echo "nominatim         ($NOMINATIM_STATUS): $state"
+  fi
+  return "$not_ready"
+}
+
+# The services handed to `docker compose up`: never a bare `up`, which would
+# also start the `api` service.
+selected_services() {
+  [ "$WANT_ORS" = 1 ] && echo ors-self-hosted
+  [ "$WANT_NOMINATIM" = 1 ] && echo nominatim-self-hosted
+  return 0
 }
 
 if [ "$ACTION" = status ]; then
@@ -98,19 +135,28 @@ else
   echo "Using existing extract $EXTRACT_FILE (pass --force to re-download)"
 fi
 
-echo "Starting the self-hosted stack (first start builds graphs and imports the geocoding index)..."
-# Only the two stack services: a bare `up` would also start the `api` service.
-docker compose -f "$COMPOSE_FILE" --profile self-hosted up -d ors-self-hosted nominatim-self-hosted
+echo "Starting: $(selected_services | tr '\n' ' ')(first start builds graphs / imports the geocoding index)..."
+# Only the selected stack services: a bare `up` would also start the `api` service.
+# shellcheck disable=SC2046  # the service names are plain words, split on purpose
+docker compose -f "$COMPOSE_FILE" --profile self-hosted up -d $(selected_services)
 
-echo "Waiting for both services (up to ${WAIT_TIMEOUT_S}s)..."
+echo "Waiting for the service(s) (up to ${WAIT_TIMEOUT_S}s)..."
 waited=0
 while [ "$waited" -lt "$WAIT_TIMEOUT_S" ]; do
   if print_status >/dev/null; then
-    echo "Ready. Point the API at the stack:"
-    echo "  ORS_BASE_URL=http://127.0.0.1:${ORS_PORT}/ors"
-    echo "  GEOCODER_PROVIDER=nominatim"
-    echo "  GEOCODER_BASE_URL=http://127.0.0.1:${NOMINATIM_PORT}"
-    echo "  GEOCODER_MIN_CONFIDENCE=0 GEOCODER_AMBIGUITY_MARGIN=0   # see docs/self-hosted.md, 'Geocoder confidence'"
+    echo "Ready. Point the API at it (settings that are not listed stay as they are):"
+    if [ "$WANT_ORS" = 1 ]; then
+      echo "  ORS_BASE_URL=http://127.0.0.1:${ORS_PORT}/ors"
+    else
+      echo "  (routing: unchanged -- still the public ORS / BRouter / Valhalla you configured)"
+    fi
+    if [ "$WANT_NOMINATIM" = 1 ]; then
+      echo "  GEOCODER_PROVIDER=nominatim"
+      echo "  GEOCODER_BASE_URL=http://127.0.0.1:${NOMINATIM_PORT}"
+      echo "  GEOCODER_MIN_CONFIDENCE=0 GEOCODER_AMBIGUITY_MARGIN=0   # see docs/self-hosted.md, 'Geocoder confidence'"
+    else
+      echo "  (geocoding: unchanged -- still the public Nominatim, keep its usage policy in mind)"
+    fi
     echo "(OpenStreetMap data (c) OpenStreetMap contributors, ODbL.)"
     exit 0
   fi
