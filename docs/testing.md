@@ -50,6 +50,11 @@ TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55432/test pytest -m live tes
 
 Without `TEST_DATABASE_URL` they skip.
 
+The Redis cache (`tests/providers/test_redis_cache.py`) runs against `fakeredis`
+with failure injection (refused connections, timeouts, circuit breaker, two
+"instances" sharing one server); `test_redis_live.py` is the `live` check against
+a real server (`TEST_REDIS_URL=redis://127.0.0.1:6379/0` after `--profile cache up -d redis`).
+
 The artifact-store contract (`tests/storage/test_artifact_store_contract.py`)
 runs against the local store, the S3 store with an in-memory fake client, and
 -- as `live` params -- PostGIS and a real S3-compatible server. The latter skips

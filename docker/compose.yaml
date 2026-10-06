@@ -138,6 +138,37 @@ services:
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
+  # Shared cache for geocode / Overpass results (`cache` profile), so several
+  # API instances reuse each other's lookups (CACHE_BACKEND=redis,
+  # CACHE_REDIS_URL=redis://127.0.0.1:6379/0; needs the `cache` extra):
+  #
+  #   docker compose -f docker/compose.yaml --profile cache up -d redis
+  #
+  # It is only a cache: no persistence, capped memory with LRU eviction, and the
+  # API keeps working (uncached) if it is down. Loopback only, no password --
+  # development / single-host use; put real auth in front of a shared one.
+  # ---------------------------------------------------------------------------
+  redis:
+    profiles: ["cache"]
+    # Pinned by digest (validated 2026-10-07).
+    image: redis@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command:
+      ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-128mb}", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${REDIS_LOCAL_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
   # Local S3-compatible object store for development (`s3` profile), to try
   # ARTIFACT_BACKEND=s3 and `bike-router retention prune` without AWS:
   #

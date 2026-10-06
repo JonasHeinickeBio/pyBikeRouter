@@ -465,3 +465,22 @@ async def test_default_app_monitor_reports_the_configured_components(client, mon
     assert "artifact_store" in names
     assert api_module._geocode_provider.name in names
     assert {p.name for p in api_module._routing_providers} <= names
+
+
+async def test_a_dead_cache_degrades_but_never_makes_the_instance_unready():
+    class _Cache:
+        async def ping(self):
+            return DOWN
+
+    report = await build(cache=_Cache()).check()
+    cache = next(c for c in report.components if c.kind == "cache")
+    assert (cache.status, cache.required) == ("unavailable", False)
+    assert (report.status, report.ready) == ("degraded", True)
+
+
+async def test_an_in_memory_cache_has_nothing_to_probe():
+    class _Plain:
+        pass
+
+    report = await build(cache=_Plain()).check()
+    assert all(c.kind != "cache" for c in report.components)
