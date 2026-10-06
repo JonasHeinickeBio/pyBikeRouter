@@ -20,11 +20,13 @@ class PeliasGeocoder:
     """GeocodeProvider backed by the Pelias search API served by a
     self-hosted openrouteservice instance (``GET /pelias/v1/search``).
 
-    The public ``api.openrouteservice.org`` does not expose Pelias, so this
-    adapter is only usable against a self-hosted ORS backend (config.py
-    enforces this at startup). Boundary defaults are fixed at construction
-    time because the :class:`GeocodeProvider` protocol only passes a query
-    and a result limit.
+    The public ``api.openrouteservice.org`` does not expose Pelias at this
+    path (config.py refuses that combination at startup), and a stock
+    self-hosted ORS does not include a geocoder either: something must
+    serve a Pelias API at ``<ORS_BASE_URL>/pelias/v1`` (docs/geocoding.md).
+    The tests mock HTTP; this has not been run against a real Pelias.
+    Boundary defaults are fixed at construction time because the
+    :class:`GeocodeProvider` protocol only passes a query and a result limit.
 
     Transport errors (timeouts, 429, 5xx exhaustion, invalid JSON) are
     mapped to the structured provider errors by the underlying

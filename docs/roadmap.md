@@ -98,9 +98,13 @@ decisions still open.
 - **Artifact lifecycle** -- exports accumulate under `EXPORT_DIR` with no
   cleanup/quota today (the same holds for history and the database artifact
   backend); needs TTL-based pruning or an object-storage `ArtifactStore`.
-- **Self-hosted ORS stack** -- a compose profile running ORS (+ Pelias)
-  locally would remove public-API rate limits and unlock boundary-pinned
-  geocoding.
+- **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
+  profile runs a pinned openrouteservice (bicycle profiles) and a local
+  Nominatim from one regional extract, with a bootstrap script
+  ([self-hosted.md](self-hosted.md)). Finding: openrouteservice itself has no
+  geocoder, so boundary-pinned *Pelias* geocoding is still open (it needs a
+  real Pelias deployment, which the `pelias` adapter has never been run
+  against) -- as is Pelias confidence re-tuning below.
 
 ## Explicit non-goals
 

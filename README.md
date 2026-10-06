@@ -24,6 +24,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
+| [Self-hosted stack](docs/self-hosted.md) | Run routing and geocoding locally from one OSM extract (no public rate limits) |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
 | [iPhone / Tailscale](docs/mobile.md) | Use the planner from an iPhone as a home-screen app over your tailnet |
 | [Roadmap](docs/roadmap.md) | Planned work and explicit non-goals |
