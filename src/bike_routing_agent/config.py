@@ -12,8 +12,9 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The public openrouteservice does not serve the Pelias geocoding endpoints
-# (they 404, same as /v2/health), so Pelias-backed geocoding is only usable
-# against a self-hosted ORS instance.
+# (they 404, same as /v2/health), so Pelias-backed geocoding needs another
+# base URL. Note a stock self-hosted ORS has no geocoder either: something
+# must serve a Pelias API at <ORS_BASE_URL>/pelias/v1 (docs/geocoding.md).
 PUBLIC_ORS_BASE_URLS = frozenset({"https://api.openrouteservice.org"})
 
 

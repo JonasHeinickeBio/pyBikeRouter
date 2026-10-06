@@ -38,22 +38,90 @@ services:
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
-  # Optional self-hosted OpenRouteService stack (use with the `self-hosted`
-  # profile and GEOCODER_PROVIDER=pelias in .env):
+  # Self-hosted routing + geocoding (`self-hosted` profile): one regional OSM
+  # extract feeds a local openrouteservice (bicycle profiles only) and a local
+  # Nominatim, so no public API (and no public rate limit) is involved.
   #
-  #   docker compose --profile self-hosted up
+  #   scripts/self-hosted-bootstrap.sh          # download extract, start, wait
+  #   docker compose -f docker/compose.yaml --profile self-hosted up -d
   #
-  # The public api.openrouteservice.org does NOT serve geocoding; the Pelias
-  # geocoder only works against a container like the one below.
+  # Both services read ./self-hosted/data/region.osm.pbf (docs/self-hosted.md
+  # has region choice, memory sizing and the matching .env). openrouteservice
+  # does NOT include a geocoder -- that is why Nominatim runs next to it.
   # ---------------------------------------------------------------------------
   ors-self-hosted:
     profiles: ["self-hosted"]
-    image: openrouteservice/openrouteservice:latest
+    # Pinned release (upstream publishes versioned tags). To update: bump the
+    # tag, delete the pybikerouter-ors-graphs volume (graphs are version
+    # specific) and let the graphs rebuild.
+    image: openrouteservice/openrouteservice:v10.0.1
     restart: unless-stopped
     ports:
-      - "${ORS_LOCAL_PORT:-8080}:8080"
+      # No authentication in front of it -- bind loopback only.
+      - "127.0.0.1:${ORS_LOCAL_PORT:-8080}:8082"
+    environment:
+      ors.engine.profile_default.build.source_file: /home/ors/files/region.osm.pbf
+      # Only the bicycle profiles the planner maps bike types onto
+      # (config.ORS_PROFILE_MAP); everything else would just cost graph build
+      # time and memory.
+      ors.engine.profiles.driving-car.enabled: "false"
+      ors.engine.profiles.cycling-regular.enabled: "true"
+      ors.engine.profiles.cycling-road.enabled: "true"
+      ors.engine.profiles.cycling-mountain.enabled: "true"
+      ors.engine.profiles.cycling-electric.enabled: "true"
+      # Java heap. Rule of thumb from the ORS docs: roughly twice the extract
+      # size per enabled profile for the graph build; a city-state extract
+      # needs far less than the default below, a federal state needs more.
+      XMS: ${ORS_XMS:-1g}
+      XMX: ${ORS_XMX:-4g}
     volumes:
-      - ors-graphs:/usr/src/openroute-service/ors-graph
+      - ./self-hosted/data:/home/ors/files:ro
+      - ors-graphs:/home/ors/graphs
+      - ors-elevation:/home/ors/elevation_cache
+    healthcheck:
+      # The ORS image ships wget, not curl.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/ors/v2/health | grep -q ready"]
+      interval: 15s
+      timeout: 5s
+      # Graph building happens before the service answers; allow a long first start.
+      start_period: 300s
+      retries: 40
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+    logging: *default-logging
+
+  nominatim-self-hosted:
+    profiles: ["self-hosted"]
+    image: mediagis/nominatim:5.3
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NOMINATIM_LOCAL_PORT:-8081}:8080"
+    # PostgreSQL inside the image needs more shared memory than Docker's 64 MB.
+    shm_size: 1gb
+    environment:
+      # Mounted outside /nominatim: the image's init does `chown -R /nominatim`,
+      # which fails (and aborts the import) on a read-only mount.
+      PBF_PATH: /pbf/region.osm.pbf
+      THREADS: ${NOMINATIM_THREADS:-4}
+      # "true" makes the image fetch the Wikipedia importance ranking (bigger
+      # download, slower import) so result confidence resembles the public
+      # Nominatim. Off by default; see docs/self-hosted.md ("Geocoder
+      # confidence"). Provided by the image, not exercised in this repo.
+      IMPORT_WIKIPEDIA: ${NOMINATIM_IMPORT_WIKIPEDIA:-}
+      # Internal to this container (the database port is not published).
+      NOMINATIM_PASSWORD: ${NOMINATIM_DB_PASSWORD:-nominatim}
+    volumes:
+      - ./self-hosted/data:/pbf:ro
+      - nominatim-data:/var/lib/postgresql/16/main
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/status | grep -q OK"]
+      interval: 15s
+      timeout: 5s
+      # The first start imports the extract before serving.
+      start_period: 300s
+      retries: 40
     deploy:
       resources:
         limits:
@@ -218,5 +286,9 @@ volumes:
     name: pybikerouter-pgdata
   ors-graphs:
     name: pybikerouter-ors-graphs
+  ors-elevation:
+    name: pybikerouter-ors-elevation
+  nominatim-data:
+    name: pybikerouter-nominatim-data
   s3-dev-data:
     name: pybikerouter-s3-dev-data

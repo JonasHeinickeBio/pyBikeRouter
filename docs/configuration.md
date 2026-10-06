@@ -140,12 +140,13 @@ environment variables adjust the uvicorn bind address, and the container
 declares a `/healthz` (liveness) healthcheck; use `/readyz` for load balancers. `EXPORT_DIR` is set to `/app/exports` in
 the image and compose mounts the volume there.
 
-The compose file also defines an optional `self-hosted` profile with a
-self-hosted OpenRouteService container (geocoding/Pelias only works against
-such an instance, see [geocoding.md](geocoding.md)):
+The compose file also defines an optional `self-hosted` profile: a local
+openrouteservice and a local Nominatim built from one OSM extract, with a
+bootstrap script ([self-hosted.md](self-hosted.md); openrouteservice has no
+geocoder of its own, see [geocoding.md](geocoding.md)):
 
 ```bash
-docker compose -f docker/compose.yaml --profile self-hosted up
+scripts/self-hosted-bootstrap.sh
 ```
 
 And an optional `brouter` profile running a local BRouter RouteServer
