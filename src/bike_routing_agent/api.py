@@ -11,7 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from bike_routing_agent.config import Settings, settings
@@ -182,29 +182,43 @@ def build_surface_enricher(
 
 
 def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
-    """Artifact store and route history for a configuration (issue #7).
+    """Artifact store and route history for a configuration (issues #7, #27).
 
-    Without ``database_url`` the exports stay under ``export_dir`` and no
-    history is kept (the pre-#7 behavior). With it, plans are recorded in
-    PostGIS; ``artifact_backend="database"`` moves the exports there too so
-    several API instances can serve each other's artifacts.
+    Without ``database_url`` no history is kept (the pre-#7 behavior); with it,
+    plans are recorded in PostGIS. The exports live in ``artifact_backend``:
+    ``local`` (files under ``export_dir``, the default), ``database`` (so
+    several API instances can serve each other's artifacts, needs a database)
+    or ``s3`` (any S3-compatible object store, independent of the database).
     """
-    if not cfg.database_url:
-        return LocalArtifactStore(Path(cfg.export_dir)), None
+    database: Any = None
+    if cfg.database_url:
+        # Imported here so a deployment without a database never needs psycopg.
+        from bike_routing_agent.storage.postgres import PostgresDatabase
 
-    # Imported here so a deployment without a database never needs psycopg.
-    from bike_routing_agent.storage.postgres import (
-        PostgresArtifactStore,
-        PostgresDatabase,
-        PostgresRouteHistory,
-    )
+        database = PostgresDatabase(cfg.database_url, max_size=cfg.database_pool_max_size)
 
-    database = PostgresDatabase(cfg.database_url, max_size=cfg.database_pool_max_size)
-    store: ArtifactStore = (
-        PostgresArtifactStore(database)
-        if cfg.artifact_backend == "database"
-        else LocalArtifactStore(Path(cfg.export_dir))
-    )
+    store: ArtifactStore
+    if cfg.artifact_backend == "database":
+        from bike_routing_agent.storage.postgres import PostgresArtifactStore
+
+        store = PostgresArtifactStore(database)
+    elif cfg.artifact_backend == "s3":
+        from bike_routing_agent.storage.s3 import S3ArtifactStore
+
+        store = S3ArtifactStore(
+            bucket=str(cfg.s3_bucket),
+            prefix=cfg.s3_prefix,
+            endpoint_url=cfg.s3_endpoint_url,
+            region=cfg.s3_region,
+            path_style=cfg.s3_path_style,
+        )
+    else:
+        store = LocalArtifactStore(Path(cfg.export_dir))
+
+    if database is None:
+        return store, None
+    from bike_routing_agent.storage.postgres import PostgresRouteHistory
+
     return store, PostgresRouteHistory(database)
 
 
@@ -343,6 +357,13 @@ async def _record_plan(final_state: dict[str, Any]) -> str | None:
 async def get_route_artifact(filename: str) -> Response:
     if not _SAFE_FILENAME.match(filename):
         raise HTTPException(status_code=404, detail="artifact not found")
+    # Opt-in (S3_PRESIGNED_URL_TTL_S): hand the client a short-lived link to
+    # the object store instead of streaming the bytes through this process.
+    ttl = settings.s3_presigned_url_ttl_s
+    presign = getattr(_artifact_store, "presigned_url", None)
+    if ttl is not None and presign is not None:
+        url = await run_in_threadpool(presign, filename, ttl)
+        return RedirectResponse(url, status_code=307)
     content = await run_in_threadpool(_artifact_store.get, filename)
     if content is None:
         raise HTTPException(status_code=404, detail="artifact not found")

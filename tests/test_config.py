@@ -354,3 +354,47 @@ def test_health_settings_defaults_and_validation():
         Settings(_env_file=None, health_probe_timeout_s=0)
     with pytest.raises(ValidationError, match="health cache TTLs"):
         Settings(_env_file=None, health_cache_ttl_s=-1)
+
+
+def test_s3_and_retention_settings_validation():
+    s = Settings(_env_file=None)
+    assert (s.artifact_backend, s.retention_max_age_days, s.s3_presigned_url_ttl_s) == (
+        "local",
+        None,
+        None,
+    )
+    ok = Settings(_env_file=None, artifact_backend="s3", s3_bucket="b", retention_max_age_days=90)
+    assert ok.s3_bucket == "b" and ok.retention_max_age_days == 90
+    with pytest.raises(ValidationError, match="S3_BUCKET"):
+        Settings(_env_file=None, artifact_backend="s3")
+    with pytest.raises(ValidationError, match="retention_max_age_days"):
+        Settings(_env_file=None, retention_max_age_days=0)
+    with pytest.raises(ValidationError, match="retention_orphan_grace_hours"):
+        Settings(_env_file=None, retention_batch_size=0)
+    with pytest.raises(ValidationError, match="s3_presigned_url_ttl_s"):
+        Settings(_env_file=None, s3_presigned_url_ttl_s=0)
+    with pytest.raises(ValidationError, match="s3_presigned_url_ttl_s"):
+        Settings(_env_file=None, s3_presigned_url_ttl_s=10**7)
+
+
+def test_build_storage_selects_the_s3_backend_with_or_without_a_database():
+    pytest.importorskip("botocore")
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.storage.s3 import S3ArtifactStore
+
+    cfg = Settings(
+        _env_file=None,
+        artifact_backend="s3",
+        s3_bucket="exports",
+        s3_prefix="bike",
+        s3_endpoint_url="http://127.0.0.1:9",
+        s3_path_style=True,
+    )
+    store, history = build_storage(cfg)
+    assert isinstance(store, S3ArtifactStore) and history is None
+
+    store, history = build_storage(
+        cfg.model_copy(update={"database_url": "postgresql://x/y"})
+    )
+    assert isinstance(store, S3ArtifactStore)
+    assert type(history).__name__ == "PostgresRouteHistory"

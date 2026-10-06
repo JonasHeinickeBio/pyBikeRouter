@@ -85,7 +85,7 @@ decisions still open.
 - **Persistence** -- done (issue #7): PostGIS route history, an
   `ArtifactStore` abstraction (local disk or database), and provenance
   queries and an evaluation dashboard ([persistence.md](persistence.md)). Open
-  follow-ups: schema migrations, retention, recording from the CLI.
+  follow-ups: schema migrations, recording from the CLI.
 
 - **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
   similar) implementation is needed for multi-instance deployments to share
@@ -95,9 +95,12 @@ decisions still open.
   artifact store and database ([api.md](api.md#get-readyz)). Open
   follow-ups: a UI status badge, reporting the shared cache once it exists,
   and a real Pelias probe if Pelias is ever served on its own.
-- **Artifact lifecycle** -- exports accumulate under `EXPORT_DIR` with no
-  cleanup/quota today (the same holds for history and the database artifact
-  backend); needs TTL-based pruning or an object-storage `ArtifactStore`.
+- **Artifact lifecycle** -- done (issue #27): `ArtifactStore` gained
+  `list_artifacts`/`delete`, an S3-compatible backend (`ARTIFACT_BACKEND=s3`,
+  `s3` dev compose profile) and `bike-router retention prune` expire plans and
+  the artifacts only they reference by age, dry run by default
+  ([persistence.md](persistence.md#retention)). Open follow-ups: count/size
+  quotas, and running the prune on a schedule inside the compose stack.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
   profile runs a pinned openrouteservice (bicycle profiles) and a local
   Nominatim from one regional extract, with a bootstrap script

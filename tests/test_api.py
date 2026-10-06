@@ -738,3 +738,73 @@ async def test_full_graph_ranks_duplicate_engine_results(client, monkeypatch):
     assert [c["provider"] for c in distinct["candidates"]] == ["ors", "valhalla"]
     assert distinct["candidates"][0]["duplicates"] == ["brouter/p"]
     assert distinct["route"] == distinct["candidates"][0]
+
+
+# ------------------------------------------- S3 artifacts (issue #27)
+
+
+class _FakeS3Store:
+    def __init__(self) -> None:
+        self.gets: list[str] = []
+
+    def get(self, name: str) -> bytes | None:
+        self.gets.append(name)
+        return b"{}"
+
+    def presigned_url(self, name: str, ttl_s: int) -> str:
+        return f"https://s3.example/bucket/{name}?expires={ttl_s}"
+
+
+_ARTIFACT = "a" * 32 + ".geojson"
+
+
+async def test_artifacts_are_streamed_by_default(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    store = _FakeS3Store()
+    monkeypatch.setattr(api_module, "_artifact_store", store)
+    monkeypatch.setattr(api_module.settings, "s3_presigned_url_ttl_s", None)
+
+    response = await client.get(f"/v1/routes/{_ARTIFACT}")
+
+    assert response.status_code == 200 and response.content == b"{}"
+    assert store.gets == [_ARTIFACT]
+
+
+async def test_presigned_redirect_is_opt_in(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    store = _FakeS3Store()
+    monkeypatch.setattr(api_module, "_artifact_store", store)
+    monkeypatch.setattr(api_module.settings, "s3_presigned_url_ttl_s", 120)
+
+    response = await client.get(f"/v1/routes/{_ARTIFACT}")
+
+    assert response.status_code == 307
+    assert response.headers["location"] == f"https://s3.example/bucket/{_ARTIFACT}?expires=120"
+    assert store.gets == []  # the bytes never pass through this process
+
+
+async def test_presign_setting_is_ignored_by_stores_that_cannot_presign(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    class _Plain:
+        def get(self, name):
+            return b"x"
+
+    monkeypatch.setattr(api_module, "_artifact_store", _Plain())
+    monkeypatch.setattr(api_module.settings, "s3_presigned_url_ttl_s", 120)
+
+    response = await client.get(f"/v1/routes/{_ARTIFACT}")
+    assert response.status_code == 200 and response.content == b"x"
+
+
+async def test_malformed_names_never_reach_the_presigner(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    store = _FakeS3Store()
+    monkeypatch.setattr(api_module, "_artifact_store", store)
+    monkeypatch.setattr(api_module.settings, "s3_presigned_url_ttl_s", 120)
+
+    assert (await client.get("/v1/routes/..%2Fsecret.geojson")).status_code == 404
+    assert (await client.get("/v1/routes/short.geojson")).status_code == 404
