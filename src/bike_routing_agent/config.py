@@ -85,6 +85,10 @@ class Settings(BaseSettings):
     # share them; "local" (default) keeps them under EXPORT_DIR.
     database_url: str | None = None
     database_pool_max_size: int = 5
+    # Apply pending schema migrations on first database use (issue #28). Turn
+    # off to migrate in a release step with `bike-router db migrate`; the app
+    # then only warns when migrations are pending.
+    auto_migrate: bool = True
     artifact_backend: Literal["local", "database", "s3"] = "local"
 
     # S3-compatible artifact storage (issue #27; the `s3` extra). Credentials

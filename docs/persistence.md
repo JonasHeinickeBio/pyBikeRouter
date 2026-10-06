@@ -14,7 +14,8 @@ the database so several API instances can share them.
 | `LocalArtifactStore` | `storage/artifacts.py` | Files under `EXPORT_DIR` (the pre-#7 behavior, still the default). |
 | `RouteHistory` protocol | `storage/history.py` | `save` / `get` / `query` / `stats`, plus the retention queries (`find_older_than`, `delete_plans`, `referenced_artifacts`, `maintenance_lock`). |
 | `InMemoryRouteHistory` | `storage/history.py` | Process-local reference implementation with the same filter semantics as SQL; used by tests. |
-| `PostgresDatabase`, `PostgresRouteHistory`, `PostgresArtifactStore` | `storage/postgres.py` | PostGIS backend. Lazy connection pool, schema created on first use. |
+| `PostgresDatabase`, `PostgresRouteHistory`, `PostgresArtifactStore` | `storage/postgres.py` | PostGIS backend. Lazy connection pool; the schema is managed by migrations. |
+| `migrate` | `storage/migrate.py`, `storage/migrations/*.sql` | Versioned SQL migrations with a checksum-verifying, advisory-locked runner. |
 | `S3ArtifactStore` | `storage/s3.py` | Any S3-compatible object store (AWS S3, Ceph, SeaweedFS, ...). Needs the `s3` extra. |
 | `prune` | `storage/retention.py` | Expires old plans and the artifacts only they reference. |
 
@@ -178,14 +179,53 @@ For a public deployment set `RETENTION_MAX_AGE_DAYS` to the shortest period your
 evaluation needs and run the prune on a schedule. There is no per-person erasure
 (the service has no user identity); deletion is by age only.
 
+## Schema migrations
+
+The schema is a list of plain SQL files, `storage/migrations/NNNN_name.sql`,
+applied in order by a ~150-line runner (`storage/migrate.py`): no ORM, no extra
+dependency, and every change is the reviewable SQL it is. A
+`schema_migrations(version, name, checksum, applied_at)` table records what ran.
+
+```bash
+bike-router db status     # applied / pending (exit 1 when something is pending)
+bike-router db migrate    # apply pending migrations (idempotent)
+```
+
+- **When it runs.** By default the first database use applies pending
+  migrations (`AUTO_MIGRATE=true`), so a fresh database "just works". For
+  deployments that migrate in a release step, set `AUTO_MIGRATE=false`: the app
+  then never touches the schema and only logs a warning when migrations are
+  pending; run `bike-router db migrate` before rolling out.
+- **Several instances.** The runner holds the maintenance advisory lock (the
+  same one retention uses) for the whole run, so instances starting together
+  serialise: one migrates, the others wait and find nothing to do. A retention
+  prune in progress also makes a starting instance wait.
+- **Atomic.** Each migration runs in its own transaction together with its
+  bookkeeping row; a failing migration leaves the database at the previous
+  version and stops the run.
+- **Guard rails.** The runner refuses to continue when an applied migration's
+  file was edited (checksum) or when the database is *newer* than the code (an
+  older release must not run against a newer schema). Versions must be
+  contiguous from 1.
+- **Adopting existing databases.** `0001_initial.sql` is idempotent (`IF NOT
+  EXISTS` everywhere), so a database created before migrations existed is
+  adopted by running it and recording version 1; no data is touched.
+- **Writing one.** Add `NNNN_short_name.sql` with the next number. Never edit
+  an applied file. Anything that must not run twice (an `ALTER TABLE`) is fine
+  in a migration -- only `0001` has to be idempotent.
+- **Down migrations are not supported** (restore from a backup instead).
+
+## Recording from the CLI
+
+`bike-router route plan` records the plan in the history when `DATABASE_URL` is
+set, exactly like the API: best effort (a database outage prints a warning on
+stderr and never fails the command), the `plan_id` appears in the JSON output
+(`null` when nothing was recorded), and failed plans are recorded too.
+`--no-record` skips it. Without `DATABASE_URL` nothing changes.
+
 ## Open follow-ups
 
 - **Dashboard depth**: the aggregates are fixed-shape. Percentiles, score
   distributions, per-region breakdowns and CSV export are not built.
-- **Schema migrations**: tables are created with `CREATE ... IF NOT EXISTS`
-  on first use. There is no migration tool yet, so a column change needs
-  one (Alembic or plain versioned SQL) before the schema evolves.
-- **CLI recording**: `bike-router route plan` honors `ARTIFACT_BACKEND` but does
-  not record history; only the API does.
 - **Retention by count/size** (`RETENTION_MAX_PLANS`, quotas) is not built;
   the policy is age-only.

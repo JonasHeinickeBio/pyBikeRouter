@@ -195,7 +195,11 @@ def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
         # Imported here so a deployment without a database never needs psycopg.
         from bike_routing_agent.storage.postgres import PostgresDatabase
 
-        database = PostgresDatabase(cfg.database_url, max_size=cfg.database_pool_max_size)
+        database = PostgresDatabase(
+            cfg.database_url,
+            max_size=cfg.database_pool_max_size,
+            auto_migrate=cfg.auto_migrate,
+        )
 
     store: ArtifactStore
     if cfg.artifact_backend == "database":

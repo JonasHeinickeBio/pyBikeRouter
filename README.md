@@ -131,7 +131,10 @@ bike-router providers list       # provider names and bike-type -> ORS profile m
 `route plan` accepts `lat,lon` pairs or place text for `--origin`,
 `--destination` and repeated `--via` waypoints, prints the JSON result and
 exits `0` on `ready`, `1` on clarification/provider failure, `2` on usage
-errors.
+errors. With `DATABASE_URL` set it also records the plan in the route history
+(best effort; `plan_id` in the output, `--no-record` to skip), and
+`bike-router db migrate` / `db status` manage the schema
+([docs/persistence.md](docs/persistence.md#schema-migrations)).
 
 ## Running with Docker
 

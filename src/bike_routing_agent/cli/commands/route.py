@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import uuid
 from pathlib import Path
 from typing import IO, Any
+
+from bike_routing_agent.storage.history import record_from_state
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -77,6 +80,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         default=None,
         help="also write the JSON response to this file",
     )
+    plan.add_argument(
+        "--no-record",
+        action="store_true",
+        help="do not record the plan in the route history even when DATABASE_URL is set",
+    )
     return route
 
 
@@ -138,12 +146,42 @@ def _default_graph_factory() -> Any:
     return build_graph_for_settings(settings)
 
 
+def _default_history_factory() -> Any:
+    """The configured route history, or ``None`` when no database is set."""
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.config import settings
+
+    if not settings.database_url:
+        return None
+    return build_storage(settings)[1]
+
+
+def _record_plan(history_factory: Any, final_state: dict[str, Any], stderr: IO[str]) -> str | None:
+    """Record the finished plan like the API does: best effort, never fatal.
+
+    Returns the ``plan_id`` (the artifact id for ready plans) or ``None`` when
+    there is no history or recording failed -- the plan was already computed,
+    so a database outage is a warning, not a failed command.
+    """
+    try:
+        history = history_factory()
+        if history is None:
+            return None
+        plan_id = str(final_state.get("route_id") or uuid.uuid4().hex)
+        history.save(record_from_state(plan_id, final_state))
+        return plan_id
+    except Exception as exc:  # noqa: BLE001 - history is optional; report and move on
+        print(f"warning: could not record the plan in the history: {exc}", file=stderr)
+        return None
+
+
 def run(
     args: argparse.Namespace,
     stdout: IO[str],
     stderr: IO[str],
     *,
     graph_factory: Any = None,
+    history_factory: Any = None,
 ) -> int:
     if args.command != "plan":
         print("unknown route command", file=stderr)
@@ -167,6 +205,11 @@ def run(
         return EXIT_FAILURE
 
     payload = _response_payload(final_state)
+    payload["plan_id"] = (
+        None
+        if args.no_record
+        else _record_plan(history_factory or _default_history_factory, final_state, stderr)
+    )
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
     print(rendered, file=stdout)
 

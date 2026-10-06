@@ -26,6 +26,12 @@ def parse(*argv: str) -> Any:
     return build_parser().parse_args(list(argv))
 
 
+@pytest.fixture(autouse=True)
+def _no_history_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A developer's DATABASE_URL must never make these tests write a history."""
+    monkeypatch.setattr(route_cmd, "_default_history_factory", lambda: None)
+
+
 class FakeGraph:
     def __init__(self, final_state: dict[str, Any] | None = None, error: Exception | None = None):
         self.final_state = final_state or {}
@@ -447,3 +453,140 @@ def test_route_default_graph_factory_uses_settings(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(api_module, "build_graph_for_settings", fake_build)
     assert route_cmd._default_graph_factory() is sentinel
     assert seen == [settings]
+
+
+# ----------------------------------------------- history recording (issue #28)
+
+
+class FakeHistory:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.records: list[Any] = []
+        self.error = error
+
+    def save(self, record: Any) -> None:
+        if self.error is not None:
+            raise self.error
+        self.records.append(record)
+
+
+def recordable_state() -> dict[str, Any]:
+    """A complete ready state (the CLI tests' READY_STATE candidate is partial)."""
+    from storage.test_history import candidate, ready_state
+
+    return ready_state([candidate()])
+
+
+def run_plan(
+    *argv: str,
+    state: dict[str, Any] | None = None,
+    history: Any = None,
+    graph: Any = None,
+) -> tuple[int, dict[str, Any] | None, str]:
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", "--origin", "a", "--destination", "b", *argv)
+    rc = route_cmd.run(
+        args,
+        out,
+        err,
+        graph_factory=lambda: graph or FakeGraph(state or recordable_state()),
+        history_factory=lambda: history,
+    )
+    return rc, (json.loads(out.getvalue()) if out.getvalue() else None), err.getvalue()
+
+
+def test_plans_are_recorded_when_a_history_is_configured() -> None:
+    history = FakeHistory()
+    state = {**recordable_state(), "route_id": "a" * 32}
+
+    rc, payload, err = run_plan(state=state, history=history)
+
+    assert rc == 0 and err == ""
+    assert payload is not None and payload["plan_id"] == "a" * 32
+    (record,) = history.records
+    assert record.plan_id == "a" * 32 and record.status == "ready"
+
+
+def test_plans_without_a_route_id_get_a_generated_plan_id() -> None:
+    history = FakeHistory()
+    state = recordable_state()
+    state.pop("route_id")
+    rc, payload, _ = run_plan(state=state, history=history)
+    assert rc == 0 and payload is not None
+    assert history.records[0].plan_id == payload["plan_id"]
+    assert len(payload["plan_id"]) == 32
+
+
+def test_failed_plans_are_recorded_too_like_the_api_does() -> None:
+    history = FakeHistory()
+    state = {"status": "no_route", "errors": [{"code": "no_route", "message": "x"}]}
+
+    rc, payload, _ = run_plan(state=state, history=history)
+
+    assert rc == 1 and payload is not None and payload["plan_id"] is not None
+    assert history.records[0].status == "no_route"
+
+
+def test_no_record_skips_the_history_entirely() -> None:
+    history = FakeHistory()
+    calls: list[int] = []
+
+    def factory() -> Any:
+        calls.append(1)
+        return history
+
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", "--origin", "a", "--destination", "b", "--no-record")
+    rc = route_cmd.run(
+        args, out, err, graph_factory=lambda: FakeGraph(READY_STATE), history_factory=factory
+    )
+
+    assert rc == 0 and json.loads(out.getvalue())["plan_id"] is None
+    assert history.records == [] and calls == []
+
+
+def test_without_a_configured_history_plan_id_is_null() -> None:
+    rc, payload, err = run_plan(history=None)
+    assert rc == 0 and payload is not None and payload["plan_id"] is None and err == ""
+
+
+def test_a_history_outage_is_a_warning_not_a_failed_command() -> None:
+    rc, payload, err = run_plan(history=FakeHistory(error=ConnectionError("db down")))
+    assert rc == 0 and payload is not None and payload["plan_id"] is None
+    assert "could not record the plan" in err and "db down" in err
+
+
+def test_a_history_factory_failure_is_also_only_a_warning() -> None:
+    def broken() -> Any:
+        raise RuntimeError("psycopg missing")
+
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", "--origin", "a", "--destination", "b")
+    rc = route_cmd.run(
+        args, out, err, graph_factory=lambda: FakeGraph(READY_STATE), history_factory=broken
+    )
+    assert rc == 0 and "psycopg missing" in err.getvalue()
+
+
+def test_a_crashed_graph_records_nothing() -> None:
+    history = FakeHistory()
+    rc, payload, _ = run_plan(graph=FakeGraph(error=ConnectionError("ORS unreachable")),
+                              history=history)
+    assert rc == 1 and payload is None and history.records == []
+
+
+def test_default_history_factory_follows_the_database_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bike_routing_agent.cli.commands import route as route_module
+
+    monkeypatch.undo()  # drop the autouse stub for this test
+    import bike_routing_agent.api as api_module
+    import bike_routing_agent.config as config_module
+
+    monkeypatch.setattr(config_module.settings, "database_url", None)
+    assert route_module._default_history_factory() is None
+
+    sentinel = object()
+    monkeypatch.setattr(config_module.settings, "database_url", "postgresql://x/y")
+    monkeypatch.setattr(api_module, "build_storage", lambda cfg: (object(), sentinel))
+    assert route_module._default_history_factory() is sentinel

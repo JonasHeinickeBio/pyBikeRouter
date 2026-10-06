@@ -42,6 +42,7 @@ cp .env.example .env
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
+| `AUTO_MIGRATE` | apply pending schema migrations on first database use; `false` = only warn, migrate with `bike-router db migrate` ([persistence.md](persistence.md#schema-migrations)) | `true` |
 | `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`), `database` (requires `DATABASE_URL`) or `s3` (requires `S3_BUCKET`, the `s3` extra) | `local` |
 | `S3_BUCKET` / `S3_PREFIX` | bucket (must exist) and optional key prefix for `ARTIFACT_BACKEND=s3` | unset / empty |
 | `S3_ENDPOINT_URL` / `S3_REGION` | endpoint for self-hosted S3-compatibles; optional region | unset |

@@ -29,7 +29,7 @@ so the default run never touches the network and always reports coverage.
 | `tests/providers/` | ORS client, ORS adapter, Nominatim and Pelias geocoders | `respx`-mocked HTTP |
 | `tests/exporters/` | GeoJSON/GPX output shapes | none |
 | `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous) | -- |
-| `tests/storage/` | Artifact stores and the route-history contract. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends | none (PostGIS params are `live`) |
+| `tests/storage/` | Artifact stores, the route-history contract, retention and schema migrations. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends; `test_migrate.py` covers the migration rules offline and `test_postgres_migrations.py` runs them against PostGIS (atomicity, adoption, concurrent starts, lock waiting) | none (PostGIS params are `live`) |
 | `tests/live/` | Real ORS/Nominatim calls through the API | **real** |
 
 `tests/conftest.py` exposes the fixtures as `ors_directions_response`,

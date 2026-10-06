@@ -398,3 +398,14 @@ def test_build_storage_selects_the_s3_backend_with_or_without_a_database():
     )
     assert isinstance(store, S3ArtifactStore)
     assert type(history).__name__ == "PostgresRouteHistory"
+
+
+def test_auto_migrate_defaults_on_and_reaches_the_database_object():
+    from bike_routing_agent.api import build_storage
+
+    assert Settings(_env_file=None).auto_migrate is True
+    cfg = Settings(_env_file=None, database_url="postgresql://x/y", auto_migrate=False)
+    _, history = build_storage(cfg)
+    assert history is not None and history._db._auto_migrate is False
+    _, default_history = build_storage(cfg.model_copy(update={"auto_migrate": True}))
+    assert default_history is not None and default_history._db._auto_migrate is True

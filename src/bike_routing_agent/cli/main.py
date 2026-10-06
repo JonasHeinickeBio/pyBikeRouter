@@ -8,7 +8,15 @@ from collections.abc import Sequence
 from importlib import import_module
 from typing import IO, Any
 
-GROUP_MODULES: tuple[str, ...] = ("route", "serve", "docker", "config", "providers", "retention")
+GROUP_MODULES: tuple[str, ...] = (
+    "route",
+    "serve",
+    "docker",
+    "config",
+    "providers",
+    "retention",
+    "db",
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
