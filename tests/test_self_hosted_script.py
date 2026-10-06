@@ -6,6 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "self-hosted-bootstrap.sh"
 PAYLOAD = b"not really a pbf"
 GOOD_MD5 = hashlib.md5(PAYLOAD).hexdigest()  # noqa: S324 - mirrors Geofabrik's published checksum
@@ -149,3 +151,43 @@ def test_status_reports_each_service_and_the_exit_code(tmp_path):
 def test_unknown_argument_is_rejected(tmp_path):
     result, _, _ = run(tmp_path, "--nuke")
     assert result.returncode == 2 and "unknown argument" in result.stderr
+
+
+def started_services(calls):
+    (up,) = [c for c in calls if c.startswith("docker compose") and " up -d" in c]
+    return up.split(" up -d ")[1].split()
+
+
+def test_only_routing_starts_just_openrouteservice(tmp_path):
+    result, calls, _ = run(tmp_path, "--only", "routing", existing=True)
+    assert result.returncode == 0, result.stderr
+    assert started_services(calls) == ["ors-self-hosted"]
+    assert "ORS_BASE_URL=http://127.0.0.1:8080/ors" in result.stdout
+    assert "GEOCODER_BASE_URL" not in result.stdout
+    assert "still the public Nominatim" in result.stdout
+
+
+def test_only_geocoding_starts_just_nominatim(tmp_path):
+    result, calls, _ = run(tmp_path, "--only=geocoding", existing=True)
+    assert result.returncode == 0, result.stderr
+    assert started_services(calls) == ["nominatim-self-hosted"]
+    assert "GEOCODER_BASE_URL=http://127.0.0.1:8081" in result.stdout
+    assert "ORS_BASE_URL" not in result.stdout
+    assert "still the public ORS" in result.stdout
+
+
+def test_status_only_reports_and_judges_the_selected_service(tmp_path):
+    ok, _, _ = run(tmp_path, "status", "--only", "routing", ready="1")
+    assert ok.returncode == 0
+    assert "openrouteservice" in ok.stdout and "nominatim" not in ok.stdout
+    down, _, _ = run(tmp_path, "status", "--only", "geocoding", ready="0")
+    assert down.returncode == 1
+    assert "nominatim" in down.stdout and "openrouteservice" not in down.stdout
+
+
+@pytest.mark.parametrize("args", [["--only", "everything"], ["--only"]])
+def test_bad_only_values_are_usage_errors(tmp_path, args):
+    result, calls, _ = run(tmp_path, *args)
+    assert result.returncode == 2
+    assert "--only" in result.stderr
+    assert not any(c.startswith("docker") for c in calls)

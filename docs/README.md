@@ -14,7 +14,7 @@ Documentation for the bike-routing-agent service.
 | [scoring-and-exports.md](scoring-and-exports.md) | Deterministic scoring, score calibration benchmark, uncertainty notes, explanation policy, GeoJSON/GPX export |
 | [mobile.md](mobile.md) | iPhone use: installable home-screen app served over Tailscale |
 | [persistence.md](persistence.md) | PostGIS route history, artifact storage backends, provenance queries |
-| [self-hosted.md](self-hosted.md) | Local openrouteservice + Nominatim from one OSM extract: bootstrap, sizing, config, attribution |
+| [self-hosted.md](self-hosted.md) | Local openrouteservice and/or Nominatim from one OSM extract: pick a setup for your machine, measured hardware requirements, small-PC recipes, bootstrap |
 | [testing.md](testing.md) | Test layout, mocks vs live tests, CI gates |
 | [roadmap.md](roadmap.md) | Deliberate milestone boundaries and planned follow-up work |
 

@@ -46,11 +46,19 @@ services:
   #   docker compose -f docker/compose.yaml --profile self-hosted up -d
   #
   # Both services read ./self-hosted/data/region.osm.pbf (docs/self-hosted.md
-  # has region choice, memory sizing and the matching .env). openrouteservice
-  # does NOT include a geocoder -- that is why Nominatim runs next to it.
+  # has region choice, hardware requirements and the matching .env).
+  # openrouteservice does NOT include a geocoder -- that is why Nominatim runs
+  # next to it.
+  #
+  # Small machine? Run only one of them -- the other keeps using its public
+  # service. Each has its own profile as well as the shared `self-hosted` one:
+  #   --profile self-hosted-routing     openrouteservice only
+  #   --profile self-hosted-geocoding   Nominatim only
+  # and size the containers down with ORS_XMX / ORS_MEM_LIMIT /
+  # NOMINATIM_THREADS / NOMINATIM_MEM_LIMIT (docs/self-hosted.md, "Requirements").
   # ---------------------------------------------------------------------------
   ors-self-hosted:
-    profiles: ["self-hosted"]
+    profiles: ["self-hosted", "self-hosted-routing"]
     # Pinned release (upstream publishes versioned tags). To update: bump the
     # tag, delete the pybikerouter-ors-graphs volume (graphs are version
     # specific) and let the graphs rebuild.
@@ -69,10 +77,11 @@ services:
       ors.engine.profiles.cycling-road.enabled: "true"
       ors.engine.profiles.cycling-mountain.enabled: "true"
       ors.engine.profiles.cycling-electric.enabled: "true"
-      # Java heap. Rule of thumb from the ORS docs: roughly twice the extract
-      # size per enabled profile for the graph build; a city-state extract
-      # needs far less than the default below, a federal state needs more.
-      XMS: ${ORS_XMS:-1g}
+      # Java heap. The default maximum suits a federal-state-sized extract; a
+      # city-sized one needs far less (docs/self-hosted.md, "Requirements").
+      # The initial heap must not exceed the maximum (the JVM refuses to
+      # start), so it defaults low and the heap grows as needed.
+      XMS: ${ORS_XMS:-128m}
       XMX: ${ORS_XMX:-4g}
     volumes:
       - ./self-hosted/data:/home/ors/files:ro
@@ -89,11 +98,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6g
+          memory: ${ORS_MEM_LIMIT:-6g}
     logging: *default-logging
 
   nominatim-self-hosted:
-    profiles: ["self-hosted"]
+    profiles: ["self-hosted", "self-hosted-geocoding"]
     image: mediagis/nominatim:5.3
     restart: unless-stopped
     ports:
@@ -125,7 +134,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4g
+          memory: ${NOMINATIM_MEM_LIMIT:-4g}
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
