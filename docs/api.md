@@ -166,6 +166,9 @@ Notes:
   `rank_rationale` (a facts-only comparison to rank 1) and the duplicate
   bookkeeping `duplicates` / `duplicate_of`; all are optional additions,
   so existing clients can ignore them.
+- With `ARTIFACT_BACKEND=s3` and `S3_PRESIGNED_URL_TTL_S` set, `GET
+  /v1/routes/{filename}` answers `307` with a presigned object-store URL
+  instead of streaming the file ([persistence.md](persistence.md#object-storage-s3)).
 - `raw_provider_response` is always neutralised in API responses, on
   `route` and on every entry of `candidates` (the key remains, but is
   always `null`; the raw payload never leaves the server).

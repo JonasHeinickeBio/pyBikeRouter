@@ -15,6 +15,9 @@ neutralised candidates the API returns.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Collection, Iterator, Sequence
+from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Protocol
 
@@ -169,6 +172,19 @@ class HistoryStats(BaseModel):
     daily: list[DailyStats]
 
 
+@dataclass(frozen=True)
+class PlanRetentionRef:
+    """A plan as retention sees it: when it was made and which artifacts it owns."""
+
+    plan_id: str
+    created_at: datetime
+    artifacts: tuple[str, ...]
+
+
+# Position in the created_at/plan_id ordering retention pages through.
+RetentionCursor = tuple[datetime, str]
+
+
 class RouteHistory(Protocol):
     def save(self, record: PlanRecord) -> None:
         """Persist a plan; saving an existing ``plan_id`` replaces it."""
@@ -182,6 +198,41 @@ class RouteHistory(Protocol):
 
     def stats(self, stats_filter: StatsFilter) -> HistoryStats:
         """Aggregates over the matching plans (outcomes, engines, volume)."""
+        ...
+
+    # -- retention (issue #27) ----------------------------------------------
+
+    def find_older_than(
+        self, cutoff: datetime, *, limit: int, after: RetentionCursor | None = None
+    ) -> list[PlanRetentionRef]:
+        """Plans created before ``cutoff``, oldest first, at most ``limit``.
+
+        ``after`` is the ``(created_at, plan_id)`` of the last plan of the
+        previous page, so a dry run (which deletes nothing) can still page.
+        """
+        ...
+
+    def delete_plans(self, plan_ids: Sequence[str]) -> int:
+        """Delete plans (and their candidates); returns how many existed."""
+        ...
+
+    def referenced_artifacts(
+        self, names: Collection[str] | None = None, *, newer_than: datetime | None = None
+    ) -> set[str]:
+        """Artifact names some stored plan still points at.
+
+        With ``names``, only those among them; with ``newer_than``, only plans
+        created at or after it count (the plans a prune will retain -- which
+        lets a dry run reason about them without deleting anything).
+        """
+        ...
+
+    def maintenance_lock(self) -> AbstractContextManager[bool]:
+        """Mutual exclusion between concurrent maintenance runs.
+
+        Yields ``True`` when this process holds the lock for the duration of
+        the block, ``False`` when another run already holds it.
+        """
         ...
 
 
@@ -219,6 +270,39 @@ class InMemoryRouteHistory:
 
     def get(self, plan_id: str) -> PlanRecord | None:
         return self._records.get(plan_id)
+
+    def find_older_than(
+        self, cutoff: datetime, *, limit: int, after: RetentionCursor | None = None
+    ) -> list[PlanRetentionRef]:
+        ordered = sorted(
+            (r for r in self._records.values() if r.created_at < cutoff),
+            key=lambda r: (r.created_at, r.plan_id),
+        )
+        if after is not None:
+            ordered = [r for r in ordered if (r.created_at, r.plan_id) > after]
+        return [
+            PlanRetentionRef(r.plan_id, r.created_at, tuple(r.artifacts.values()))
+            for r in ordered[:limit]
+        ]
+
+    def delete_plans(self, plan_ids: Sequence[str]) -> int:
+        return sum(self._records.pop(plan_id, None) is not None for plan_id in plan_ids)
+
+    def referenced_artifacts(
+        self, names: Collection[str] | None = None, *, newer_than: datetime | None = None
+    ) -> set[str]:
+        referenced = {
+            name
+            for r in self._records.values()
+            if newer_than is None or r.created_at >= newer_than
+            for name in r.artifacts.values()
+        }
+        return referenced if names is None else referenced & set(names)
+
+    @contextmanager
+    def maintenance_lock(self) -> Iterator[bool]:
+        # Process-local: one in-memory history can only be pruned by its owner.
+        yield True
 
     def query(self, plan_filter: PlanFilter) -> list[PlanSummary]:
         matches = [r for r in self._records.values() if self._matches(r, plan_filter)]

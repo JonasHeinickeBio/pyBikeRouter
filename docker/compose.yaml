@@ -61,6 +61,43 @@ services:
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
+  # Local S3-compatible object store for development (`s3` profile), to try
+  # ARTIFACT_BACKEND=s3 and `bike-router retention prune` without AWS:
+  #
+  #   docker compose -f docker/compose.yaml --profile s3 up -d s3-dev
+  #   curl -X PUT http://127.0.0.1:8333/exports          # create the bucket
+  #   ARTIFACT_BACKEND=s3 S3_BUCKET=exports S3_ENDPOINT_URL=http://127.0.0.1:8333 \
+  #     S3_PATH_STYLE=true AWS_ACCESS_KEY_ID=dev AWS_SECRET_ACCESS_KEY=dev ...
+  #
+  # SeaweedFS rather than MinIO: MinIO withdrew its community container images
+  # (Docker Hub, Sept 2026) and archived the repository. This instance has NO
+  # authentication (any credentials work) -- development only, loopback only.
+  # ---------------------------------------------------------------------------
+  s3-dev:
+    profiles: ["s3"]
+    # Pinned by digest: the upstream `latest` tag is mutable (validated 2026-10-05).
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    # S3 gateway + master/volume in one process; bind all interfaces so the
+    # in-container healthcheck (and the published port) reach it.
+    command: ["server", "-s3", "-dir=/data", "-ip.bind=0.0.0.0"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${S3_LOCAL_PORT:-8333}:8333"
+    volumes:
+      - s3-dev-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/ && wget -qO- http://127.0.0.1:9333/cluster/status | grep -q IsLeader"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
   # Local BRouter RouteServer (use with the `brouter` profile and
   # ROUTING_PROVIDER=brouter in .env), from the repository root:
   #
@@ -181,3 +218,5 @@ volumes:
     name: pybikerouter-pgdata
   ors-graphs:
     name: pybikerouter-ors-graphs
+  s3-dev-data:
+    name: pybikerouter-s3-dev-data

@@ -14,6 +14,10 @@ reaches a store.
 from __future__ import annotations
 
 import os
+import re
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +32,20 @@ def media_type_for(name: str) -> str:
     return MEDIA_TYPES.get(Path(name).suffix.lower(), "application/octet-stream")
 
 
+# The names explain_and_export generates (<32 hex>.geojson|.gpx); the same
+# shape the API accepts. Anything else in a store is not ours to list or delete.
+ARTIFACT_NAME = re.compile(r"^[0-9a-f]{32}\.(geojson|gpx)$")
+
+
+@dataclass(frozen=True)
+class ArtifactInfo:
+    """What retention needs to know about a stored artifact."""
+
+    name: str
+    size: int
+    created_at: datetime
+
+
 class ArtifactStore(Protocol):
     def put(self, name: str, content: str) -> None:
         """Store ``content`` under ``name``, replacing any previous value."""
@@ -35,6 +53,14 @@ class ArtifactStore(Protocol):
 
     def get(self, name: str) -> bytes | None:
         """The stored bytes, or ``None`` when no artifact has that name."""
+        ...
+
+    def list_artifacts(self) -> Iterator[ArtifactInfo]:
+        """Every artifact this service wrote (names matching ``ARTIFACT_NAME``)."""
+        ...
+
+    def delete(self, name: str) -> bool:
+        """Remove an artifact; ``False`` when there was none (never an error)."""
         ...
 
 
@@ -68,3 +94,30 @@ class LocalArtifactStore:
         if path.parent != self._dir or not path.is_file():
             return None
         return path.read_bytes()
+
+    def list_artifacts(self) -> Iterator[ArtifactInfo]:
+        """Our exports in the directory; the file's mtime is its age."""
+        if not self._dir.is_dir():
+            return
+        for path in self._dir.iterdir():
+            if not ARTIFACT_NAME.match(path.name) or not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except FileNotFoundError:  # deleted between listing and stat
+                continue
+            yield ArtifactInfo(
+                name=path.name,
+                size=stat.st_size,
+                created_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
+            )
+
+    def delete(self, name: str) -> bool:
+        path = self._dir / name
+        if not ARTIFACT_NAME.match(name) or path.parent != self._dir:
+            return False
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        return True

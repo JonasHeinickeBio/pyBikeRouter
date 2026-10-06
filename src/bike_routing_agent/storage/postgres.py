@@ -24,20 +24,30 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Collection, Iterator, Sequence
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from bike_routing_agent.models import Coordinate
+from bike_routing_agent.storage.artifacts import ARTIFACT_NAME, ArtifactInfo
 from bike_routing_agent.storage.history import (
     CandidateSummary,
     DailyStats,
     HistoryStats,
     PlanFilter,
     PlanRecord,
+    PlanRetentionRef,
     PlanSummary,
     ProviderStats,
+    RetentionCursor,
     StatsFilter,
     StoredCandidate,
 )
+
+# Session-level advisory lock serialising maintenance runs (retention pruning,
+# later schema migrations) across processes and instances.
+MAINTENANCE_LOCK_KEY = 0x70627231
 
 SCHEMA_SQL = """
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -221,6 +231,68 @@ class PostgresRouteHistory:
 
     def ping(self) -> dict[str, str]:
         return self._db.ping()
+
+    def find_older_than(
+        self, cutoff: datetime, *, limit: int, after: RetentionCursor | None = None
+    ) -> list[PlanRetentionRef]:
+        params: dict[str, Any] = {"cutoff": cutoff, "limit": limit}
+        keyset = ""
+        if after is not None:
+            keyset = "AND (created_at, plan_id) > (%(after_at)s, %(after_id)s)"
+            params["after_at"], params["after_id"] = after
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT plan_id, created_at, artifacts FROM plans
+                WHERE created_at < %(cutoff)s {keyset}
+                ORDER BY created_at, plan_id LIMIT %(limit)s
+                """,
+                params,
+            ).fetchall()
+        return [
+            PlanRetentionRef(plan_id, created_at, tuple((artifacts or {}).values()))
+            for plan_id, created_at, artifacts in rows
+        ]
+
+    def delete_plans(self, plan_ids: Sequence[str]) -> int:
+        if not plan_ids:
+            return 0
+        with self._db.connection() as conn:
+            # candidates go with their plan (ON DELETE CASCADE)
+            cursor = conn.execute("DELETE FROM plans WHERE plan_id = ANY(%s)", (list(plan_ids),))
+            return int(cursor.rowcount)
+
+    def referenced_artifacts(
+        self, names: Collection[str] | None = None, *, newer_than: datetime | None = None
+    ) -> set[str]:
+        where: list[str] = []
+        params: dict[str, Any] = {}
+        if names is not None:
+            where.append("value = ANY(%(names)s)")
+            params["names"] = list(names)
+        if newer_than is not None:
+            where.append("created_at >= %(newer_than)s")
+            params["newer_than"] = newer_than
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT value FROM plans, jsonb_each_text(artifacts) {clause}", params
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    @contextmanager
+    def maintenance_lock(self) -> Iterator[bool]:
+        """Hold the maintenance advisory lock on one pooled connection."""
+        with self._db.connection() as conn:
+            row = conn.execute(
+                "SELECT pg_try_advisory_lock(%s)", (MAINTENANCE_LOCK_KEY,)
+            ).fetchone()
+            acquired = bool(row and row[0])
+            try:
+                yield acquired
+            finally:
+                if acquired:
+                    conn.execute("SELECT pg_advisory_unlock(%s)", (MAINTENANCE_LOCK_KEY,))
 
     def save(self, record: PlanRecord) -> None:
         from psycopg.types.json import Jsonb
@@ -472,6 +544,19 @@ class PostgresArtifactStore:
 
     def ping(self) -> dict[str, str]:
         return self._db.ping()
+
+    def list_artifacts(self) -> Iterator[ArtifactInfo]:
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                "SELECT name, octet_length(content), created_at FROM artifacts"
+            ).fetchall()
+        for name, size, created_at in rows:
+            if ARTIFACT_NAME.match(name):
+                yield ArtifactInfo(name=name, size=int(size), created_at=created_at)
+
+    def delete(self, name: str) -> bool:
+        with self._db.connection() as conn:
+            return int(conn.execute("DELETE FROM artifacts WHERE name = %s", (name,)).rowcount) > 0
 
     def put(self, name: str, content: str) -> None:
         with self._db.connection() as conn:

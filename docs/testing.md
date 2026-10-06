@@ -50,6 +50,19 @@ TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55432/test pytest -m live tes
 
 Without `TEST_DATABASE_URL` they skip.
 
+The artifact-store contract (`tests/storage/test_artifact_store_contract.py`)
+runs against the local store, the S3 store with an in-memory fake client, and
+-- as `live` params -- PostGIS and a real S3-compatible server. The latter skips
+unless `TEST_S3_ENDPOINT_URL` is set (optionally `TEST_S3_BUCKET`, default
+`exports`, which must exist, and `TEST_S3_REGION`; credentials via `AWS_*`);
+each test uses its own random key prefix:
+
+```bash
+docker compose -f docker/compose.yaml --profile s3 up -d s3-dev && curl -X PUT http://127.0.0.1:8333/exports
+AWS_ACCESS_KEY_ID=dev AWS_SECRET_ACCESS_KEY=dev TEST_S3_ENDPOINT_URL=http://127.0.0.1:8333 \
+  pytest -m live tests/storage
+```
+
 ## Conventions
 
 - **HTTP is mocked with `respx`** everywhere except `live/`. Tests assert on
@@ -109,5 +122,5 @@ pin and the comment together.
 
 The Python/Poetry setup is shared by the jobs through the local composite
 action `.github/actions/setup-python-poetry` (pinned Poetry, lock-keyed venv
-cache, `--extras db`). Live tests that need external services or secrets (ORS,
+cache, `--extras "db s3"`). Live tests that need external services or secrets (ORS,
 Overpass, BRouter) are still run by hand, not in CI.

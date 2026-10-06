@@ -40,7 +40,14 @@ cp .env.example .env
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
-| `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`) or `database` (requires `DATABASE_URL`) | `local` |
+| `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`), `database` (requires `DATABASE_URL`) or `s3` (requires `S3_BUCKET`, the `s3` extra) | `local` |
+| `S3_BUCKET` / `S3_PREFIX` | bucket (must exist) and optional key prefix for `ARTIFACT_BACKEND=s3` | unset / empty |
+| `S3_ENDPOINT_URL` / `S3_REGION` | endpoint for self-hosted S3-compatibles; optional region | unset |
+| `S3_PATH_STYLE` | path-style addressing (most self-hosted S3 servers need it) | `false` |
+| `S3_PRESIGNED_URL_TTL_S` | set (1-604800) to redirect artifact downloads to a presigned URL instead of streaming them | unset (stream) |
+| `RETENTION_MAX_AGE_DAYS` | how long plans and artifacts live; applied only by `bike-router retention prune` ([persistence.md](persistence.md#retention)) | unset (keep forever) |
+| `RETENTION_ORPHAN_GRACE_HOURS` | unreferenced artifacts younger than this are not swept | `24` |
+| `RETENTION_BATCH_SIZE` | plans deleted per batch | `500` |
 | `LOG_LEVEL` | log level | `INFO` |
 
 ## Startup validation

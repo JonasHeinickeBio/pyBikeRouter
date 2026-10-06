@@ -84,7 +84,26 @@ class Settings(BaseSettings):
     # share them; "local" (default) keeps them under EXPORT_DIR.
     database_url: str | None = None
     database_pool_max_size: int = 5
-    artifact_backend: Literal["local", "database"] = "local"
+    artifact_backend: Literal["local", "database", "s3"] = "local"
+
+    # S3-compatible artifact storage (issue #27; the `s3` extra). Credentials
+    # are never settings: boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+    # (or a profile / instance role) itself.
+    s3_bucket: str | None = None
+    s3_prefix: str = ""
+    s3_endpoint_url: str | None = None  # e.g. http://127.0.0.1:8333 (compose `s3` profile)
+    s3_region: str | None = None
+    s3_path_style: bool = False  # most self-hosted S3 servers need True
+    # Unset: GET /v1/routes/{file} streams the bytes itself. Set: it redirects
+    # to a presigned URL valid for this many seconds (the bucket must then be
+    # reachable by clients).
+    s3_presigned_url_ttl_s: int | None = None
+
+    # Retention (issue #27): unset keeps everything forever (the default).
+    # Applied by `bike-router retention prune`, never implicitly.
+    retention_max_age_days: int | None = None
+    retention_orphan_grace_hours: int = 24
+    retention_batch_size: int = 500
 
     log_level: str = "INFO"
 
@@ -92,6 +111,19 @@ class Settings(BaseSettings):
     def _check_database_settings(self) -> Settings:
         if self.artifact_backend == "database" and not self.database_url:
             raise ValueError("artifact_backend='database' requires DATABASE_URL to be set")
+        if self.artifact_backend == "s3" and not self.s3_bucket:
+            raise ValueError("artifact_backend='s3' requires S3_BUCKET to be set")
+        ttl = self.s3_presigned_url_ttl_s
+        if ttl is not None and not 1 <= ttl <= 604800:
+            raise ValueError("s3_presigned_url_ttl_s must be between 1 and 604800 seconds")
+        if self.retention_max_age_days is not None and self.retention_max_age_days < 1:
+            raise ValueError(
+                f"retention_max_age_days must be >= 1 (got {self.retention_max_age_days})"
+            )
+        if self.retention_orphan_grace_hours < 0 or self.retention_batch_size < 1:
+            raise ValueError(
+                "retention_orphan_grace_hours must be >= 0 and retention_batch_size >= 1"
+            )
         if self.database_url and self.database_pool_max_size < 1:
             raise ValueError(
                 f"database_pool_max_size must be >= 1 (got {self.database_pool_max_size})"
