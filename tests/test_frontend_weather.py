@@ -5,6 +5,7 @@ skipped where node is not installed (CI's frontend job has it).
 """
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -124,9 +125,8 @@ def test_the_card_states_forecast_facts_and_credits_the_source():
     assert "31 km/h from W, gusts 62" in html
     assert "11 km/h headwind on average" in html
     assert "Wind gusts up to 62 km/h are forecast." in html
-    assert (
-        "Weather data by Open-Meteo.com (CC BY 4.0)" in html and "https://open-meteo.com/" in html
-    )
+    assert "Weather data by Open-Meteo.com (CC BY 4.0)" in html
+    assert re.search(r'<a href="https://open-meteo\.com/"', html)
     assert 'class="windbar"' in html and "headwind on 40% of the route, tailwind on 20%" in html
     assert 'aria-label="Forecast along the route"' in html
     assert "safe" not in html.lower()

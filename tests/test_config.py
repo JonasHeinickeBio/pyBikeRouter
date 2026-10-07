@@ -468,7 +468,7 @@ def test_weather_settings_defaults_and_validation(monkeypatch):
     monkeypatch.delenv("WEATHER_PROVIDER", raising=False)  # tests/conftest.py switches it off
     s = Settings(_env_file=None)
     assert s.weather_provider == "auto" and s.weather_max_samples == 5
-    assert "github.com" in s.weather_user_agent
+    assert s.weather_user_agent.endswith("JonasHeinickeBio/pyBikeRouter")
     for bad, match in [
         ({"weather_timeout_s": 0}, "weather_timeout_s"),
         ({"weather_cache_ttl_s": -1}, "weather_cache_ttl_s"),
