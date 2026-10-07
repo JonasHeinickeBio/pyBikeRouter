@@ -207,9 +207,7 @@ async def test_mixed_no_route_and_failure_without_candidates_is_provider_failure
     node = build_route_node(
         routing_providers=[
             CapturingRouter(name="void", error=ProviderNoRouteError("none", provider="void")),
-            CapturingRouter(
-                name="down", error=ProviderUnavailableError("down", provider="down")
-            ),
+            CapturingRouter(name="down", error=ProviderUnavailableError("down", provider="down")),
         ]
     )
 

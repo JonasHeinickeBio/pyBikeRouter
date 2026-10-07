@@ -60,11 +60,11 @@ decisions still open.
 
 ## LLM integration
 
-- **LLM parser** -- `parse_request` accepts an `llm_parser`
-  (`Callable[[str], dict]`); none is wired. Contract: free text in, the same
+- **LLM parser** -- done (issue #30, opt-in): free text in, the same
   structured shape as the API request out -- never coordinates, geometry, or
-  metrics. Provider choice (model, framework) is open; LangChain messages
-  and the `messages` state channel already exist for it.
+  metrics. Anthropic structured outputs behind the `llm` extra, with a
+  labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
+  benchmark against a live model in CI, and more languages in the benchmark.
 - **Clarification dialogue** -- `awaiting_clarification` responses already
   carry candidate lists; a conversational layer could ask about them and
   resubmit with a chosen coordinate. The graph supports resumption via

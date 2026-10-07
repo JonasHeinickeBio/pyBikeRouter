@@ -59,6 +59,14 @@ cp .env.example .env
 | `RETENTION_MAX_AGE_DAYS` | how long plans and artifacts live; applied only by `bike-router retention prune` ([persistence.md](persistence.md#retention)) | unset (keep forever) |
 | `RETENTION_ORPHAN_GRACE_HOURS` | unreferenced artifacts younger than this are not swept | `24` |
 | `RETENTION_BATCH_SIZE` | plans deleted per batch | `500` |
+| `LLM_PARSER_ENABLED` | enable plain-words planning ([llm-parser.md](llm-parser.md)); needs the `llm` extra | `false` |
+| `LLM_MODEL` | model id for the parser; required when enabled, no default | unset |
+| `LLM_PROVIDER` | `anthropic` or `openai` (any OpenAI-compatible `/chat/completions` server) | `anthropic` |
+| `LLM_BASE_URL` | server root for `LLM_PROVIDER=openai`, e.g. `https://host/v1` (required then) | unset |
+| `LLM_API_KEY` | bearer token for `LLM_PROVIDER=openai` (environment only; optional for local servers) | unset |
+| `ANTHROPIC_API_KEY` | API key for the parser (environment only, never logged) | unset |
+| `LLM_TIMEOUT_S` | per-request timeout for the parser | `30` |
+| `LLM_MAX_OUTPUT_TOKENS` | output cap per parser call (256-64000) | `8000` |
 | `LOG_LEVEL` | log level | `INFO` |
 
 ## Startup validation

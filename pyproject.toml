@@ -21,6 +21,8 @@ db = ["psycopg[binary,pool]>=3.2"]
 s3 = ["boto3>=1.34"]
 # Shared cache backend for multi-instance deployments (issue #29).
 cache = ["redis>=5"]
+# Free-text request parsing with an LLM (issue #30).
+llm = ["anthropic>=1.0"]
 
 [project.scripts]
 bike-router = "bike_routing_agent.cli:main"

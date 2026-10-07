@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The public openrouteservice does not serve the Pelias geocoding endpoints
@@ -76,6 +76,23 @@ class Settings(BaseSettings):
     # Deliberately small: engines snapping to the same streets differ by a
     # few metres, while a genuinely different route differs by blocks.
     alternative_dedup_threshold_m: float = 50.0
+
+    # Free-text requests ("a 50 km gravel loop from Braunschweig, tomorrow at 8")
+    # parsed by an LLM into the structured request (issue #30). Off by default;
+    # needs the `llm` extra. The model has no default on purpose: pick one
+    # deliberately (docs/llm-parser.md). The API key is read from the standard
+    # ANTHROPIC_API_KEY environment variable (or the SDK's own credential chain)
+    # and is never logged.
+    llm_parser_enabled: bool = False
+    llm_model: str | None = None
+    # "anthropic" (Messages API) or "openai" (any OpenAI-compatible
+    # /chat/completions server, e.g. Helmholtz Blablador, vLLM, Ollama).
+    llm_provider: Literal["anthropic", "openai"] = "anthropic"
+    llm_base_url: str | None = None  # required for llm_provider=openai
+    llm_api_key: SecretStr | None = None  # bearer token for llm_provider=openai
+    anthropic_api_key: SecretStr | None = None
+    llm_timeout_s: float = 30.0
+    llm_max_output_tokens: int = 8000
 
     # Weather along the route (free, keyless providers). "auto" tries Open-Meteo
     # (global, hourly, gusts/UV/probability) and falls back to MET Norway;
@@ -230,6 +247,30 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _check_llm_settings(self) -> Settings:
+        if self.llm_parser_enabled and not (self.llm_model and self.llm_model.strip()):
+            raise ValueError(
+                "llm_parser_enabled requires LLM_MODEL (choose a model id for your provider; "
+                "see docs/llm-parser.md)"
+            )
+        if self.llm_parser_enabled and self.llm_provider == "openai":
+            if not (self.llm_base_url and self.llm_base_url.strip()):
+                raise ValueError(
+                    "llm_provider=openai requires LLM_BASE_URL (the server's /v1 root; "
+                    "see docs/llm-parser.md)"
+                )
+            if not self.llm_base_url.startswith(("http://", "https://")):
+                raise ValueError("llm_base_url must start with http:// or https://")
+        if self.llm_timeout_s <= 0:
+            raise ValueError(f"llm_timeout_s must be > 0 (got {self.llm_timeout_s})")
+        if not 256 <= self.llm_max_output_tokens <= 64000:
+            raise ValueError(
+                "llm_max_output_tokens must be between 256 and 64000 "
+                f"(got {self.llm_max_output_tokens})"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _check_weather_settings(self) -> Settings:
         if self.weather_timeout_s <= 0:
             raise ValueError(f"weather_timeout_s must be > 0 (got {self.weather_timeout_s})")
@@ -365,6 +406,7 @@ SURFACE_TAXONOMY: dict[str, str] = {
     "mud": "natural_soft",
     "rock": "natural_soft",
 }
+
 
 def surface_category(token: str) -> str | None:
     """Surface-quality category for a caller-supplied surface token.

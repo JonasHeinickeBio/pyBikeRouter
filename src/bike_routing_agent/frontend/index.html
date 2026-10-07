@@ -29,6 +29,19 @@
         <p class="tagline"><a href="dashboard.html">Evaluation dashboard</a></p>
       </header>
 
+      <section class="panel" id="text-panel" hidden>
+        <h2>Describe your ride</h2>
+        <div class="field">
+          <label for="text-input" class="visually-hidden">Describe your ride in your own words</label>
+          <textarea id="text-input" rows="3" maxlength="500"
+            placeholder="e.g. A 50 km gravel loop from Braunschweig, clockwise, tomorrow at 8"></textarea>
+        </div>
+        <div class="row">
+          <button id="text-btn" class="primary" type="button">Plan from description</button>
+        </div>
+        <p class="hint">Read by an AI model into the fields below, so you can check and adjust them. It only picks out what you wrote; places are still looked up on the map, never guessed.</p>
+      </section>
+
       <section class="panel" id="places-panel">
         <h2>Places</h2>
         <div class="field">
@@ -184,6 +197,7 @@
     crossorigin=""
   ></script>
   <script src="weather.js"></script>
+  <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

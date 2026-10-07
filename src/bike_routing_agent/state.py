@@ -42,6 +42,9 @@ class RouteAgentState(TypedDict, total=False):
     # ISO-8601 UTC departure for the weather forecast (None = now).
     departure_time: str | None
     weather_status: str | None
+    # What a free-text parser understood (issue #30): the structured request,
+    # its notes about anything unclear, and which model/prompt produced it.
+    interpretation: dict[str, Any] | None
 
     resolved_origin: dict[str, Any] | None
     resolved_destination: dict[str, Any] | None
