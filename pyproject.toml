@@ -76,3 +76,8 @@ warn_redundant_casts = true
 # boto3/botocore ship no type information; the S3 store is the only user.
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The Anthropic SDK is the optional `llm` extra; CI's typecheck job does not install it.
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true

@@ -334,6 +334,7 @@ def test_notes_and_places_are_cleaned_up():
 
 
 def test_the_real_client_is_built_with_the_configured_key_and_timeout():
+    pytest.importorskip("anthropic", reason="the llm extra is not installed")
     built = RouteRequestParser(model="m", api_key="sk-ant-test", timeout_s=12.5)
     client = built._backend._client
     assert client.timeout == 12.5 or getattr(client.timeout, "read", None) == 12.5
