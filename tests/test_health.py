@@ -484,3 +484,14 @@ async def test_an_in_memory_cache_has_nothing_to_probe():
 
     report = await build(cache=_Plain()).check()
     assert all(c.kind != "cache" for c in report.components)
+
+
+async def test_a_weather_outage_degrades_but_never_makes_the_instance_unready():
+    class _Weather:
+        async def health(self):
+            return DOWN
+
+    report = await build(weather=_Weather()).check()
+    weather = next(c for c in report.components if c.kind == "weather")
+    assert (weather.status, weather.required) == ("unavailable", False)
+    assert (report.status, report.ready) == ("degraded", True)

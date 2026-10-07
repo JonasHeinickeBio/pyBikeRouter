@@ -77,6 +77,20 @@ class Settings(BaseSettings):
     # few metres, while a genuinely different route differs by blocks.
     alternative_dedup_threshold_m: float = 50.0
 
+    # Weather along the route (free, keyless providers). "auto" tries Open-Meteo
+    # (global, hourly, gusts/UV/probability) and falls back to MET Norway;
+    # "none" switches the feature off (no request leaves the service). Route
+    # coordinates are sent to the chosen provider.
+    weather_provider: Literal["auto", "open-meteo", "met-no", "none"] = "auto"
+    weather_open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_met_no_url: str = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+    # MET Norway rejects anonymous/generic clients: say who you are.
+    weather_user_agent: str = "bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter"
+    weather_timeout_s: float = 8.0
+    weather_cache_ttl_s: float = 1800.0
+    weather_max_samples: int = 5
+    weather_sample_spacing_km: float = 10.0
+
     # Readiness endpoint (issue #25): each component is probed at most once
     # per TTL, with a hard per-probe timeout. The geocoder gets a longer TTL
     # because the default one is the public Nominatim (usage policy).
@@ -213,6 +227,24 @@ class Settings(BaseSettings):
             )
         if not self.cache_key_prefix:
             raise ValueError("cache_key_prefix must not be empty")
+        return self
+
+    @model_validator(mode="after")
+    def _check_weather_settings(self) -> Settings:
+        if self.weather_timeout_s <= 0:
+            raise ValueError(f"weather_timeout_s must be > 0 (got {self.weather_timeout_s})")
+        if self.weather_cache_ttl_s < 0:
+            raise ValueError("weather_cache_ttl_s must be >= 0")
+        if not 2 <= self.weather_max_samples <= 10:
+            raise ValueError(
+                f"weather_max_samples must be between 2 and 10 (got {self.weather_max_samples})"
+            )
+        if self.weather_sample_spacing_km <= 0:
+            raise ValueError(
+                f"weather_sample_spacing_km must be > 0 (got {self.weather_sample_spacing_km})"
+            )
+        if self.weather_provider in ("auto", "met-no") and not self.weather_user_agent.strip():
+            raise ValueError("weather_user_agent must identify your application (MET Norway)")
         return self
 
     @model_validator(mode="after")

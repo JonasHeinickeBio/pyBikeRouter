@@ -45,6 +45,7 @@ START -> parse_request
       -> geocode_locations     -> (awaiting_clarification | provider_failure) -> END
       -> route_with_provider   -> (no_route | provider_failure) -> END
       -> score_candidates      -> (no_route) -> END
+      -> weather_candidates    (best effort: never changes the outcome)
       -> explain_and_export    -> END
 ```
 
@@ -62,6 +63,7 @@ provider unless validation **and** geocoding have both succeeded.
 | `geocode_locations` | `nodes/geocode.py` | Resolve free-text places to coordinates via a `GeocodeProvider`. Direct coordinates bypass it. Ambiguity/emptiness -> clarification, never a guess. |
 | `route_with_provider` | `nodes/route.py` | Build an engine-neutral `RoutingRequest`, call the `RoutingProvider`. `no_route` vs `provider_failure` distinguished here. |
 | `score_candidates` | `nodes/score.py` | Score and rank candidates deterministically; select the best. |
+| `weather_candidates` | `nodes/weather.py` | Forecast along each ranked route at the departure time, via a free keyless provider (best effort, informational; [weather.md](weather.md)). |
 | `explain_and_export` | `nodes/export.py` | Facts-only explanation + GeoJSON/GPX artifacts written through the `ArtifactStore` (`EXPORT_DIR` by default; see [persistence.md](persistence.md)). |
 
 ### The parse step and the LLM boundary

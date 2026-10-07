@@ -55,6 +55,10 @@ from bike_routing_agent.storage.history import (
     StatsFilter,
     record_from_state,
 )
+from bike_routing_agent.weather.base import WeatherProvider
+from bike_routing_agent.weather.met_no import MetNoProvider
+from bike_routing_agent.weather.open_meteo import OpenMeteoProvider
+from bike_routing_agent.weather.service import WeatherService
 
 _SAFE_FILENAME = re.compile(r"^[0-9a-f]{32}\.(geojson|gpx)$")
 _PLAN_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -79,6 +83,32 @@ def build_cache(cfg: Settings) -> CacheBackend:
             timeout_s=cfg.cache_redis_timeout_s,
         )
     return InMemoryTTLCache()
+
+
+def build_weather_service(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> WeatherService | None:
+    """The weather lookup for a configuration, or ``None`` when it is switched off."""
+    if cfg.weather_provider == "none":
+        return None
+    providers: list[WeatherProvider] = []
+    if cfg.weather_provider in ("auto", "open-meteo"):
+        providers.append(
+            OpenMeteoProvider(base_url=cfg.weather_open_meteo_url, timeout_s=cfg.weather_timeout_s)
+        )
+    if cfg.weather_provider in ("auto", "met-no"):
+        providers.append(
+            MetNoProvider(
+                user_agent=cfg.weather_user_agent,
+                base_url=cfg.weather_met_no_url,
+                timeout_s=cfg.weather_timeout_s,
+            )
+        )
+    return WeatherService(
+        providers,
+        cache=NamespacedCache(cache, "weather") if cache is not None else None,
+        cache_ttl_s=cfg.weather_cache_ttl_s,
+    )
 
 
 def build_providers(
@@ -256,12 +286,15 @@ _cache = build_cache(settings)
 _geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
 
+_weather_service = build_weather_service(settings, cache=_cache)
+
 _health_monitor = build_health_monitor(
     geocoder=_geocode_provider,
     routing_providers=_routing_providers,
     artifact_store=_artifact_store,
     history=_history,
     cache=_cache,
+    weather=_weather_service,
     # With the exports in the database a database outage fails plans, so it
     # gates readiness; otherwise history is best effort and only degrades.
     database_is_critical=settings.artifact_backend == "database",
@@ -278,6 +311,9 @@ _graph = build_graph(
     min_confidence=settings.geocoder_min_confidence,
     surface_enricher=build_surface_enricher(settings, cache=_cache),
     alternative_dedup_threshold_m=settings.alternative_dedup_threshold_m,
+    weather_service=_weather_service,
+    weather_max_samples=settings.weather_max_samples,
+    weather_spacing_km=settings.weather_sample_spacing_km,
 )
 
 
@@ -294,6 +330,9 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         min_confidence=cfg.geocoder_min_confidence,
         surface_enricher=build_surface_enricher(cfg, cache=cache),
         alternative_dedup_threshold_m=cfg.alternative_dedup_threshold_m,
+        weather_service=build_weather_service(cfg, cache=cache),
+        weather_max_samples=cfg.weather_max_samples,
+        weather_spacing_km=cfg.weather_sample_spacing_km,
     )
 
 
@@ -313,6 +352,9 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "via": [_place_to_raw(v) for v in request.via],
         "constraints": request.constraints.model_dump(mode="json"),
         "max_alternatives": request.max_alternatives,
+        "departure_time": (
+            request.departure_time.isoformat() if request.departure_time is not None else None
+        ),
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
@@ -363,6 +405,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         clarification=clarification,
         errors=final_state.get("errors", []),
         plan_id=await _record_plan(final_state),
+        weather_status=final_state.get("weather_status"),
     )
 
 

@@ -105,6 +105,12 @@ decisions still open.
   the artifacts only they reference by age, dry run by default
   ([persistence.md](persistence.md#retention)). Open follow-ups: count/size
   quotas, and running the prune on a schedule inside the compose stack.
+- **Weather along the route** -- done: `departure_time` plus a forecast per
+  candidate from free keyless providers (Open-Meteo, MET Norway as fallback),
+  wind resolved against the direction of travel, advisories, and a weather
+  card/markers/wind column in the UI ([weather.md](weather.md)). Open follow-ups:
+  letting weather influence ranking (needs calibration evidence), wind-adjusted
+  travel times, and exporting the forecast in the GPX/GeoJSON files.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
   profile runs a pinned openrouteservice (bicycle profiles) and a local
   Nominatim from one regional extract, with a bootstrap script

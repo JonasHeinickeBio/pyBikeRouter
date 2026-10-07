@@ -148,9 +148,7 @@ def test_route_plan_runtime_error_exits_1() -> None:
 def test_route_plan_output_file_written(tmp_path: Path) -> None:
     target = tmp_path / "nested" / "plan.json"
     out, err = io.StringIO(), io.StringIO()
-    args = parse(
-        "route", "plan", "--origin", "a", "--destination", "b", "--output", str(target)
-    )
+    args = parse("route", "plan", "--origin", "a", "--destination", "b", "--output", str(target))
     assert route_cmd.run(args, out, err, graph_factory=lambda: FakeGraph(READY_STATE)) == 0
     assert json.loads(target.read_text())["status"] == "ready"
 
@@ -425,9 +423,7 @@ def test_serve_start_defaults_to_uvicorn_run(monkeypatch: pytest.MonkeyPatch) ->
 def test_docker_run_uses_default_process_runner(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[tuple[list[str], bool]] = []
 
-    def fake_run(
-        command: list[str], check: bool = False
-    ) -> subprocess.CompletedProcess:
+    def fake_run(command: list[str], check: bool = False) -> subprocess.CompletedProcess:
         seen.append((list(command), check))
         return subprocess.CompletedProcess(command, 0)
 
@@ -569,8 +565,9 @@ def test_a_history_factory_failure_is_also_only_a_warning() -> None:
 
 def test_a_crashed_graph_records_nothing() -> None:
     history = FakeHistory()
-    rc, payload, _ = run_plan(graph=FakeGraph(error=ConnectionError("ORS unreachable")),
-                              history=history)
+    rc, payload, _ = run_plan(
+        graph=FakeGraph(error=ConnectionError("ORS unreachable")), history=history
+    )
     assert rc == 1 and payload is None and history.records == []
 
 
@@ -590,3 +587,41 @@ def test_default_history_factory_follows_the_database_setting(
     monkeypatch.setattr(config_module.settings, "database_url", "postgresql://x/y")
     monkeypatch.setattr(api_module, "build_storage", lambda cfg: (object(), sentinel))
     assert route_module._default_history_factory() is sentinel
+
+
+# -------------------------------------------------- departure time (weather)
+
+
+def test_departure_time_is_passed_to_the_graph() -> None:
+    graph = FakeGraph(READY_STATE)
+    out, err = io.StringIO(), io.StringIO()
+    args = parse(
+        "route",
+        "plan",
+        "--origin",
+        "a",
+        "--destination",
+        "b",
+        "--departure-time",
+        "2026-10-08T07:30:00Z",
+    )
+    assert route_cmd.run(args, out, err, graph_factory=lambda: graph) == 0
+    assert graph.invoked_with["raw_input"]["departure_time"] == "2026-10-08T07:30:00Z"  # type: ignore[index]
+
+
+def test_without_a_departure_time_none_is_sent() -> None:
+    graph = FakeGraph(READY_STATE)
+    args = parse("route", "plan", "--origin", "a", "--destination", "b")
+    route_cmd.run(args, io.StringIO(), io.StringIO(), graph_factory=lambda: graph)
+    assert "departure_time" not in graph.invoked_with["raw_input"]  # type: ignore[index]
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [("next friday", "not an ISO-8601"), ("2099-01-01T00:00:00Z", "more than 14 days ahead")],
+)
+def test_a_bad_departure_time_is_a_usage_error(value: str, message: str) -> None:
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", "--origin", "a", "--destination", "b", "--departure-time", value)
+    assert route_cmd.run(args, out, err, graph_factory=lambda: FakeGraph(READY_STATE)) == 2
+    assert message in err.getvalue() and out.getvalue() == ""

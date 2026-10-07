@@ -280,9 +280,7 @@ def test_database_artifact_backend_requires_a_database_url():
 
 def test_database_pool_size_must_be_positive():
     with pytest.raises(ValidationError, match="database_pool_max_size"):
-        Settings(
-            _env_file=None, database_url="postgresql://x/y", database_pool_max_size=0
-        )
+        Settings(_env_file=None, database_url="postgresql://x/y", database_pool_max_size=0)
 
 
 def test_build_storage_without_a_database_is_local_and_stateless(tmp_path):
@@ -393,9 +391,7 @@ def test_build_storage_selects_the_s3_backend_with_or_without_a_database():
     store, history = build_storage(cfg)
     assert isinstance(store, S3ArtifactStore) and history is None
 
-    store, history = build_storage(
-        cfg.model_copy(update={"database_url": "postgresql://x/y"})
-    )
+    store, history = build_storage(cfg.model_copy(update={"database_url": "postgresql://x/y"}))
     assert isinstance(store, S3ArtifactStore)
     assert type(history).__name__ == "PostgresRouteHistory"
 
@@ -466,3 +462,59 @@ def test_without_a_shared_cache_each_component_keeps_its_own_default():
 
     geocoder, _ = build_providers(Settings(_env_file=None))
     assert geocoder._cache.__class__.__name__ == "InMemoryTTLCache"
+
+
+def test_weather_settings_defaults_and_validation(monkeypatch):
+    monkeypatch.delenv("WEATHER_PROVIDER", raising=False)  # tests/conftest.py switches it off
+    s = Settings(_env_file=None)
+    assert s.weather_provider == "auto" and s.weather_max_samples == 5
+    assert s.weather_user_agent.endswith("JonasHeinickeBio/pyBikeRouter")
+    for bad, match in [
+        ({"weather_timeout_s": 0}, "weather_timeout_s"),
+        ({"weather_cache_ttl_s": -1}, "weather_cache_ttl_s"),
+        ({"weather_max_samples": 1}, "weather_max_samples"),
+        ({"weather_max_samples": 11}, "weather_max_samples"),
+        ({"weather_sample_spacing_km": 0}, "weather_sample_spacing_km"),
+        ({"weather_user_agent": "  "}, "weather_user_agent"),
+    ]:
+        with pytest.raises(ValidationError, match=match):
+            Settings(_env_file=None, **bad)
+    # an empty User-Agent only matters when MET Norway can be used
+    assert Settings(_env_file=None, weather_provider="open-meteo", weather_user_agent=" ")
+
+
+def test_build_weather_service_follows_the_provider_setting(monkeypatch):
+    monkeypatch.delenv("WEATHER_PROVIDER", raising=False)
+    from bike_routing_agent.api import build_weather_service
+    from bike_routing_agent.providers.base import InMemoryTTLCache, NamespacedCache
+
+    assert build_weather_service(Settings(_env_file=None, weather_provider="none")) is None
+    names = {
+        "auto": ["open-meteo", "met-no"],
+        "open-meteo": ["open-meteo"],
+        "met-no": ["met-no"],
+    }
+    for setting, expected in names.items():
+        service = build_weather_service(Settings(_env_file=None, weather_provider=setting))
+        assert service is not None and service.provider_names == expected
+
+    cache = InMemoryTTLCache()
+    shared = build_weather_service(Settings(_env_file=None), cache=cache)
+    assert isinstance(shared._cache, NamespacedCache) and shared._cache._namespace == "weather:"
+    assert shared._cache_ttl_s == 1800.0
+
+
+def test_the_met_no_provider_gets_the_configured_user_agent_and_urls():
+    from bike_routing_agent.api import build_weather_service
+
+    service = build_weather_service(
+        Settings(
+            _env_file=None,
+            weather_provider="met-no",
+            weather_user_agent="my-app/2 me@example.org",
+            weather_met_no_url="https://met.example/x",
+        )
+    )
+    provider = service._providers[0]
+    assert provider._user_agent == "my-app/2 me@example.org"
+    assert provider._base_url == "https://met.example/x"

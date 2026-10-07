@@ -55,6 +55,25 @@
         <p class="hint">Tip: type <code>lat, lon</code> (e.g. <code>51.75, -1.25</code>) to skip geocoding, or use &#9673; then click the map.</p>
       </section>
 
+      <section class="panel" id="when-panel">
+        <h2>When</h2>
+        <div class="field">
+          <label for="departure-preset">Departure</label>
+          <select id="departure-preset">
+            <option value="now" selected>Now</option>
+            <option value="1h">In 1 hour</option>
+            <option value="evening">This evening (18:00)</option>
+            <option value="tomorrow">Tomorrow morning (08:00)</option>
+            <option value="custom">Pick a date and time&hellip;</option>
+          </select>
+        </div>
+        <div class="field" id="departure-custom-field" hidden>
+          <label for="departure-custom">Date and time (your local time)</label>
+          <input id="departure-custom" type="datetime-local" step="900" />
+        </div>
+        <p class="hint" id="departure-hint">Sets the weather forecast along the route, up to 14 days ahead.</p>
+      </section>
+
       <section class="panel" id="constraints-panel">
         <details open>
           <summary><h2>Constraints</h2></summary>
@@ -122,6 +141,7 @@
         <p id="viewing-note" class="viewing-note" hidden></p>
         <p id="explanation" class="explanation"></p>
         <div class="metrics" id="metrics"></div>
+        <section id="weather-card" class="weather-card" hidden aria-live="polite"></section>
         <details id="candidates-details" hidden>
           <summary><h2>Candidates</h2></summary>
           <div class="candidates-scroll">
@@ -150,7 +170,7 @@
       <footer class="foot">
         <a href="/docs" target="_blank" rel="noopener">API docs</a>
         <span>&middot;</span>
-        <a href="https://github.com/" target="_blank" rel="noopener">About</a>
+        <a href="https://github.com/JonasHeinickeBio/pyBikeRouter" target="_blank" rel="noopener">About</a>
       </footer>
     </aside>
 
@@ -163,6 +183,7 @@
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
   ></script>
+  <script src="weather.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

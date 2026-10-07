@@ -24,6 +24,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
+| [Weather](docs/weather.md) | Forecast along the route at your departure time: temperature, rain, wind vs. riding direction (free, keyless providers) |
 | [Self-hosted stack](docs/self-hosted.md) | Run routing and/or geocoding locally from one OSM extract; hardware requirements and small-PC options |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
 | [iPhone / Tailscale](docs/mobile.md) | Use the planner from an iPhone as a home-screen app over your tailnet |
@@ -132,7 +133,8 @@ bike-router providers list       # provider names and bike-type -> ORS profile m
 `--destination` and repeated `--via` waypoints, prints the JSON result and
 exits `0` on `ready`, `1` on clarification/provider failure, `2` on usage
 errors. With `DATABASE_URL` set it also records the plan in the route history
-(best effort; `plan_id` in the output, `--no-record` to skip), and
+(best effort; `plan_id` in the output, `--no-record` to skip), a forecast along
+the route at `--departure-time` ([docs/weather.md](docs/weather.md)), and
 `bike-router db migrate` / `db status` manage the schema
 ([docs/persistence.md](docs/persistence.md#schema-migrations)).
 
