@@ -49,6 +49,10 @@ async def test_frontend_static_assets_are_served(client):
     for path, marker in [
         ("/app.js", "route/plan"),
         ("/app.js", "max_alternatives"),
+        ("/app.js", "departure_time"),
+        ("/weather.js", "BikeWeather"),
+        ("/index.html", 'id="departure-preset"'),
+        ("/index.html", 'id="weather-card"'),
         ("/index.html", 'id="max-alternatives"'),
         ("/styles.css", "--accent"),
     ]:
@@ -256,9 +260,7 @@ def _best_first(entries: list[tuple[str, float | None]]) -> list[str]:
         [("ors", 0.9), ("brouter", None), ("valhalla", 0.7)],
     ],
 )
-async def test_plan_route_candidates_sorted_best_first(
-    client, monkeypatch, entries
-) -> None:
+async def test_plan_route_candidates_sorted_best_first(client, monkeypatch, entries) -> None:
     import bike_routing_agent.api as api_module
 
     monkeypatch.setattr(api_module, "_graph", _StubGraph(_ready_state(entries)))
@@ -589,6 +591,7 @@ async def test_dashboard_page_is_served(client):
     assert "history/stats" in script.text
     assert "dashboard.js" in page.text
 
+
 # ---------------------------------------------------------------------------
 # iPhone / home-screen app (docs/mobile.md)
 # ---------------------------------------------------------------------------
@@ -647,9 +650,7 @@ async def test_max_alternatives_reaches_the_graph(client, monkeypatch):
     graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
     monkeypatch.setattr(api_module, "_graph", graph)
 
-    await client.post(
-        "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"}
-    )
+    await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
     await client.post(
         "/v1/route/plan",
         json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "max_alternatives": 3},
@@ -808,3 +809,152 @@ async def test_malformed_names_never_reach_the_presigner(client, monkeypatch):
 
     assert (await client.get("/v1/routes/..%2Fsecret.geojson")).status_code == 404
     assert (await client.get("/v1/routes/short.geojson")).status_code == 404
+
+
+# --------------------------------------------------------------- weather
+
+
+async def test_a_departure_too_far_ahead_is_rejected_before_the_graph_runs(client):
+    from datetime import UTC, datetime, timedelta
+
+    far = (datetime.now(UTC) + timedelta(days=40)).isoformat()
+    response = await client.post(
+        "/v1/route/plan", json={"origin": "A", "destination": "B", "departure_time": far}
+    )
+    assert response.status_code == 422
+    assert any("departure_time" in str(e) for e in response.json()["detail"])
+
+
+async def test_departure_time_reaches_the_graph_as_utc_iso(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
+    monkeypatch.setattr(api_module, "_graph", graph)
+    for sent in ("2026-10-07T15:00:00Z", "2026-10-07T17:00:00+02:00", "2026-10-07T15:00:00"):
+        await client.post(
+            "/v1/route/plan",
+            json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "departure_time": sent},
+        )
+    await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
+    sent_values = [s["raw_input"]["departure_time"] for s in graph.initial_states]
+    assert sent_values[0] == "2026-10-07T15:00:00+00:00"
+    assert sent_values[1] == "2026-10-07T17:00:00+02:00"
+    assert sent_values[2] == "2026-10-07T15:00:00+00:00"  # naive = UTC
+    assert sent_values[3] is None
+
+
+async def test_weather_status_is_part_of_the_response(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    state = {**_ready_state([("ors", 0.9)]), "weather_status": "unavailable"}
+    monkeypatch.setattr(api_module, "_graph", _StubGraph(state))
+    body = (
+        await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
+    ).json()
+    assert body["weather_status"] == "unavailable" and body["route"]["weather"] is None
+
+
+async def test_a_full_plan_carries_weather_and_mentions_it_in_the_explanation(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+    from bike_routing_agent.graph import build_graph
+    from bike_routing_agent.weather.models import HourlyWeather
+    from bike_routing_agent.weather.service import WeatherService
+
+    class _Geocoder:
+        name = "fake"
+
+        async def geocode(self, query, *, limit=5):  # pragma: no cover - coordinates only
+            raise AssertionError
+
+    class _Engine:
+        name = "ors"
+
+        async def route(self, request):
+            from bike_routing_agent.models import RouteCandidate, RouteMetrics
+
+            return RouteCandidate(
+                provider="ors",
+                provider_profile="p",
+                geometry_geojson={
+                    "type": "LineString",
+                    "coordinates": [[10.0, 52.0], [10.0, 52.1], [10.0, 52.2]],
+                },
+                metrics=RouteMetrics(distance_m=22_000, duration_s=4_800, ascent_m=40),
+            )
+
+        async def health(self):  # pragma: no cover
+            return {"status": "ok"}
+
+    class _Weather:
+        name = "fake-weather"
+        attribution = "Weather by Fake (CC BY 4.0)"
+
+        async def forecast(self, points, start, end):
+            from datetime import timedelta
+
+            return [
+                [
+                    HourlyWeather(
+                        time=start + timedelta(hours=i),
+                        temperature_c=9.0 + i,
+                        wind_speed_kmh=24.0,
+                        wind_gust_kmh=55.0,
+                        wind_from_deg=0.0,  # from the north: a headwind for a northbound ride
+                        precipitation_probability=70,
+                        condition="rain",
+                    )
+                    for i in range(6)
+                ]
+                for _ in points
+            ]
+
+        async def health(self):  # pragma: no cover
+            return {"status": "ok"}
+
+    graph = build_graph(
+        geocode_provider=_Geocoder(),
+        routing_providers=[_Engine()],
+        artifact_store=api_module._artifact_store,
+        weather_service=WeatherService([_Weather()]),
+    )
+    monkeypatch.setattr(api_module, "_graph", graph)
+
+    body = (
+        await client.post(
+            "/v1/route/plan",
+            json={
+                "origin": {"lon": 10.0, "lat": 52.0},
+                "destination": {"lon": 10.0, "lat": 52.2},
+                "departure_time": "2099-01-01T08:00:00Z",
+            },
+        )
+    ).json()
+    # a departure in 2099 is beyond the forecast range of the validator
+    assert "detail" in body
+
+    from datetime import UTC, datetime, timedelta
+
+    soon = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+    body = (
+        await client.post(
+            "/v1/route/plan",
+            json={
+                "origin": {"lon": 10.0, "lat": 52.0},
+                "destination": {"lon": 10.0, "lat": 52.2},
+                "departure_time": soon,
+            },
+        )
+    ).json()
+
+    assert body["status"] == "ready" and body["weather_status"] == "ok"
+    weather = body["route"]["weather"]
+    assert weather["provider"] == "fake-weather" and weather["attribution"].startswith("Weather by")
+    assert weather["summary"]["headwind_mean_kmh"] == pytest.approx(24, abs=0.5)
+    assert weather["summary"]["wind_gust_max_kmh"] == 55
+    assert any("headwind" in note for note in weather["advisories"])
+    assert body["candidates"][0]["weather"] == weather
+    assert (
+        "Forecast for a" in body["explanation"]
+        and "70% chance of precipitation" in body["explanation"]
+    )
+    assert "safe" not in " ".join(weather["advisories"]).lower()

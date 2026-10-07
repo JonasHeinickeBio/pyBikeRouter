@@ -6,9 +6,11 @@ import argparse
 import asyncio
 import json
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
+from bike_routing_agent.models import MAX_FORECAST_DAYS
 from bike_routing_agent.storage.history import record_from_state
 
 EXIT_OK = 0
@@ -81,6 +83,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="also write the JSON response to this file",
     )
     plan.add_argument(
+        "--departure-time",
+        default=None,
+        metavar="ISO8601",
+        help="when the ride starts, for the weather forecast (e.g. 2026-10-08T07:30:00Z; "
+        "default: now; no UTC offset means UTC; at most 14 days ahead)",
+    )
+    plan.add_argument(
         "--no-record",
         action="store_true",
         help="do not record the plan in the route history even when DATABASE_URL is set",
@@ -114,6 +123,14 @@ def _loop_usage_error(args: argparse.Namespace) -> str | None:
         return "--loop requires --target-distance-km (loop size is not invented silently)"
     if not args.loop and not args.destination:
         return "--destination is required unless --loop is set"
+    if args.departure_time is not None:
+        try:
+            parsed = datetime.fromisoformat(args.departure_time.replace("Z", "+00:00"))
+        except ValueError:
+            return f"--departure-time {args.departure_time!r} is not an ISO-8601 datetime"
+        aware = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+        if aware > datetime.now(UTC) + timedelta(days=MAX_FORECAST_DAYS):
+            return f"--departure-time is more than {MAX_FORECAST_DAYS} days ahead"
     return None
 
 
@@ -136,6 +153,8 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
     }
     if args.destination:
         request["destination"] = _place(args.destination)
+    if args.departure_time is not None:
+        request["departure_time"] = args.departure_time
     return request
 
 

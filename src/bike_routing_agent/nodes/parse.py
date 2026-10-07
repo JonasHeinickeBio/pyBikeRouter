@@ -56,6 +56,7 @@ def build_parse_node(*, llm_parser: LLMParser | None = None) -> ParseNodeFn:
             "via_inputs": [v for v in via_inputs if v is not None],
             "constraints": raw.get("constraints", {}),
             "max_alternatives": raw.get("max_alternatives"),
+            "departure_time": raw.get("departure_time"),
             "status": "in_progress",
         }
 

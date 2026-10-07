@@ -39,6 +39,9 @@ class RouteAgentState(TypedDict, total=False):
     constraints: dict[str, Any]
     # Cap on distinct alternatives (issue #24); None keeps every candidate.
     max_alternatives: int | None
+    # ISO-8601 UTC departure for the weather forecast (None = now).
+    departure_time: str | None
+    weather_status: str | None
 
     resolved_origin: dict[str, Any] | None
     resolved_destination: dict[str, Any] | None
