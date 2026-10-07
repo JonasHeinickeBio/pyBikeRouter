@@ -60,11 +60,11 @@ decisions still open.
 
 ## LLM integration
 
-- **LLM parser** -- `parse_request` accepts an `llm_parser`
-  (`Callable[[str], dict]`); none is wired. Contract: free text in, the same
+- **LLM parser** -- done (issue #30, opt-in): free text in, the same
   structured shape as the API request out -- never coordinates, geometry, or
-  metrics. Provider choice (model, framework) is open; LangChain messages
-  and the `messages` state channel already exist for it.
+  metrics. Anthropic structured outputs behind the `llm` extra, with a
+  labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
+  benchmark against a live model in CI, and more languages in the benchmark.
 - **Clarification dialogue** -- `awaiting_clarification` responses already
   carry candidate lists; a conversational layer could ask about them and
   resubmit with a chosen coordinate. The graph supports resumption via
@@ -84,12 +84,16 @@ decisions still open.
 
 - **Persistence** -- done (issue #7): PostGIS route history, an
   `ArtifactStore` abstraction (local disk or database), and provenance
-  queries and an evaluation dashboard ([persistence.md](persistence.md)). Open
-  follow-ups: schema migrations, recording from the CLI.
+  queries and an evaluation dashboard ([persistence.md](persistence.md)), and
+  (issue #28) versioned schema migrations (`bike-router db migrate`) and history
+  recording from the CLI. Open follow-ups: dashboard depth, count/size
+  retention.
 
-- **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
-  similar) implementation is needed for multi-instance deployments to share
-  geocode results.
+- **Shared cache backend** -- done (issue #29): `CACHE_BACKEND=redis` shares
+  geocode and Overpass results across instances, fail-open with a circuit
+  breaker, JSON-only, reported by `/readyz`, `cache` compose profile
+  ([providers.md](providers.md#shared-cache-redis)). Open follow-ups:
+  negative caching of not-found geocodes, and metrics on hit rates.
 - **Provider health over HTTP** -- done (issue #25): `GET /readyz`
   aggregates cached, time-bounded probes of the routing engines, geocoder,
   artifact store and database ([api.md](api.md#get-readyz)). Open
@@ -101,6 +105,12 @@ decisions still open.
   the artifacts only they reference by age, dry run by default
   ([persistence.md](persistence.md#retention)). Open follow-ups: count/size
   quotas, and running the prune on a schedule inside the compose stack.
+- **Weather along the route** -- done: `departure_time` plus a forecast per
+  candidate from free keyless providers (Open-Meteo, MET Norway as fallback),
+  wind resolved against the direction of travel, advisories, and a weather
+  card/markers/wind column in the UI ([weather.md](weather.md)). Open follow-ups:
+  letting weather influence ranking (needs calibration evidence), wind-adjusted
+  travel times, and exporting the forecast in the GPX/GeoJSON files.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
   profile runs a pinned openrouteservice (bicycle profiles) and a local
   Nominatim from one regional extract, with a bootstrap script

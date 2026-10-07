@@ -144,8 +144,9 @@ Both adapters cache geocoded results in an in-process TTL cache
 `(provider, query, limit)` with a SHA-256 digest (the Nominatim adapter
 keys on the *normalized* query, so `Kasernenstr 23 ...` and
 `Kasernenstraße 23, ...` share one cache entry), TTL from
-`GEOCODER_CACHE_TTL_S` (default 3600 s). A shared `CacheBackend` (e.g.
-Redis) can be injected for multi-instance deployments. For Pelias the
+`GEOCODER_CACHE_TTL_S` (default 3600 s). With `CACHE_BACKEND=redis` the
+cache is shared by all instances ([providers.md](providers.md#shared-cache-redis)).
+For Pelias the
 cache lives in the same process as the ORS client — no extra HTTP layer.
 
 ## Error handling

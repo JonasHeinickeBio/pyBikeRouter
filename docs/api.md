@@ -38,6 +38,7 @@ FastAPI with `422` and never reaches the workflow.
 | `destination` | non-empty string **or** `Coordinate` | yes* | Same. Omit for loop requests -- see `return_to_origin` below. |
 | `via` | list, max 10 | no | Same shape as `origin`. |
 | `constraints` | `RouteConstraints` | no | Defaults apply when omitted. |
+| `departure_time` | ISO-8601 datetime | no | When the ride starts, for the weather forecast ([weather.md](weather.md)). Omitted: now. No UTC offset = UTC; more than 14 days ahead is rejected (`422`). |
 | `max_alternatives` | integer `1..5` | no | Return at most this many *distinct* routes; see [Alternatives](#alternatives). Omitted: every scored candidate is returned. |
 
 `Coordinate` is `{"lon": -180..180, "lat": -90..90}`. Constraint fields and
@@ -162,6 +163,11 @@ Notes:
   providers side by side. With a single routing provider the list has
   exactly one entry. `candidates` is `[]` whenever `status` is not
   `ready`.
+- Every candidate carries `weather` (the forecast along that route at the
+  departure time: `summary`, `samples[]` with head/crosswind, `advisories[]`, the
+  provider's `attribution`) or `null`, and the response has `weather_status`
+  (`ok`, `unavailable`, `not_covered`, `skipped`, or `null` when weather is off).
+  Weather is best effort and never changes `status` ([weather.md](weather.md)).
 - Every candidate carries `rank` (1-based position in the returned list),
   `rank_rationale` (a facts-only comparison to rank 1) and the duplicate
   bookkeeping `duplicates` / `duplicate_of`; all are optional additions,
@@ -256,6 +262,27 @@ candidate with its full geometry, score breakdown and provenance (never raw
 provider payloads). `404` for unknown or malformed ids, `503` without a
 database. `plan_id` is the `plan_id` of a plan response, which is also the
 artifact id.
+
+## POST /v1/route/plan-text
+
+Plan from a description (issue #30; [llm-parser.md](llm-parser.md)).
+
+```json
+{"text": "50 km gravel loop from Braunschweig, tomorrow at 8",
+ "timezone": "Europe/Berlin", "max_alternatives": 3}
+```
+
+`text` is 1-500 characters; `timezone` (optional IANA name) anchors words like
+"tomorrow"; `max_alternatives` is the same cap as on `/v1/route/plan`. The
+response is the usual plan response plus `interpretation` (`request`,
+`departure_time`, `notes`, `parser` provenance). `503` when
+`LLM_PARSER_ENABLED` is off; parse failures are `200` with `status: "invalid"`
+and a `llm_parser_*` error code.
+
+## GET /v1/capabilities
+
+`{"text_planning": bool, "weather": bool, "history": bool}` -- which optional
+features this instance has, used by the web form to show or hide controls.
 
 ## GET /healthz
 

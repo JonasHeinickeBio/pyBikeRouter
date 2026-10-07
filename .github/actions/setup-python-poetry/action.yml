@@ -1,5 +1,5 @@
 name: Set up Python and Poetry
-description: Python, Poetry (pinned), a lock-file-keyed virtualenv cache, and the project installed with the db and s3 extras.
+description: Python, Poetry (pinned), a lock-file-keyed virtualenv cache, and the project installed with the db, s3 and cache extras.
 
 inputs:
   python-version:
@@ -10,7 +10,7 @@ runs:
   using: composite
   steps:
     - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ inputs.python-version }}
 
@@ -22,11 +22,11 @@ runs:
         virtualenvs-in-project: true
 
     - name: Cache virtualenv
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: .venv
         key: venv-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('poetry.lock') }}
 
     - name: Install dependencies
       shell: bash
-      run: poetry install --no-interaction --extras "db s3"
+      run: poetry install --no-interaction --extras "db s3 cache"

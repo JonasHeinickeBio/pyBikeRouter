@@ -49,6 +49,14 @@ async def test_frontend_static_assets_are_served(client):
     for path, marker in [
         ("/app.js", "route/plan"),
         ("/app.js", "max_alternatives"),
+        ("/app.js", "departure_time"),
+        ("/weather.js", "BikeWeather"),
+        ("/text-planning.js", "BikeText"),
+        ("/app.js", "route/plan-text"),
+        ("/app.js", "v1/capabilities"),
+        ("/index.html", 'id="text-input"'),
+        ("/index.html", 'id="departure-preset"'),
+        ("/index.html", 'id="weather-card"'),
         ("/index.html", 'id="max-alternatives"'),
         ("/styles.css", "--accent"),
     ]:
@@ -256,9 +264,7 @@ def _best_first(entries: list[tuple[str, float | None]]) -> list[str]:
         [("ors", 0.9), ("brouter", None), ("valhalla", 0.7)],
     ],
 )
-async def test_plan_route_candidates_sorted_best_first(
-    client, monkeypatch, entries
-) -> None:
+async def test_plan_route_candidates_sorted_best_first(client, monkeypatch, entries) -> None:
     import bike_routing_agent.api as api_module
 
     monkeypatch.setattr(api_module, "_graph", _StubGraph(_ready_state(entries)))
@@ -589,6 +595,7 @@ async def test_dashboard_page_is_served(client):
     assert "history/stats" in script.text
     assert "dashboard.js" in page.text
 
+
 # ---------------------------------------------------------------------------
 # iPhone / home-screen app (docs/mobile.md)
 # ---------------------------------------------------------------------------
@@ -647,9 +654,7 @@ async def test_max_alternatives_reaches_the_graph(client, monkeypatch):
     graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
     monkeypatch.setattr(api_module, "_graph", graph)
 
-    await client.post(
-        "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"}
-    )
+    await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
     await client.post(
         "/v1/route/plan",
         json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "max_alternatives": 3},
@@ -808,3 +813,354 @@ async def test_malformed_names_never_reach_the_presigner(client, monkeypatch):
 
     assert (await client.get("/v1/routes/..%2Fsecret.geojson")).status_code == 404
     assert (await client.get("/v1/routes/short.geojson")).status_code == 404
+
+
+# --------------------------------------------------------------- weather
+
+
+async def test_a_departure_too_far_ahead_is_rejected_before_the_graph_runs(client):
+    from datetime import UTC, datetime, timedelta
+
+    far = (datetime.now(UTC) + timedelta(days=40)).isoformat()
+    response = await client.post(
+        "/v1/route/plan", json={"origin": "A", "destination": "B", "departure_time": far}
+    )
+    assert response.status_code == 422
+    assert any("departure_time" in str(e) for e in response.json()["detail"])
+
+
+async def test_departure_time_reaches_the_graph_as_utc_iso(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
+    monkeypatch.setattr(api_module, "_graph", graph)
+    for sent in ("2026-10-07T15:00:00Z", "2026-10-07T17:00:00+02:00", "2026-10-07T15:00:00"):
+        await client.post(
+            "/v1/route/plan",
+            json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "departure_time": sent},
+        )
+    await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
+    sent_values = [s["raw_input"]["departure_time"] for s in graph.initial_states]
+    assert sent_values[0] == "2026-10-07T15:00:00+00:00"
+    assert sent_values[1] == "2026-10-07T17:00:00+02:00"
+    assert sent_values[2] == "2026-10-07T15:00:00+00:00"  # naive = UTC
+    assert sent_values[3] is None
+
+
+async def test_weather_status_is_part_of_the_response(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    state = {**_ready_state([("ors", 0.9)]), "weather_status": "unavailable"}
+    monkeypatch.setattr(api_module, "_graph", _StubGraph(state))
+    body = (
+        await client.post("/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"})
+    ).json()
+    assert body["weather_status"] == "unavailable" and body["route"]["weather"] is None
+
+
+async def test_a_full_plan_carries_weather_and_mentions_it_in_the_explanation(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+    from bike_routing_agent.graph import build_graph
+    from bike_routing_agent.weather.models import HourlyWeather
+    from bike_routing_agent.weather.service import WeatherService
+
+    class _Geocoder:
+        name = "fake"
+
+        async def geocode(self, query, *, limit=5):  # pragma: no cover - coordinates only
+            raise AssertionError
+
+    class _Engine:
+        name = "ors"
+
+        async def route(self, request):
+            from bike_routing_agent.models import RouteCandidate, RouteMetrics
+
+            return RouteCandidate(
+                provider="ors",
+                provider_profile="p",
+                geometry_geojson={
+                    "type": "LineString",
+                    "coordinates": [[10.0, 52.0], [10.0, 52.1], [10.0, 52.2]],
+                },
+                metrics=RouteMetrics(distance_m=22_000, duration_s=4_800, ascent_m=40),
+            )
+
+        async def health(self):  # pragma: no cover
+            return {"status": "ok"}
+
+    class _Weather:
+        name = "fake-weather"
+        attribution = "Weather by Fake (CC BY 4.0)"
+
+        async def forecast(self, points, start, end):
+            from datetime import timedelta
+
+            return [
+                [
+                    HourlyWeather(
+                        time=start + timedelta(hours=i),
+                        temperature_c=9.0 + i,
+                        wind_speed_kmh=24.0,
+                        wind_gust_kmh=55.0,
+                        wind_from_deg=0.0,  # from the north: a headwind for a northbound ride
+                        precipitation_probability=70,
+                        condition="rain",
+                    )
+                    for i in range(6)
+                ]
+                for _ in points
+            ]
+
+        async def health(self):  # pragma: no cover
+            return {"status": "ok"}
+
+    graph = build_graph(
+        geocode_provider=_Geocoder(),
+        routing_providers=[_Engine()],
+        artifact_store=api_module._artifact_store,
+        weather_service=WeatherService([_Weather()]),
+    )
+    monkeypatch.setattr(api_module, "_graph", graph)
+
+    body = (
+        await client.post(
+            "/v1/route/plan",
+            json={
+                "origin": {"lon": 10.0, "lat": 52.0},
+                "destination": {"lon": 10.0, "lat": 52.2},
+                "departure_time": "2099-01-01T08:00:00Z",
+            },
+        )
+    ).json()
+    # a departure in 2099 is beyond the forecast range of the validator
+    assert "detail" in body
+
+    from datetime import UTC, datetime, timedelta
+
+    soon = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+    body = (
+        await client.post(
+            "/v1/route/plan",
+            json={
+                "origin": {"lon": 10.0, "lat": 52.0},
+                "destination": {"lon": 10.0, "lat": 52.2},
+                "departure_time": soon,
+            },
+        )
+    ).json()
+
+    assert body["status"] == "ready" and body["weather_status"] == "ok"
+    weather = body["route"]["weather"]
+    assert weather["provider"] == "fake-weather" and weather["attribution"].startswith("Weather by")
+    assert weather["summary"]["headwind_mean_kmh"] == pytest.approx(24, abs=0.5)
+    assert weather["summary"]["wind_gust_max_kmh"] == 55
+    assert any("headwind" in note for note in weather["advisories"])
+    assert body["candidates"][0]["weather"] == weather
+    assert (
+        "Forecast for a" in body["explanation"]
+        and "70% chance of precipitation" in body["explanation"]
+    )
+    assert "safe" not in " ".join(weather["advisories"]).lower()
+
+
+# ------------------------------------------------- free text (issue #30)
+
+
+class _NamedGeocoder:
+    """Resolves the two places the text tests use; an ambiguous one on demand."""
+
+    name = "fake"
+
+    def __init__(self, ambiguous: str | None = None) -> None:
+        self.ambiguous = ambiguous
+        self.queries: list[str] = []
+
+    async def geocode(self, query, *, limit=5):
+        from bike_routing_agent.models import Coordinate, GeocodeCandidate
+
+        self.queries.append(query)
+        coords = {"Braunschweig": (10.5267, 52.2689), "Wolfenbüttel": (10.5361, 52.1688)}
+        lon, lat = coords.get(query, (10.0, 52.0))
+        first = GeocodeCandidate(
+            label=query, coordinate=Coordinate(lon=lon, lat=lat), confidence=0.9, source="fake"
+        )
+        if query == self.ambiguous:
+            second = GeocodeCandidate(
+                label=f"{query} (other)",
+                coordinate=Coordinate(lon=lon + 1, lat=lat),
+                confidence=0.89,
+                source="fake",
+            )
+            return [first, second]
+        return [first]
+
+
+class _LineEngine:
+    name = "ors"
+
+    async def route(self, request):
+        from bike_routing_agent.models import RouteCandidate, RouteMetrics
+
+        return RouteCandidate(
+            provider="ors",
+            provider_profile="p",
+            geometry_geojson={
+                "type": "LineString",
+                "coordinates": [[10.5, 52.2], [10.52, 52.17], [10.54, 52.16]],
+            },
+            metrics=RouteMetrics(distance_m=14_000, duration_s=2400, ascent_m=20),
+        )
+
+    async def health(self):  # pragma: no cover
+        return {"status": "ok"}
+
+
+def _install_text_graph(monkeypatch, parser, geocoder=None):
+    import bike_routing_agent.api as api_module
+    from bike_routing_agent.graph import build_graph
+
+    geocoder = geocoder or _NamedGeocoder()
+    graph = build_graph(
+        geocode_provider=geocoder,
+        routing_providers=[_LineEngine()],
+        artifact_store=api_module._artifact_store,
+        llm_parser=parser,
+    )
+    monkeypatch.setattr(api_module, "_graph", graph)
+    monkeypatch.setattr(api_module, "_llm_parser", parser)
+    return geocoder
+
+
+def _scripted_parser(**result):
+    calls = []
+
+    def parse(text, **kwargs):
+        calls.append((text, kwargs))
+        return {
+            "origin": "Braunschweig",
+            "destination": "Wolfenbüttel",
+            "via": [],
+            "constraints": {"bike_type": "road"},
+            "notes": ["scenic is not expressible"],
+            "provenance": {"parser": "llm", "model": "claude-test", "prompt_version": "1"},
+            **result,
+        }
+
+    parse.calls = calls
+    return parse
+
+
+async def test_plan_text_is_503_when_no_parser_is_configured(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    monkeypatch.setattr(api_module, "_llm_parser", None)
+    response = await client.post(
+        "/v1/route/plan-text", json={"text": "Braunschweig to Wolfenbüttel"}
+    )
+    assert response.status_code == 503
+    assert "LLM_PARSER_ENABLED" in response.json()["detail"]
+
+
+async def test_plan_text_runs_the_whole_pipeline_and_explains_how_it_read_the_text(
+    client, monkeypatch
+):
+    geocoder = _install_text_graph(monkeypatch, _scripted_parser())
+
+    response = await client.post(
+        "/v1/route/plan-text",
+        json={"text": "a road ride Braunschweig to Wolfenbüttel", "timezone": "Europe/Berlin"},
+    )
+
+    body = response.json()
+    assert response.status_code == 200 and body["status"] == "ready"
+    assert geocoder.queries == ["Braunschweig", "Wolfenbüttel"]  # places are looked up, not guessed
+    assert body["route"]["provider_profile"] == "p"
+    interpretation = body["interpretation"]
+    assert interpretation["request"]["origin"] == "Braunschweig"
+    assert interpretation["request"]["constraints"] == {"bike_type": "road"}
+    assert interpretation["notes"] == ["scenic is not expressible"]
+    assert interpretation["parser"]["model"] == "claude-test"
+
+
+async def test_the_timezone_and_the_text_reach_the_parser(client, monkeypatch):
+    parser = _scripted_parser()
+    _install_text_graph(monkeypatch, parser)
+    await client.post("/v1/route/plan-text", json={"text": "my words", "timezone": "Europe/Berlin"})
+    assert parser.calls == [("my words", {"timezone": "Europe/Berlin"})]
+
+
+async def test_ambiguous_places_still_ask_for_clarification_instead_of_guessing(
+    client, monkeypatch
+):
+    _install_text_graph(monkeypatch, _scripted_parser(), _NamedGeocoder(ambiguous="Braunschweig"))
+    body = (await client.post("/v1/route/plan-text", json={"text": "ride"})).json()
+    assert body["status"] == "awaiting_clarification" and body["route"] is None
+    assert body["clarification"][0]["field"] == "Braunschweig"
+    assert body["interpretation"]["request"]["origin"] == "Braunschweig"  # the UI can show it
+
+
+async def test_parser_failures_are_structured_invalid_results(client, monkeypatch):
+    from bike_routing_agent.llm.parser import LLMParseError
+
+    def declining(text, **kwargs):
+        raise LLMParseError("llm_parser_declined", "the language model declined this request")
+
+    _install_text_graph(monkeypatch, declining)
+    response = await client.post("/v1/route/plan-text", json={"text": "ride"})
+    body = response.json()
+    assert response.status_code == 200 and body["status"] == "invalid"
+    assert body["errors"][0]["code"] == "llm_parser_declined" and body["interpretation"] is None
+
+
+async def test_a_loop_without_a_distance_is_rejected_by_the_normal_validation(client, monkeypatch):
+    parser = _scripted_parser(
+        destination=None,
+        constraints={"return_to_origin": True},  # loop, but no target distance
+    )
+    _install_text_graph(monkeypatch, parser)
+    body = (await client.post("/v1/route/plan-text", json={"text": "a loop"})).json()
+    assert body["status"] == "invalid"  # the parser's output gets no special treatment
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": ""},
+        {"text": "   "},
+        {"text": "x" * 501},
+        {"text": "ok", "timezone": "Mars/Olympus"},
+        {"text": "ok", "max_alternatives": 0},
+        {"text": "ok", "origin": "sneaky extra field"},
+        {},
+    ],
+)
+async def test_plan_text_validates_its_body_before_anything_runs(client, monkeypatch, payload):
+    parser = _scripted_parser()
+    _install_text_graph(monkeypatch, parser)
+    assert (await client.post("/v1/route/plan-text", json=payload)).status_code == 422
+    assert parser.calls == []
+
+
+async def test_max_alternatives_is_honoured_for_text_requests(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    graph = _CapturingGraph(_ready_state([("ors", 0.9)]))
+    monkeypatch.setattr(api_module, "_graph", graph)
+    monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())
+    await client.post("/v1/route/plan-text", json={"text": "ride", "max_alternatives": 3})
+    assert graph.initial_states[0]["raw_input"] == {
+        "text": "ride",
+        "timezone": None,
+        "max_alternatives": 3,
+    }
+
+
+async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch):
+    import bike_routing_agent.api as api_module
+
+    monkeypatch.setattr(api_module, "_llm_parser", None)
+    off = (await client.get("/v1/capabilities")).json()
+    assert off["text_planning"] is False and set(off) == {"text_planning", "weather", "history"}
+    monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())
+    assert (await client.get("/v1/capabilities")).json()["text_planning"] is True

@@ -29,7 +29,8 @@ so the default run never touches the network and always reports coverage.
 | `tests/providers/` | ORS client, ORS adapter, Nominatim and Pelias geocoders | `respx`-mocked HTTP |
 | `tests/exporters/` | GeoJSON/GPX output shapes | none |
 | `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous) | -- |
-| `tests/storage/` | Artifact stores and the route-history contract. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends | none (PostGIS params are `live`) |
+| `tests/storage/` | Artifact stores, the route-history contract, retention and schema migrations. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends; `test_migrate.py` covers the migration rules offline and `test_postgres_migrations.py` runs them against PostGIS (atomicity, adoption, concurrent starts, lock waiting) | none (PostGIS params are `live`) |
+| `tests/llm/` | The LLM request parser against a fake client (schema, injection handling, coordinate rule, repair retry, error codes) and the benchmark harness | none |
 | `tests/live/` | Real ORS/Nominatim calls through the API | **real** |
 
 `tests/conftest.py` exposes the fixtures as `ors_directions_response`,
@@ -49,6 +50,11 @@ TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:55432/test pytest -m live tes
 ```
 
 Without `TEST_DATABASE_URL` they skip.
+
+The Redis cache (`tests/providers/test_redis_cache.py`) runs against `fakeredis`
+with failure injection (refused connections, timeouts, circuit breaker, two
+"instances" sharing one server); `test_redis_live.py` is the `live` check against
+a real server (`TEST_REDIS_URL=redis://127.0.0.1:6379/0` after `--profile cache up -d redis`).
 
 The artifact-store contract (`tests/storage/test_artifact_store_contract.py`)
 runs against the local store, the S3 store with an in-memory fake client, and

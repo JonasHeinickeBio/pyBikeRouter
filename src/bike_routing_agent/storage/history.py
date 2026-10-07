@@ -444,7 +444,17 @@ def record_from_state(
         plan_id=plan_id,
         created_at=created_at or datetime.now(UTC),
         status=status,
-        request=final_state.get("raw_input", {}),
+        # A free-text plan keeps the words *and* how they were read (with the
+        # model and prompt version), so parsing errors can be told apart from
+        # routing errors when evaluating.
+        request={
+            **final_state.get("raw_input", {}),
+            **(
+                {"interpretation": final_state["interpretation"]}
+                if final_state.get("interpretation")
+                else {}
+            ),
+        },
         constraints=final_state.get("constraints", {}),
         origin=_coordinate(final_state.get("resolved_origin")),
         destination=_coordinate(final_state.get("resolved_destination")),

@@ -23,9 +23,42 @@ class CacheBackend(Protocol):
 `InMemoryTTLCache` is the default `CacheBackend`: process-local, keyed by
 `(provider, query, limit)` via a SHA-256 digest, TTL from
 `GEOCODER_CACHE_TTL_S`. It is adequate for a single API instance; multi-
-instance deployments should inject a shared backend (e.g. Redis) behind the
-same protocol -- the seam exists, the Redis implementation does not yet
-([roadmap.md](roadmap.md)).
+instance deployments use `CACHE_BACKEND=redis`
+(`providers/redis_cache.py`, [below](#shared-cache-redis)) behind the same
+protocol. `NamespacedCache` gives each user of one backend its own key prefix
+(`geocode:`, `overpass:`).
+
+### Shared cache (Redis)
+
+`CACHE_BACKEND=redis` + `CACHE_REDIS_URL=redis://host:6379/0` (the `cache`
+extra: `poetry install --extras cache`) makes every API instance share its
+geocode and Overpass results, so a place resolved by one instance is not
+looked up again by the others -- which matters for Nominatim's 1 request/second
+policy and Overpass's rate limits. Behaviour that matters:
+
+- **It is an optimisation, never a dependency.** Every Redis failure -- refused
+  connection, timeout, protocol error -- degrades to a cache miss: `get`
+  returns `None`, `set` does nothing, nothing raises, and a plan never fails
+  because of the cache. After a failure the backend skips Redis for 30 s (a
+  circuit breaker) so a dead server does not add its timeout to every request;
+  one warning is logged per outage, and `/readyz` shows the `cache` component as
+  `unavailable` (the instance is `degraded`, not unready).
+- **JSON only.** Values are stored as JSON, never pickle: a shared cache must
+  not be able to execute code on the reader. A value that is not JSON-
+  serialisable is simply not cached; a corrupt entry reads as a miss.
+- **Keys** are `<CACHE_KEY_PREFIX>:v<N>:<component>:<key>`. Bumping the
+  schema version `N` in code (when a cached value's shape changes)
+  invalidates old entries without a manual flush; use a different
+  `CACHE_KEY_PREFIX` per environment sharing one Redis.
+- **Not cached:** routing responses (inputs vary per request and results depend
+  on the engine's data version), geocoding errors/not-found results, and
+  anything that failed.
+- **Security.** The compose `cache` profile binds loopback with no password and
+  no persistence (capped memory, LRU eviction): fine for one host. A shared
+  production Redis needs authentication/TLS in `CACHE_REDIS_URL`
+  (`rediss://user:pass@host`) and network isolation -- it holds user-supplied
+  place names.
+- Run one locally: `docker compose -f docker/compose.yaml --profile cache up -d redis`.
 
 ## openrouteservice
 

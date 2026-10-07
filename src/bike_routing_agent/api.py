@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -19,10 +20,15 @@ from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.health import build_health_monitor
+from bike_routing_agent.llm.backends import OpenAICompatBackend
+from bike_routing_agent.llm.parser import RouteRequestParser
 from bike_routing_agent.models import (
+    MAX_TEXT_CHARS,
     ClarificationOption,
     Coordinate,
+    Interpretation,
     PlanStatus,
+    PlanTextRequest,
     RouteCandidate,
     RoutePlanAPIRequest,
     RoutePlanResponse,
@@ -31,6 +37,7 @@ from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
     InMemoryTTLCache,
+    NamespacedCache,
     RoutingProvider,
 )
 from bike_routing_agent.providers.brouter import BRouterAdapter
@@ -54,6 +61,10 @@ from bike_routing_agent.storage.history import (
     StatsFilter,
     record_from_state,
 )
+from bike_routing_agent.weather.base import WeatherProvider
+from bike_routing_agent.weather.met_no import MetNoProvider
+from bike_routing_agent.weather.open_meteo import OpenMeteoProvider
+from bike_routing_agent.weather.service import WeatherService
 
 _SAFE_FILENAME = re.compile(r"^[0-9a-f]{32}\.(geojson|gpx)$")
 _PLAN_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -63,7 +74,78 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="bike-routing-agent", version="0.1.0")
 
 
-def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvider]]:
+def build_cache(cfg: Settings) -> CacheBackend:
+    """The cache geocoding and Overpass results go through (issue #29).
+
+    ``memory`` is process-local; ``redis`` is shared by every API instance and
+    degrades to uncached lookups when Redis is unreachable.
+    """
+    if cfg.cache_backend == "redis":
+        from bike_routing_agent.providers.redis_cache import RedisCacheBackend
+
+        return RedisCacheBackend(
+            str(cfg.cache_redis_url),
+            prefix=cfg.cache_key_prefix,
+            timeout_s=cfg.cache_redis_timeout_s,
+        )
+    return InMemoryTTLCache()
+
+
+def build_llm_parser(
+    cfg: Settings, *, now: Callable[[], datetime] | None = None
+) -> RouteRequestParser | None:
+    """The free-text parser for a configuration, or ``None`` when it is off."""
+    if not cfg.llm_parser_enabled:
+        return None
+    backend = None
+    if cfg.llm_provider == "openai":
+        backend = OpenAICompatBackend(
+            base_url=str(cfg.llm_base_url),
+            model=str(cfg.llm_model),
+            api_key=cfg.llm_api_key.get_secret_value() if cfg.llm_api_key else None,
+            timeout_s=cfg.llm_timeout_s,
+            max_output_tokens=cfg.llm_max_output_tokens,
+        )
+    return RouteRequestParser(
+        model=str(cfg.llm_model),
+        api_key=cfg.anthropic_api_key.get_secret_value() if cfg.anthropic_api_key else None,
+        timeout_s=cfg.llm_timeout_s,
+        max_output_tokens=cfg.llm_max_output_tokens,
+        max_input_chars=MAX_TEXT_CHARS,
+        backend=backend,
+        **({"now": now} if now is not None else {}),
+    )
+
+
+def build_weather_service(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> WeatherService | None:
+    """The weather lookup for a configuration, or ``None`` when it is switched off."""
+    if cfg.weather_provider == "none":
+        return None
+    providers: list[WeatherProvider] = []
+    if cfg.weather_provider in ("auto", "open-meteo"):
+        providers.append(
+            OpenMeteoProvider(base_url=cfg.weather_open_meteo_url, timeout_s=cfg.weather_timeout_s)
+        )
+    if cfg.weather_provider in ("auto", "met-no"):
+        providers.append(
+            MetNoProvider(
+                user_agent=cfg.weather_user_agent,
+                base_url=cfg.weather_met_no_url,
+                timeout_s=cfg.weather_timeout_s,
+            )
+        )
+    return WeatherService(
+        providers,
+        cache=NamespacedCache(cache, "weather") if cache is not None else None,
+        cache_ttl_s=cfg.weather_cache_ttl_s,
+    )
+
+
+def build_providers(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> tuple[GeocodeProvider, list[RoutingProvider]]:
     """Instantiate the geocode + routing providers for a configuration.
 
     With ``geocoder_provider == "pelias"`` the geocoder is served by the
@@ -72,8 +154,10 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
     timeout policy). ``config.Settings`` rejects "pelias" for the public
     ORS base URL at construction time. With ``routing_provider`` set to
     another engine, the Pelias geocoder still uses the shared ORS client but
-    routing goes through :func:`build_routing_providers`.
+    routing goes through :func:`build_routing_providers`. ``cache`` is the
+    shared geocode cache (a per-geocoder in-memory one when omitted).
     """
+    geocode_cache = NamespacedCache(cache, "geocode") if cache is not None else None
     if cfg.geocoder_provider == "pelias":
         ors_client = OpenRouteServiceClient(
             api_key=cfg.ors_api_key,
@@ -83,6 +167,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
         )
         geocoder: GeocodeProvider = PeliasGeocoder(
             client=ors_client,
+            cache=geocode_cache,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         )
         if cfg.routing_provider == "ors":
@@ -106,6 +191,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
             base_url=cfg.geocoder_base_url,
             user_agent=cfg.geocoder_user_agent,
             timeout_s=cfg.geocoder_timeout_s,
+            cache=geocode_cache,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         ),
         build_routing_providers(cfg),
@@ -176,7 +262,7 @@ def build_surface_enricher(
         timeout_s=cfg.overpass_timeout_s,
         max_retries=cfg.overpass_max_retries,
         buffer_m=cfg.overpass_buffer_m,
-        cache=cache if cache is not None else InMemoryTTLCache(),
+        cache=NamespacedCache(cache, "overpass") if cache is not None else InMemoryTTLCache(),
         cache_ttl_s=cfg.overpass_cache_ttl_s,
     )
 
@@ -195,7 +281,11 @@ def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
         # Imported here so a deployment without a database never needs psycopg.
         from bike_routing_agent.storage.postgres import PostgresDatabase
 
-        database = PostgresDatabase(cfg.database_url, max_size=cfg.database_pool_max_size)
+        database = PostgresDatabase(
+            cfg.database_url,
+            max_size=cfg.database_pool_max_size,
+            auto_migrate=cfg.auto_migrate,
+        )
 
     store: ArtifactStore
     if cfg.artifact_backend == "database":
@@ -224,14 +314,20 @@ def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
 
 _export_dir = Path(settings.export_dir)
 
-_geocode_provider, _routing_providers = build_providers(settings)
+_cache = build_cache(settings)
+_geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
+
+_weather_service = build_weather_service(settings, cache=_cache)
+_llm_parser = build_llm_parser(settings)
 
 _health_monitor = build_health_monitor(
     geocoder=_geocode_provider,
     routing_providers=_routing_providers,
     artifact_store=_artifact_store,
     history=_history,
+    cache=_cache,
+    weather=_weather_service,
     # With the exports in the database a database outage fails plans, so it
     # gates readiness; otherwise history is best effort and only degrades.
     database_is_critical=settings.artifact_backend == "database",
@@ -246,14 +342,19 @@ _graph = build_graph(
     artifact_store=_artifact_store,
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
-    surface_enricher=build_surface_enricher(settings),
+    surface_enricher=build_surface_enricher(settings, cache=_cache),
     alternative_dedup_threshold_m=settings.alternative_dedup_threshold_m,
+    llm_parser=_llm_parser,
+    weather_service=_weather_service,
+    weather_max_samples=settings.weather_max_samples,
+    weather_spacing_km=settings.weather_sample_spacing_km,
 )
 
 
 def build_graph_for_settings(cfg: Settings) -> Any:
     """Build a fresh graph from the given settings (used by the CLI)."""
-    geocode_provider, routing_providers = build_providers(cfg)
+    cache = build_cache(cfg)
+    geocode_provider, routing_providers = build_providers(cfg, cache=cache)
     artifact_store, _ = build_storage(cfg)
     return build_graph(
         geocode_provider=geocode_provider,
@@ -261,8 +362,12 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         artifact_store=artifact_store,
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,
-        surface_enricher=build_surface_enricher(cfg),
+        surface_enricher=build_surface_enricher(cfg, cache=cache),
         alternative_dedup_threshold_m=cfg.alternative_dedup_threshold_m,
+        llm_parser=build_llm_parser(cfg),
+        weather_service=build_weather_service(cfg, cache=cache),
+        weather_max_samples=cfg.weather_max_samples,
+        weather_spacing_km=cfg.weather_sample_spacing_km,
     )
 
 
@@ -282,10 +387,52 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "via": [_place_to_raw(v) for v in request.via],
         "constraints": request.constraints.model_dump(mode="json"),
         "max_alternatives": request.max_alternatives,
+        "departure_time": (
+            request.departure_time.isoformat() if request.departure_time is not None else None
+        ),
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
+    return await _plan_response(final_state)
 
+
+@app.post("/v1/route/plan-text", response_model=RoutePlanResponse)
+async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
+    """Plan from a request written in plain words (issue #30).
+
+    The text is turned into the same structured request ``/v1/route/plan``
+    takes -- places stay strings for the geocoder, which asks for clarification
+    when they are ambiguous -- and the response says how it was understood
+    (``interpretation``). Needs ``LLM_PARSER_ENABLED``.
+    """
+    if _llm_parser is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "free-text planning is not enabled: set LLM_PARSER_ENABLED=true and LLM_MODEL "
+                "(see docs/llm-parser.md)"
+            ),
+        )
+    raw_input = {
+        "text": request.text,
+        "timezone": request.timezone,
+        "max_alternatives": request.max_alternatives,
+    }
+    final_state = await _graph.ainvoke({"raw_input": raw_input})
+    return await _plan_response(final_state)
+
+
+@app.get("/v1/capabilities")
+async def capabilities() -> dict[str, bool]:
+    """Which optional features this instance has, for clients to adapt to."""
+    return {
+        "text_planning": _llm_parser is not None,
+        "weather": _weather_service is not None,
+        "history": _history is not None,
+    }
+
+
+async def _plan_response(final_state: dict[str, Any]) -> RoutePlanResponse:
     status = final_state.get("status", "provider_failure")
     route = None
     candidates: list[RouteCandidate] = []
@@ -306,9 +453,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         # (null-scored last).
         candidates = sorted(
             (
-                RouteCandidate.model_validate(c).model_copy(
-                    update={"raw_provider_response": None}
-                )
+                RouteCandidate.model_validate(c).model_copy(update={"raw_provider_response": None})
                 for c in final_state.get("candidates", [])
             ),
             key=lambda c: (
@@ -332,6 +477,12 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         clarification=clarification,
         errors=final_state.get("errors", []),
         plan_id=await _record_plan(final_state),
+        weather_status=final_state.get("weather_status"),
+        interpretation=(
+            Interpretation.model_validate(final_state["interpretation"])
+            if final_state.get("interpretation")
+            else None
+        ),
     )
 
 

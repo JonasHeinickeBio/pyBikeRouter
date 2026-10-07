@@ -306,9 +306,7 @@ def test_stats_win_rate_aggregates_across_plans_and_means_skip_nulls(history):
     high = candidate("brouter", "trekking", 0.7)
     win = ready_state([candidate("ors", score=0.9)])
     history.save(record_from_state(pid(1), win, created_at=T0))
-    history.save(
-        record_from_state(pid(2), ready_state([low, high], selected=high), created_at=T0)
-    )
+    history.save(record_from_state(pid(2), ready_state([low, high], selected=high), created_at=T0))
 
     ors = engine(history.stats(StatsFilter()), "ors")
 
@@ -440,9 +438,7 @@ def test_referenced_artifacts_all_by_name_and_by_age(history):
     assert history.referenced_artifacts({shared, "z" * 32 + ".gpx"}) == {shared}
     recent = history.referenced_artifacts(newer_than=T0 - timedelta(days=30))
     assert recent == {shared, "c" * 32 + ".gpx"}
-    only_old = history.referenced_artifacts(
-        {"b" * 32 + ".gpx"}, newer_than=T0 - timedelta(days=30)
-    )
+    only_old = history.referenced_artifacts({"b" * 32 + ".gpx"}, newer_than=T0 - timedelta(days=30))
     assert only_old == set()
 
 
@@ -451,3 +447,24 @@ def test_maintenance_lock_is_acquired_and_released(history):
         assert first is True
     with history.maintenance_lock() as again:
         assert again is True
+
+
+def test_a_free_text_plan_records_the_words_and_how_they_were_read(history):
+    state = ready_state([candidate()])
+    state["raw_input"] = {"text": "a gravel loop from Braunschweig", "timezone": "Europe/Berlin"}
+    state["interpretation"] = {
+        "request": {"origin": "Braunschweig"},
+        "notes": [],
+        "parser": {"model": "claude-test", "prompt_version": "1"},
+    }
+
+    history.save(record_from_state(pid(1), state, created_at=T0))
+
+    request = history.get(pid(1)).request
+    assert request["text"] == "a gravel loop from Braunschweig"
+    assert request["interpretation"]["parser"] == {"model": "claude-test", "prompt_version": "1"}
+
+
+def test_structured_plans_record_no_interpretation(history):
+    history.save(record_from_state(pid(1), ready_state([candidate()]), created_at=T0))
+    assert "interpretation" not in history.get(pid(1)).request

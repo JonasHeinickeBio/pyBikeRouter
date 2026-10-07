@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from bike_routing_agent.models import RouteCandidate
 from bike_routing_agent.scoring.basic import uncertainty_notes
 from bike_routing_agent.state import RouteAgentState
 from bike_routing_agent.storage.artifacts import ArtifactStore, LocalArtifactStore
+from bike_routing_agent.weather.models import RouteWeather
 
 ExportNodeFn = Callable[[RouteAgentState], dict[str, Any]]
 
@@ -35,6 +37,32 @@ def _loop_sentence(is_loop: bool, loop_plan: dict[str, Any] | None) -> str | Non
         f"(reaching about {reach_km:.1f} km out) so the route forms a circuit "
         "rather than an out-and-back."
     )
+
+
+def _weather_sentences(weather: RouteWeather) -> list[str]:
+    """Forecast facts for the explanation; hedged as a forecast, no safety claims."""
+    s = weather.summary
+    when = weather.departure.astimezone(UTC).strftime("%d %b %H:%M UTC")
+    parts: list[str] = []
+    if s.temperature_min_c is not None and s.temperature_max_c is not None:
+        low, high = round(s.temperature_min_c), round(s.temperature_max_c)
+        parts.append(f"{low} °C" if low == high else f"{low} to {high} °C")
+    if s.precipitation_probability_max is not None:
+        parts.append(f"up to {s.precipitation_probability_max:.0f}% chance of precipitation")
+    if s.wind_speed_max_kmh is not None:
+        wind = f"wind up to {s.wind_speed_max_kmh:.0f} km/h"
+        if s.wind_gust_max_kmh is not None:
+            wind += f" (gusts {s.wind_gust_max_kmh:.0f})"
+        parts.append(wind)
+    if s.headwind_mean_kmh is not None and abs(s.headwind_mean_kmh) >= 5:
+        direction = "headwind" if s.headwind_mean_kmh > 0 else "tailwind"
+        parts.append(f"about {abs(s.headwind_mean_kmh):.0f} km/h of {direction} on average")
+    if not parts:
+        return []
+    sentences = [f"Forecast for a {when} departure ({weather.provider}): " + ", ".join(parts) + "."]
+    if weather.advisories:
+        sentences.append("Forecast notes: " + " ".join(weather.advisories))
+    return sentences
 
 
 def _build_explanation(
@@ -59,6 +87,9 @@ def _build_explanation(
             "better aligned with the requested constraints and map metadata than the alternatives "
             f"({', '.join(parts)})."
         )
+
+    if candidate.weather is not None:
+        sentences.extend(_weather_sentences(candidate.weather))
 
     if candidate.warnings:
         sentences.append("Provider warnings: " + "; ".join(candidate.warnings) + ".")
