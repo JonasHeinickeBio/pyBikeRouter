@@ -24,6 +24,9 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Backend comparison](docs/providers-comparison.md) | Measured ORS vs BRouter behaviour per bike type, combining both engines |
 | [Geocoding](docs/geocoding.md) | Nominatim vs Pelias, confidence/ambiguity semantics, tuning |
 | [Scoring & exports](docs/scoring-and-exports.md) | Score math, uncertainty policy, explanation rules, GeoJSON/GPX |
+| [Plan from words](docs/llm-parser.md) | Describe a ride in a sentence; an optional LLM turns it into the structured request (never coordinates) |
+| [Weather](docs/weather.md) | Forecast along the route at your departure time: temperature, rain, wind vs. riding direction (free, keyless providers) |
+| [Self-hosted stack](docs/self-hosted.md) | Run routing and/or geocoding locally from one OSM extract; hardware requirements and small-PC options |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
 | [iPhone / Tailscale](docs/mobile.md) | Use the planner from an iPhone as a home-screen app over your tailnet |
 | [Roadmap](docs/roadmap.md) | Planned work and explicit non-goals |
@@ -38,7 +41,7 @@ LangGraph RouteAgentState
   |
   +--> parse_request        (structured input first; LLM extraction is an injectable dependency)
   +--> validate_request      (Pydantic)
-  +--> geocode_locations     (Nominatim by default; Pelias on self-hosted ORS; ambiguity -> clarification, never a guess)
+  +--> geocode_locations     (Nominatim by default, public or self-hosted; ambiguity -> clarification, never a guess)
   +--> route_with_provider   (openrouteservice; engine-neutral RoutingRequest in, RouteCandidate out)
   +--> score_candidates      (deterministic distance/elevation/warning scoring)
   +--> explain_and_export    (facts-only explanation + GeoJSON/GPX export)
@@ -87,7 +90,7 @@ Edit `.env` and set `ORS_API_KEY` to a valid
 | `ORS_BASE_URL` | openrouteservice base URL | `https://api.openrouteservice.org` |
 | `ORS_TIMEOUT_S` | ORS request timeout (seconds) | `10.0` |
 | `ORS_MAX_RETRIES` | Retries for timeouts/5xx | `2` |
-| `GEOCODER_PROVIDER` | Geocoder backend: `nominatim` (public API) or `pelias` (self-hosted ORS only; validated at startup) | `nominatim` |
+| `GEOCODER_PROVIDER` | Geocoder backend: `nominatim` (public or self-hosted) or `pelias` (needs a Pelias API behind `ORS_BASE_URL`, see docs/geocoding.md; refuses the public ORS URL at startup) | `nominatim` |
 | `GEOCODER_BASE_URL` | Nominatim base URL (ignored when `GEOCODER_PROVIDER=pelias`) | `https://nominatim.openstreetmap.org` |
 | `GEOCODER_TIMEOUT_S` | Geocoder request timeout | `5.0` |
 | `GEOCODER_USER_AGENT` | Required by Nominatim's usage policy | `bike-routing-agent/0.1` |
@@ -127,10 +130,16 @@ bike-router config check         # validate settings against the environment
 bike-router providers list       # provider names and bike-type -> ORS profile map
 ```
 
+`route plan --text "50 km gravel loop from Braunschweig"` uses the optional LLM parser ([docs/llm-parser.md](docs/llm-parser.md)).
+
 `route plan` accepts `lat,lon` pairs or place text for `--origin`,
 `--destination` and repeated `--via` waypoints, prints the JSON result and
 exits `0` on `ready`, `1` on clarification/provider failure, `2` on usage
-errors.
+errors. With `DATABASE_URL` set it also records the plan in the route history
+(best effort; `plan_id` in the output, `--no-record` to skip), a forecast along
+the route at `--departure-time` ([docs/weather.md](docs/weather.md)), and
+`bike-router db migrate` / `db status` manage the schema
+([docs/persistence.md](docs/persistence.md#schema-migrations)).
 
 ## Running with Docker
 
@@ -143,8 +152,9 @@ docker compose -f docker/compose.yaml up --build
 
 Open <http://localhost:8000/> for the web UI. Route artifacts are stored in
 the named `pybikerouter-exports` volume. See
-[docs/configuration.md](docs/configuration.md) for the optional
-`--profile self-hosted` OpenRouteService stack.
+[docs/self-hosted.md](docs/self-hosted.md) for the optional local routing /
+geocoding stack -- including what it needs and how to run just one half on a
+small machine.
 
 ### Example request
 
@@ -275,9 +285,11 @@ with `poetry run pre-commit run --all-files` and the pre-push stage with
   BRouter via the compose profile in
   [docker/brouter/README.md](docker/brouter/README.md)), and
   openrouteservice remains the default engine.
-- The Pelias geocoder option requires a self-hosted openrouteservice
-  instance; the public `api.openrouteservice.org` does not serve Pelias
-  (see [docs/geocoding.md](docs/geocoding.md)).
+- The Pelias geocoder option needs a Pelias API served at
+  `<ORS_BASE_URL>/pelias/v1`: neither the public `api.openrouteservice.org` nor
+  a stock self-hosted ORS provides one, and the adapter has only been tested
+  against mocks (see [docs/geocoding.md](docs/geocoding.md)). For a local
+  geocoder use the self-hosted Nominatim.
 
 ## Repository layout
 

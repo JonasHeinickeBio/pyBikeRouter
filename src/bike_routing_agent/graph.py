@@ -28,10 +28,12 @@ from bike_routing_agent.nodes.parse import LLMParser, build_parse_node
 from bike_routing_agent.nodes.route import build_route_node
 from bike_routing_agent.nodes.score import build_score_node
 from bike_routing_agent.nodes.validate import validate_request
+from bike_routing_agent.nodes.weather import build_weather_node
 from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
 from bike_routing_agent.scoring.alternatives import DEFAULT_DEDUP_THRESHOLD_M
 from bike_routing_agent.state import RouteAgentState
 from bike_routing_agent.storage.artifacts import ArtifactStore
+from bike_routing_agent.weather.service import WeatherService
 
 _TERMINAL_AFTER_PARSE = {"invalid"}
 _TERMINAL_AFTER_VALIDATE = {"invalid", "awaiting_clarification"}
@@ -57,7 +59,7 @@ def _after_route(state: RouteAgentState) -> str:
 
 
 def _after_score(state: RouteAgentState) -> str:
-    return END if state.get("status") in _TERMINAL_AFTER_SCORE else "explain_and_export"
+    return END if state.get("status") in _TERMINAL_AFTER_SCORE else "weather_candidates"
 
 
 def build_graph(
@@ -72,6 +74,9 @@ def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     surface_enricher: SurfaceEnricher | None = None,
     alternative_dedup_threshold_m: float = DEFAULT_DEDUP_THRESHOLD_M,
+    weather_service: WeatherService | None = None,
+    weather_max_samples: int = 5,
+    weather_spacing_km: float = 10.0,
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
@@ -92,6 +97,16 @@ def build_graph(
     graph.add_node(
         "score_candidates", build_score_node(dedup_threshold_m=alternative_dedup_threshold_m)
     )
+    # Best effort and informational: a no-op without a weather service, and it
+    # never changes the plan's outcome (nodes/weather.py).
+    graph.add_node(
+        "weather_candidates",
+        build_weather_node(
+            service=weather_service,
+            max_samples=weather_max_samples,
+            spacing_km=weather_spacing_km,
+        ),
+    )
     graph.add_node(
         "explain_and_export",
         build_export_node(export_dir=export_dir, artifact_store=artifact_store),
@@ -103,7 +118,8 @@ def build_graph(
     graph.add_conditional_edges("geocode_locations", _after_geocode, ["route_with_provider", END])
     graph.add_conditional_edges("route_with_provider", _after_route, ["enrich_candidates", END])
     graph.add_edge("enrich_candidates", "score_candidates")
-    graph.add_conditional_edges("score_candidates", _after_score, ["explain_and_export", END])
+    graph.add_conditional_edges("score_candidates", _after_score, ["weather_candidates", END])
+    graph.add_edge("weather_candidates", "explain_and_export")
     graph.add_edge("explain_and_export", END)
 
     return graph.compile(checkpointer=checkpointer)

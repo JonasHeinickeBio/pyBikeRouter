@@ -5,8 +5,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
+
+from bike_routing_agent.models import MAX_FORECAST_DAYS
+from bike_routing_agent.storage.history import record_from_state
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
@@ -19,7 +24,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         raise RuntimeError("subparsers are required")
 
     plan = route_sub.add_parser("plan", help="plan a route between two places")
-    plan.add_argument("--origin", required=True, help="place text, or 'lat,lon'")
+    plan.add_argument(
+        "--text",
+        default=None,
+        metavar="REQUEST",
+        help="describe the ride in plain words instead of --origin/--destination "
+        '(e.g. "a 50 km gravel loop from Braunschweig, tomorrow at 8"); needs '
+        "LLM_PARSER_ENABLED",
+    )
+    plan.add_argument(
+        "--timezone",
+        default=None,
+        metavar="IANA",
+        help="your time zone for --text (e.g. Europe/Berlin; default UTC)",
+    )
+    plan.add_argument("--origin", default=None, help="place text, or 'lat,lon'")
     plan.add_argument(
         "--destination",
         default=None,
@@ -77,6 +96,18 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         default=None,
         help="also write the JSON response to this file",
     )
+    plan.add_argument(
+        "--departure-time",
+        default=None,
+        metavar="ISO8601",
+        help="when the ride starts, for the weather forecast (e.g. 2026-10-08T07:30:00Z; "
+        "default: now; no UTC offset means UTC; at most 14 days ahead)",
+    )
+    plan.add_argument(
+        "--no-record",
+        action="store_true",
+        help="do not record the plan in the route history even when DATABASE_URL is set",
+    )
     return route
 
 
@@ -100,16 +131,34 @@ def _csv(text: str) -> list[str]:
 def _loop_usage_error(args: argparse.Namespace) -> str | None:
     """Loop contract as CLI usage messages (issue #5); the API enforces the
     same rules through the request model."""
+    if args.text is not None:
+        if not args.text.strip():
+            return "--text must not be empty"
+        if args.origin or args.destination or args.via:
+            return "--text replaces --origin/--destination/--via: use one or the other"
+        return None
+    if not args.origin:
+        return "--origin is required (or describe the ride with --text)"
     if args.loop and args.destination:
         return "--loop takes no --destination: a loop starts and ends at --origin"
     if args.loop and args.target_distance_km is None:
         return "--loop requires --target-distance-km (loop size is not invented silently)"
     if not args.loop and not args.destination:
         return "--destination is required unless --loop is set"
+    if args.departure_time is not None:
+        try:
+            parsed = datetime.fromisoformat(args.departure_time.replace("Z", "+00:00"))
+        except ValueError:
+            return f"--departure-time {args.departure_time!r} is not an ISO-8601 datetime"
+        aware = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+        if aware > datetime.now(UTC) + timedelta(days=MAX_FORECAST_DAYS):
+            return f"--departure-time is more than {MAX_FORECAST_DAYS} days ahead"
     return None
 
 
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
+    if args.text is not None:
+        return {"text": args.text, "timezone": args.timezone}
     request: dict[str, Any] = {
         "origin": _place(args.origin),
         "via": [_place(v) for v in args.via],
@@ -128,6 +177,8 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
     }
     if args.destination:
         request["destination"] = _place(args.destination)
+    if args.departure_time is not None:
+        request["departure_time"] = args.departure_time
     return request
 
 
@@ -138,12 +189,42 @@ def _default_graph_factory() -> Any:
     return build_graph_for_settings(settings)
 
 
+def _default_history_factory() -> Any:
+    """The configured route history, or ``None`` when no database is set."""
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.config import settings
+
+    if not settings.database_url:
+        return None
+    return build_storage(settings)[1]
+
+
+def _record_plan(history_factory: Any, final_state: dict[str, Any], stderr: IO[str]) -> str | None:
+    """Record the finished plan like the API does: best effort, never fatal.
+
+    Returns the ``plan_id`` (the artifact id for ready plans) or ``None`` when
+    there is no history or recording failed -- the plan was already computed,
+    so a database outage is a warning, not a failed command.
+    """
+    try:
+        history = history_factory()
+        if history is None:
+            return None
+        plan_id = str(final_state.get("route_id") or uuid.uuid4().hex)
+        history.save(record_from_state(plan_id, final_state))
+        return plan_id
+    except Exception as exc:  # noqa: BLE001 - history is optional; report and move on
+        print(f"warning: could not record the plan in the history: {exc}", file=stderr)
+        return None
+
+
 def run(
     args: argparse.Namespace,
     stdout: IO[str],
     stderr: IO[str],
     *,
     graph_factory: Any = None,
+    history_factory: Any = None,
 ) -> int:
     if args.command != "plan":
         print("unknown route command", file=stderr)
@@ -167,6 +248,11 @@ def run(
         return EXIT_FAILURE
 
     payload = _response_payload(final_state)
+    payload["plan_id"] = (
+        None
+        if args.no_record
+        else _record_plan(history_factory or _default_history_factory, final_state, stderr)
+    )
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
     print(rendered, file=stdout)
 
@@ -184,6 +270,9 @@ def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
         "explanation": final_state.get("explanation"),
         "errors": final_state.get("errors", []),
     }
+    if final_state.get("interpretation"):
+        # How a --text request was read, so a wrong parse is visible.
+        payload["interpretation"] = final_state["interpretation"]
     if status == "ready":
         selected = dict(final_state.get("selected_candidate") or {})
         selected.pop("raw_provider_response", None)

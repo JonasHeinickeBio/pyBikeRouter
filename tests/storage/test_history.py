@@ -306,9 +306,7 @@ def test_stats_win_rate_aggregates_across_plans_and_means_skip_nulls(history):
     high = candidate("brouter", "trekking", 0.7)
     win = ready_state([candidate("ors", score=0.9)])
     history.save(record_from_state(pid(1), win, created_at=T0))
-    history.save(
-        record_from_state(pid(2), ready_state([low, high], selected=high), created_at=T0)
-    )
+    history.save(record_from_state(pid(2), ready_state([low, high], selected=high), created_at=T0))
 
     ors = engine(history.stats(StatsFilter()), "ors")
 
@@ -371,3 +369,102 @@ def test_record_from_state_prefers_the_score_nodes_rank_over_a_resort():
         (1, "brouter"),
         (2, "ors"),
     ]
+
+
+# -- retention queries (issue #27) ---------------------------------------------
+
+
+def plan_with_artifacts(history, n: int, age_days: int, names: tuple[str, ...] = ()):
+    state = ready_state([candidate()])
+    state["artifacts"] = {f"file{i}": name for i, name in enumerate(names)}
+    history.save(record_from_state(pid(n), state, created_at=T0 - timedelta(days=age_days)))
+
+
+def test_find_older_than_is_oldest_first_limited_and_exclusive(history):
+    for n, age in [(1, 50), (2, 40), (3, 30), (4, 10)]:
+        plan_with_artifacts(history, n, age, (f"{n:032x}.geojson",))
+
+    found = history.find_older_than(T0 - timedelta(days=20), limit=10)
+
+    assert [ref.plan_id for ref in found] == [pid(1), pid(2), pid(3)]
+    assert found[0].artifacts == (f"{1:032x}.geojson",)
+    assert found[0].created_at == T0 - timedelta(days=50)
+    assert [r.plan_id for r in history.find_older_than(T0 - timedelta(days=20), limit=2)] == [
+        pid(1),
+        pid(2),
+    ]
+    # exactly at the cutoff is retained, not expired
+    assert history.find_older_than(T0 - timedelta(days=30), limit=10)[-1].plan_id == pid(2)
+
+
+def test_find_older_than_pages_with_a_cursor_without_deleting(history):
+    for n in range(1, 6):
+        plan_with_artifacts(history, n, 60 - n)
+    cutoff = T0 - timedelta(days=10)
+    seen: list[str] = []
+    cursor = None
+    while batch := history.find_older_than(cutoff, limit=2, after=cursor):
+        seen += [ref.plan_id for ref in batch]
+        cursor = (batch[-1].created_at, batch[-1].plan_id)
+    assert seen == [pid(n) for n in range(1, 6)]
+
+
+def test_find_older_than_breaks_timestamp_ties_by_plan_id(history):
+    for n in (3, 1, 2):
+        plan_with_artifacts(history, n, 40)
+    cutoff = T0 - timedelta(days=10)
+    first = history.find_older_than(cutoff, limit=1)
+    rest = history.find_older_than(cutoff, limit=10, after=(first[0].created_at, first[0].plan_id))
+    assert [first[0].plan_id, *[r.plan_id for r in rest]] == [pid(1), pid(2), pid(3)]
+
+
+def test_delete_plans_removes_them_and_reports_how_many_existed(history):
+    for n in (1, 2, 3):
+        plan_with_artifacts(history, n, n)
+
+    assert history.delete_plans([pid(1), pid(2), pid(99)]) == 2
+
+    assert history.get(pid(1)) is None and history.get(pid(2)) is None
+    assert history.get(pid(3)) is not None
+    assert history.delete_plans([]) == 0
+
+
+def test_referenced_artifacts_all_by_name_and_by_age(history):
+    shared = "a" * 32 + ".geojson"
+    plan_with_artifacts(history, 1, 90, (shared, "b" * 32 + ".gpx"))
+    plan_with_artifacts(history, 2, 1, (shared, "c" * 32 + ".gpx"))
+
+    assert history.referenced_artifacts() == {shared, "b" * 32 + ".gpx", "c" * 32 + ".gpx"}
+    assert history.referenced_artifacts({shared, "z" * 32 + ".gpx"}) == {shared}
+    recent = history.referenced_artifacts(newer_than=T0 - timedelta(days=30))
+    assert recent == {shared, "c" * 32 + ".gpx"}
+    only_old = history.referenced_artifacts({"b" * 32 + ".gpx"}, newer_than=T0 - timedelta(days=30))
+    assert only_old == set()
+
+
+def test_maintenance_lock_is_acquired_and_released(history):
+    with history.maintenance_lock() as first:
+        assert first is True
+    with history.maintenance_lock() as again:
+        assert again is True
+
+
+def test_a_free_text_plan_records_the_words_and_how_they_were_read(history):
+    state = ready_state([candidate()])
+    state["raw_input"] = {"text": "a gravel loop from Braunschweig", "timezone": "Europe/Berlin"}
+    state["interpretation"] = {
+        "request": {"origin": "Braunschweig"},
+        "notes": [],
+        "parser": {"model": "claude-test", "prompt_version": "1"},
+    }
+
+    history.save(record_from_state(pid(1), state, created_at=T0))
+
+    request = history.get(pid(1)).request
+    assert request["text"] == "a gravel loop from Braunschweig"
+    assert request["interpretation"]["parser"] == {"model": "claude-test", "prompt_version": "1"}
+
+
+def test_structured_plans_record_no_interpretation(history):
+    history.save(record_from_state(pid(1), ready_state([candidate()]), created_at=T0))
+    assert "interpretation" not in history.get(pid(1)).request

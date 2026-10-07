@@ -280,9 +280,7 @@ def test_database_artifact_backend_requires_a_database_url():
 
 def test_database_pool_size_must_be_positive():
     with pytest.raises(ValidationError, match="database_pool_max_size"):
-        Settings(
-            _env_file=None, database_url="postgresql://x/y", database_pool_max_size=0
-        )
+        Settings(_env_file=None, database_url="postgresql://x/y", database_pool_max_size=0)
 
 
 def test_build_storage_without_a_database_is_local_and_stateless(tmp_path):
@@ -354,3 +352,241 @@ def test_health_settings_defaults_and_validation():
         Settings(_env_file=None, health_probe_timeout_s=0)
     with pytest.raises(ValidationError, match="health cache TTLs"):
         Settings(_env_file=None, health_cache_ttl_s=-1)
+
+
+def test_s3_and_retention_settings_validation():
+    s = Settings(_env_file=None)
+    assert (s.artifact_backend, s.retention_max_age_days, s.s3_presigned_url_ttl_s) == (
+        "local",
+        None,
+        None,
+    )
+    ok = Settings(_env_file=None, artifact_backend="s3", s3_bucket="b", retention_max_age_days=90)
+    assert ok.s3_bucket == "b" and ok.retention_max_age_days == 90
+    with pytest.raises(ValidationError, match="S3_BUCKET"):
+        Settings(_env_file=None, artifact_backend="s3")
+    with pytest.raises(ValidationError, match="retention_max_age_days"):
+        Settings(_env_file=None, retention_max_age_days=0)
+    with pytest.raises(ValidationError, match="retention_orphan_grace_hours"):
+        Settings(_env_file=None, retention_batch_size=0)
+    with pytest.raises(ValidationError, match="s3_presigned_url_ttl_s"):
+        Settings(_env_file=None, s3_presigned_url_ttl_s=0)
+    with pytest.raises(ValidationError, match="s3_presigned_url_ttl_s"):
+        Settings(_env_file=None, s3_presigned_url_ttl_s=10**7)
+
+
+def test_build_storage_selects_the_s3_backend_with_or_without_a_database():
+    pytest.importorskip("botocore")
+    from bike_routing_agent.api import build_storage
+    from bike_routing_agent.storage.s3 import S3ArtifactStore
+
+    cfg = Settings(
+        _env_file=None,
+        artifact_backend="s3",
+        s3_bucket="exports",
+        s3_prefix="bike",
+        s3_endpoint_url="http://127.0.0.1:9",
+        s3_path_style=True,
+    )
+    store, history = build_storage(cfg)
+    assert isinstance(store, S3ArtifactStore) and history is None
+
+    store, history = build_storage(cfg.model_copy(update={"database_url": "postgresql://x/y"}))
+    assert isinstance(store, S3ArtifactStore)
+    assert type(history).__name__ == "PostgresRouteHistory"
+
+
+def test_auto_migrate_defaults_on_and_reaches_the_database_object():
+    from bike_routing_agent.api import build_storage
+
+    assert Settings(_env_file=None).auto_migrate is True
+    cfg = Settings(_env_file=None, database_url="postgresql://x/y", auto_migrate=False)
+    _, history = build_storage(cfg)
+    assert history is not None and history._db._auto_migrate is False
+    _, default_history = build_storage(cfg.model_copy(update={"auto_migrate": True}))
+    assert default_history is not None and default_history._db._auto_migrate is True
+
+
+def test_cache_settings_defaults_and_validation():
+    s = Settings(_env_file=None)
+    assert (s.cache_backend, s.cache_redis_url, s.cache_key_prefix, s.cache_redis_timeout_s) == (
+        "memory",
+        None,
+        "bike-routing",
+        2.0,
+    )
+    with pytest.raises(ValidationError, match="CACHE_REDIS_URL"):
+        Settings(_env_file=None, cache_backend="redis")
+    with pytest.raises(ValidationError, match="cache_redis_timeout_s"):
+        Settings(_env_file=None, cache_redis_timeout_s=0)
+    with pytest.raises(ValidationError, match="cache_key_prefix"):
+        Settings(_env_file=None, cache_key_prefix="")
+
+
+def test_build_cache_selects_the_backend():
+    pytest.importorskip("redis")
+    from bike_routing_agent.api import build_cache
+    from bike_routing_agent.providers.base import InMemoryTTLCache
+    from bike_routing_agent.providers.redis_cache import RedisCacheBackend
+
+    assert isinstance(build_cache(Settings(_env_file=None)), InMemoryTTLCache)
+    shared = build_cache(
+        Settings(
+            _env_file=None,
+            cache_backend="redis",
+            cache_redis_url="redis://127.0.0.1:6379/0",
+            cache_key_prefix="bikes",
+        )
+    )
+    assert isinstance(shared, RedisCacheBackend)
+    assert shared._key("k") == "bikes:v1:k"
+
+
+def test_one_shared_cache_serves_the_geocoder_and_the_enricher_under_separate_namespaces():
+    from bike_routing_agent.api import build_providers, build_surface_enricher
+    from bike_routing_agent.providers.base import InMemoryTTLCache, NamespacedCache
+
+    cache = InMemoryTTLCache()
+    geocoder, _ = build_providers(Settings(_env_file=None), cache=cache)
+    assert isinstance(geocoder._cache, NamespacedCache)
+    assert geocoder._cache._backend is cache and geocoder._cache._namespace == "geocode:"
+
+    enriching = Settings(_env_file=None, osm_enrichment_enabled=True)
+    enricher = build_surface_enricher(enriching, cache=cache)
+    assert isinstance(enricher._cache, NamespacedCache)
+    assert enricher._cache._backend is cache and enricher._cache._namespace == "overpass:"
+
+
+def test_without_a_shared_cache_each_component_keeps_its_own_default():
+    from bike_routing_agent.api import build_providers
+
+    geocoder, _ = build_providers(Settings(_env_file=None))
+    assert geocoder._cache.__class__.__name__ == "InMemoryTTLCache"
+
+
+def test_weather_settings_defaults_and_validation(monkeypatch):
+    monkeypatch.delenv("WEATHER_PROVIDER", raising=False)  # tests/conftest.py switches it off
+    s = Settings(_env_file=None)
+    assert s.weather_provider == "auto" and s.weather_max_samples == 5
+    assert s.weather_user_agent.endswith("JonasHeinickeBio/pyBikeRouter")
+    for bad, match in [
+        ({"weather_timeout_s": 0}, "weather_timeout_s"),
+        ({"weather_cache_ttl_s": -1}, "weather_cache_ttl_s"),
+        ({"weather_max_samples": 1}, "weather_max_samples"),
+        ({"weather_max_samples": 11}, "weather_max_samples"),
+        ({"weather_sample_spacing_km": 0}, "weather_sample_spacing_km"),
+        ({"weather_user_agent": "  "}, "weather_user_agent"),
+    ]:
+        with pytest.raises(ValidationError, match=match):
+            Settings(_env_file=None, **bad)
+    # an empty User-Agent only matters when MET Norway can be used
+    assert Settings(_env_file=None, weather_provider="open-meteo", weather_user_agent=" ")
+
+
+def test_build_weather_service_follows_the_provider_setting(monkeypatch):
+    monkeypatch.delenv("WEATHER_PROVIDER", raising=False)
+    from bike_routing_agent.api import build_weather_service
+    from bike_routing_agent.providers.base import InMemoryTTLCache, NamespacedCache
+
+    assert build_weather_service(Settings(_env_file=None, weather_provider="none")) is None
+    names = {
+        "auto": ["open-meteo", "met-no"],
+        "open-meteo": ["open-meteo"],
+        "met-no": ["met-no"],
+    }
+    for setting, expected in names.items():
+        service = build_weather_service(Settings(_env_file=None, weather_provider=setting))
+        assert service is not None and service.provider_names == expected
+
+    cache = InMemoryTTLCache()
+    shared = build_weather_service(Settings(_env_file=None), cache=cache)
+    assert isinstance(shared._cache, NamespacedCache) and shared._cache._namespace == "weather:"
+    assert shared._cache_ttl_s == 1800.0
+
+
+def test_the_met_no_provider_gets_the_configured_user_agent_and_urls():
+    from bike_routing_agent.api import build_weather_service
+
+    service = build_weather_service(
+        Settings(
+            _env_file=None,
+            weather_provider="met-no",
+            weather_user_agent="my-app/2 me@example.org",
+            weather_met_no_url="https://met.example/x",
+        )
+    )
+    provider = service._providers[0]
+    assert provider._user_agent == "my-app/2 me@example.org"
+    assert provider._base_url == "https://met.example/x"
+
+
+def test_llm_settings_defaults_and_validation():
+    s = Settings(_env_file=None)
+    assert (s.llm_parser_enabled, s.llm_model, s.anthropic_api_key) == (False, None, None)
+    for bad, match in [
+        ({"llm_parser_enabled": True}, "LLM_MODEL"),
+        ({"llm_parser_enabled": True, "llm_model": "  "}, "LLM_MODEL"),
+        ({"llm_timeout_s": 0}, "llm_timeout_s"),
+        ({"llm_max_output_tokens": 10}, "llm_max_output_tokens"),
+        ({"llm_max_output_tokens": 10**6}, "llm_max_output_tokens"),
+    ]:
+        with pytest.raises(ValidationError, match=match):
+            Settings(_env_file=None, **bad)
+    ok = Settings(_env_file=None, llm_parser_enabled=True, llm_model="claude-test")
+    assert ok.llm_model == "claude-test"
+
+
+def test_the_api_key_never_appears_in_the_settings_repr():
+    s = Settings(_env_file=None, anthropic_api_key="sk-ant-very-secret")
+    assert "very-secret" not in repr(s) and "very-secret" not in str(s.model_dump())
+    assert s.anthropic_api_key.get_secret_value() == "sk-ant-very-secret"
+
+
+def test_build_llm_parser_follows_the_setting():
+    pytest.importorskip("anthropic", reason="the llm extra is not installed")
+    from bike_routing_agent.api import build_llm_parser
+    from bike_routing_agent.llm.parser import RouteRequestParser
+
+    assert build_llm_parser(Settings(_env_file=None)) is None
+    parser = build_llm_parser(
+        Settings(
+            _env_file=None,
+            llm_parser_enabled=True,
+            llm_model="claude-test",
+            anthropic_api_key="sk-ant-test",
+            llm_max_output_tokens=4000,
+        )
+    )
+    assert isinstance(parser, RouteRequestParser)
+    assert parser._model == "claude-test" and parser._backend._max_output_tokens == 4000
+    assert parser._backend._client.api_key == "sk-ant-test"
+
+
+def test_openai_compatible_provider_needs_a_base_url():
+    base = {"_env_file": None, "llm_parser_enabled": True, "llm_model": "m"}
+    assert Settings(**base).llm_provider == "anthropic"
+    for bad in (None, "  ", "ftp://x"):
+        with pytest.raises(ValueError, match="LLM_BASE_URL|http"):
+            Settings(**base, llm_provider="openai", llm_base_url=bad)
+    ok = Settings(**base, llm_provider="openai", llm_base_url="http://localhost:11434/v1")
+    assert ok.llm_api_key is None  # local servers need no key
+    # not enabled: nothing to validate
+    Settings(_env_file=None, llm_provider="openai")
+
+
+def test_build_llm_parser_uses_the_openai_backend_and_hides_its_key():
+    from bike_routing_agent.api import build_llm_parser
+    from bike_routing_agent.llm.backends import OpenAICompatBackend
+
+    cfg = Settings(
+        _env_file=None,
+        llm_parser_enabled=True,
+        llm_model="alias-large",
+        llm_provider="openai",
+        llm_base_url="https://llm.example/v1/",
+        llm_api_key="sk-secret-key",
+    )
+    parser = build_llm_parser(cfg)
+    assert isinstance(parser._backend, OpenAICompatBackend)
+    assert parser._backend._url == "https://llm.example/v1/chat/completions"
+    assert "sk-secret-key" not in repr(cfg)

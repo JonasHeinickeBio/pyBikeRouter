@@ -2,16 +2,29 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from bike_routing_agent.config import resolve_surface_tokens
+from bike_routing_agent.weather.models import RouteWeather
 
 MAX_VIA_POINTS = 10
 # Upper bound for the request's max_alternatives (issue #24).
 MAX_ALTERNATIVES = 5
+# How far ahead a departure time may be (Open-Meteo forecasts reach 16 days;
+# the last days are too uncertain to present as a plan).
+MAX_FORECAST_DAYS = 14
 PlaceString = Annotated[str, StringConstraints(min_length=1, strip_whitespace=True)]
 
 # Sweep direction of a synthesized loop around its origin (issue #5); the
@@ -111,6 +124,9 @@ class RouteCandidate(BaseModel):
     # sentence comparing it to rank 1, and the near-identical-geometry
     # bookkeeping -- `duplicates` on a kept route, `duplicate_of` on a
     # candidate that is itself a near-copy of a better-scored one.
+    # Forecast for this route at the requested departure (issue: weather);
+    # null when weather is disabled, unavailable, or does not cover the ride.
+    weather: RouteWeather | None = None
     rank: int | None = Field(default=None, ge=1)
     rank_rationale: str | None = None
     duplicate_of: str | None = None
@@ -152,6 +168,23 @@ class RoutePlanAPIRequest(BaseModel):
     # Set: near-identical routes are dropped and the list is capped. It only
     # has an effect when more than one routing engine is configured.
     max_alternatives: int | None = Field(default=None, ge=1, le=MAX_ALTERNATIVES)
+    # When the ride starts, for the weather forecast. Omitted: now. A time without
+    # a UTC offset is read as UTC. Forecasts beyond MAX_FORECAST_DAYS ahead are
+    # too uncertain to be useful and are rejected.
+    departure_time: datetime | None = None
+
+    @field_validator("departure_time")
+    @classmethod
+    def _check_departure_in_forecast_range(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        aware = value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+        if aware > datetime.now(UTC) + timedelta(days=MAX_FORECAST_DAYS):
+            raise ValueError(
+                f"departure_time is more than {MAX_FORECAST_DAYS} days ahead; "
+                "weather forecasts do not reach that far"
+            )
+        return aware
 
     @model_validator(mode="after")
     def _check_loop_contract(self) -> RoutePlanAPIRequest:
@@ -176,6 +209,52 @@ PlanStatus = Literal[
 ]
 
 
+MAX_TEXT_CHARS = 500
+
+
+class PlanTextRequest(BaseModel):
+    """Body of ``POST /v1/route/plan-text``: a request in the user's own words."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
+    # The user's IANA time zone ("Europe/Berlin"), so "tomorrow at 8" means 8
+    # local time. Omitted: UTC.
+    timezone: str | None = Field(default=None, max_length=64)
+    max_alternatives: int | None = Field(default=None, ge=1, le=MAX_ALTERNATIVES)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text must not be blank")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                f"unknown time zone {value!r} (use an IANA name like Europe/Berlin)"
+            ) from exc
+        return value
+
+
+class Interpretation(BaseModel):
+    """What the free-text parser understood, so the user can check it."""
+
+    request: dict[str, Any]
+    departure_time: str | None = None
+    # Anything unclear or not expressible, in the parser's words.
+    notes: list[str] = Field(default_factory=list)
+    # Which model and prompt version produced it (provenance).
+    parser: dict[str, Any] | None = None
+
+
 class ClarificationOption(BaseModel):
     field: str
     candidates: list[GeocodeCandidate]
@@ -198,3 +277,9 @@ class RoutePlanResponse(BaseModel):
     # GET /v1/history/plans/{plan_id}; null when history is not configured
     # or recording failed (recording never fails a plan).
     plan_id: str | None = None
+    # How the weather part went (null when weather is switched off):
+    # "ok", "unavailable" (all providers failed), "not_covered" (the forecast
+    # does not reach the ride) or "skipped" (nothing to forecast).
+    weather_status: str | None = None
+    # Set by POST /v1/route/plan-text: the structured request the text was read as.
+    interpretation: Interpretation | None = None

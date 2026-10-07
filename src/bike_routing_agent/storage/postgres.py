@@ -24,67 +24,35 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Collection, Iterator, Sequence
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Any
 
 from bike_routing_agent.models import Coordinate
+from bike_routing_agent.storage.artifacts import ARTIFACT_NAME, ArtifactInfo
 from bike_routing_agent.storage.history import (
     CandidateSummary,
     DailyStats,
     HistoryStats,
     PlanFilter,
     PlanRecord,
+    PlanRetentionRef,
     PlanSummary,
     ProviderStats,
+    RetentionCursor,
     StatsFilter,
     StoredCandidate,
 )
+from bike_routing_agent.storage.migrate import (
+    MigrationStatus,
+    apply_pending,
+    read_status,
+)
 
-SCHEMA_SQL = """
-CREATE EXTENSION IF NOT EXISTS postgis;
-
-CREATE TABLE IF NOT EXISTS plans (
-    plan_id      text PRIMARY KEY,
-    created_at   timestamptz NOT NULL,
-    status       text NOT NULL,
-    bike_type    text,
-    request      jsonb NOT NULL,
-    constraints  jsonb NOT NULL,
-    origin       geometry(Point, 4326),
-    destination  geometry(Point, 4326),
-    errors       jsonb NOT NULL DEFAULT '[]',
-    explanation  text,
-    artifacts    jsonb NOT NULL DEFAULT '{}'
-);
-CREATE INDEX IF NOT EXISTS plans_created_at_idx ON plans (created_at DESC);
-CREATE INDEX IF NOT EXISTS plans_status_idx ON plans (status);
-
-CREATE TABLE IF NOT EXISTS candidates (
-    plan_id           text NOT NULL REFERENCES plans (plan_id) ON DELETE CASCADE,
-    rank              integer NOT NULL,
-    selected          boolean NOT NULL,
-    provider          text NOT NULL,
-    provider_profile  text NOT NULL,
-    score             double precision,
-    distance_m        double precision NOT NULL,
-    duration_s        double precision,
-    ascent_m          double precision,
-    descent_m         double precision,
-    score_breakdown   jsonb NOT NULL DEFAULT '{}',
-    warnings          jsonb NOT NULL DEFAULT '[]',
-    provenance        jsonb NOT NULL DEFAULT '{}',
-    candidate         jsonb NOT NULL,
-    geom              geometry(LineString, 4326),
-    PRIMARY KEY (plan_id, rank)
-);
-CREATE INDEX IF NOT EXISTS candidates_provider_idx ON candidates (provider, provider_profile);
-CREATE INDEX IF NOT EXISTS candidates_geom_idx ON candidates USING gist (geom);
-
-CREATE TABLE IF NOT EXISTS artifacts (
-    name        text PRIMARY KEY,
-    content     text NOT NULL,
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
-"""
+# Session-level advisory lock serialising maintenance runs (schema migrations,
+# retention pruning) across processes and instances.
+MAINTENANCE_LOCK_KEY = 0x70627231
 
 # Candidate geometry -> 2D LineString. ST_Force2D drops elevations (the
 # jsonb keeps them); ST_LineMerge flattens a MultiLineString when its parts
@@ -118,11 +86,18 @@ logger = logging.getLogger(__name__)
 
 
 class PostgresDatabase:
-    """Lazily opened connection pool plus one-time schema creation."""
+    """Lazily opened connection pool; the schema is managed by migrations.
 
-    def __init__(self, url: str, *, max_size: int = 5) -> None:
+    With ``auto_migrate`` (the default) the first use applies pending
+    migrations, which is what made a fresh database "just work" before
+    migrations existed. Deployments that migrate in a release step pass
+    ``auto_migrate=False`` and run ``bike-router db migrate`` instead.
+    """
+
+    def __init__(self, url: str, *, max_size: int = 5, auto_migrate: bool = True) -> None:
         self._url = url
         self._max_size = max_size
+        self._auto_migrate = auto_migrate
         self._lock = threading.Lock()
         self._pool: Any = None
 
@@ -130,20 +105,48 @@ class PostgresDatabase:
         """A pooled connection context manager (commits on clean exit)."""
         return self._ensure_pool().connection()
 
+    def migrate(self) -> MigrationStatus:
+        """Apply pending migrations (serialised across processes by an advisory lock)."""
+        psycopg, _ = _import_psycopg()
+        with psycopg.connect(self._url, autocommit=True) as conn:
+            return apply_pending(conn, MAINTENANCE_LOCK_KEY)
+
+    def migration_status(self) -> MigrationStatus:
+        """Applied/pending migrations, without changing anything."""
+        psycopg, _ = _import_psycopg()
+        with psycopg.connect(self._url, autocommit=True) as conn:
+            return read_status(conn)
+
     def _ensure_pool(self) -> Any:
         if self._pool is not None:
             return self._pool
         with self._lock:
             if self._pool is None:
+                if self._auto_migrate:
+                    self.migrate()
                 _, psycopg_pool = _import_psycopg()
                 pool = psycopg_pool.ConnectionPool(
                     self._url, min_size=1, max_size=self._max_size, open=False
                 )
                 pool.open(wait=True)
-                with pool.connection() as conn:
-                    conn.execute(SCHEMA_SQL)
+                if not self._auto_migrate:
+                    self._warn_if_behind()
                 self._pool = pool
         return self._pool
+
+    def _warn_if_behind(self) -> None:
+        try:
+            status = self.migration_status()
+        except Exception:
+            logger.warning("could not read the database schema version", exc_info=True)
+            return
+        if status.pending:
+            logger.warning(
+                "database schema is at version %s with %d pending migration(s); "
+                "run `bike-router db migrate` (AUTO_MIGRATE is off)",
+                status.current,
+                len(status.pending),
+            )
 
     def ping(self, *, timeout_s: float = 5.0) -> dict[str, str]:
         """``SELECT 1`` for the readiness endpoint (pooled connection when the
@@ -221,6 +224,68 @@ class PostgresRouteHistory:
 
     def ping(self) -> dict[str, str]:
         return self._db.ping()
+
+    def find_older_than(
+        self, cutoff: datetime, *, limit: int, after: RetentionCursor | None = None
+    ) -> list[PlanRetentionRef]:
+        params: dict[str, Any] = {"cutoff": cutoff, "limit": limit}
+        keyset = ""
+        if after is not None:
+            keyset = "AND (created_at, plan_id) > (%(after_at)s, %(after_id)s)"
+            params["after_at"], params["after_id"] = after
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT plan_id, created_at, artifacts FROM plans
+                WHERE created_at < %(cutoff)s {keyset}
+                ORDER BY created_at, plan_id LIMIT %(limit)s
+                """,
+                params,
+            ).fetchall()
+        return [
+            PlanRetentionRef(plan_id, created_at, tuple((artifacts or {}).values()))
+            for plan_id, created_at, artifacts in rows
+        ]
+
+    def delete_plans(self, plan_ids: Sequence[str]) -> int:
+        if not plan_ids:
+            return 0
+        with self._db.connection() as conn:
+            # candidates go with their plan (ON DELETE CASCADE)
+            cursor = conn.execute("DELETE FROM plans WHERE plan_id = ANY(%s)", (list(plan_ids),))
+            return int(cursor.rowcount)
+
+    def referenced_artifacts(
+        self, names: Collection[str] | None = None, *, newer_than: datetime | None = None
+    ) -> set[str]:
+        where: list[str] = []
+        params: dict[str, Any] = {}
+        if names is not None:
+            where.append("value = ANY(%(names)s)")
+            params["names"] = list(names)
+        if newer_than is not None:
+            where.append("created_at >= %(newer_than)s")
+            params["newer_than"] = newer_than
+        clause = f"WHERE {' AND '.join(where)}" if where else ""
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                f"SELECT DISTINCT value FROM plans, jsonb_each_text(artifacts) {clause}", params
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    @contextmanager
+    def maintenance_lock(self) -> Iterator[bool]:
+        """Hold the maintenance advisory lock on one pooled connection."""
+        with self._db.connection() as conn:
+            row = conn.execute(
+                "SELECT pg_try_advisory_lock(%s)", (MAINTENANCE_LOCK_KEY,)
+            ).fetchone()
+            acquired = bool(row and row[0])
+            try:
+                yield acquired
+            finally:
+                if acquired:
+                    conn.execute("SELECT pg_advisory_unlock(%s)", (MAINTENANCE_LOCK_KEY,))
 
     def save(self, record: PlanRecord) -> None:
         from psycopg.types.json import Jsonb
@@ -472,6 +537,19 @@ class PostgresArtifactStore:
 
     def ping(self) -> dict[str, str]:
         return self._db.ping()
+
+    def list_artifacts(self) -> Iterator[ArtifactInfo]:
+        with self._db.connection() as conn:
+            rows = conn.execute(
+                "SELECT name, octet_length(content), created_at FROM artifacts"
+            ).fetchall()
+        for name, size, created_at in rows:
+            if ARTIFACT_NAME.match(name):
+                yield ArtifactInfo(name=name, size=int(size), created_at=created_at)
+
+    def delete(self, name: str) -> bool:
+        with self._db.connection() as conn:
+            return int(conn.execute("DELETE FROM artifacts WHERE name = %s", (name,)).rowcount) > 0
 
     def put(self, name: str, content: str) -> None:
         with self._db.connection() as conn:

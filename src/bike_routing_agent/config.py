@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The public openrouteservice does not serve the Pelias geocoding endpoints
-# (they 404, same as /v2/health), so Pelias-backed geocoding is only usable
-# against a self-hosted ORS instance.
+# (they 404, same as /v2/health), so Pelias-backed geocoding needs another
+# base URL. Note a stock self-hosted ORS has no geocoder either: something
+# must serve a Pelias API at <ORS_BASE_URL>/pelias/v1 (docs/geocoding.md).
 PUBLIC_ORS_BASE_URLS = frozenset({"https://api.openrouteservice.org"})
 
 
@@ -62,11 +63,50 @@ class Settings(BaseSettings):
     overpass_buffer_m: float = 25.0
     overpass_cache_ttl_s: int = 86_400
 
+    # Shared cache for geocode and Overpass results (issue #29). "memory" is
+    # per-process (the default); "redis" shares it across API instances and
+    # needs the `cache` extra. A Redis outage only makes lookups uncached.
+    cache_backend: Literal["memory", "redis"] = "memory"
+    cache_redis_url: str | None = None  # e.g. redis://127.0.0.1:6379/0
+    cache_key_prefix: str = "bike-routing"
+    cache_redis_timeout_s: float = 2.0
+
     # Two candidates whose routes stay within this many metres of each other
     # (discrete Frechet distance) are one alternative, not two (issue #24).
     # Deliberately small: engines snapping to the same streets differ by a
     # few metres, while a genuinely different route differs by blocks.
     alternative_dedup_threshold_m: float = 50.0
+
+    # Free-text requests ("a 50 km gravel loop from Braunschweig, tomorrow at 8")
+    # parsed by an LLM into the structured request (issue #30). Off by default;
+    # needs the `llm` extra. The model has no default on purpose: pick one
+    # deliberately (docs/llm-parser.md). The API key is read from the standard
+    # ANTHROPIC_API_KEY environment variable (or the SDK's own credential chain)
+    # and is never logged.
+    llm_parser_enabled: bool = False
+    llm_model: str | None = None
+    # "anthropic" (Messages API) or "openai" (any OpenAI-compatible
+    # /chat/completions server, e.g. Helmholtz Blablador, vLLM, Ollama).
+    llm_provider: Literal["anthropic", "openai"] = "anthropic"
+    llm_base_url: str | None = None  # required for llm_provider=openai
+    llm_api_key: SecretStr | None = None  # bearer token for llm_provider=openai
+    anthropic_api_key: SecretStr | None = None
+    llm_timeout_s: float = 30.0
+    llm_max_output_tokens: int = 8000
+
+    # Weather along the route (free, keyless providers). "auto" tries Open-Meteo
+    # (global, hourly, gusts/UV/probability) and falls back to MET Norway;
+    # "none" switches the feature off (no request leaves the service). Route
+    # coordinates are sent to the chosen provider.
+    weather_provider: Literal["auto", "open-meteo", "met-no", "none"] = "auto"
+    weather_open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_met_no_url: str = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
+    # MET Norway rejects anonymous/generic clients: say who you are.
+    weather_user_agent: str = "bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter"
+    weather_timeout_s: float = 8.0
+    weather_cache_ttl_s: float = 1800.0
+    weather_max_samples: int = 5
+    weather_sample_spacing_km: float = 10.0
 
     # Readiness endpoint (issue #25): each component is probed at most once
     # per TTL, with a hard per-probe timeout. The geocoder gets a longer TTL
@@ -84,7 +124,30 @@ class Settings(BaseSettings):
     # share them; "local" (default) keeps them under EXPORT_DIR.
     database_url: str | None = None
     database_pool_max_size: int = 5
-    artifact_backend: Literal["local", "database"] = "local"
+    # Apply pending schema migrations on first database use (issue #28). Turn
+    # off to migrate in a release step with `bike-router db migrate`; the app
+    # then only warns when migrations are pending.
+    auto_migrate: bool = True
+    artifact_backend: Literal["local", "database", "s3"] = "local"
+
+    # S3-compatible artifact storage (issue #27; the `s3` extra). Credentials
+    # are never settings: boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+    # (or a profile / instance role) itself.
+    s3_bucket: str | None = None
+    s3_prefix: str = ""
+    s3_endpoint_url: str | None = None  # e.g. http://127.0.0.1:8333 (compose `s3` profile)
+    s3_region: str | None = None
+    s3_path_style: bool = False  # most self-hosted S3 servers need True
+    # Unset: GET /v1/routes/{file} streams the bytes itself. Set: it redirects
+    # to a presigned URL valid for this many seconds (the bucket must then be
+    # reachable by clients).
+    s3_presigned_url_ttl_s: int | None = None
+
+    # Retention (issue #27): unset keeps everything forever (the default).
+    # Applied by `bike-router retention prune`, never implicitly.
+    retention_max_age_days: int | None = None
+    retention_orphan_grace_hours: int = 24
+    retention_batch_size: int = 500
 
     log_level: str = "INFO"
 
@@ -92,6 +155,19 @@ class Settings(BaseSettings):
     def _check_database_settings(self) -> Settings:
         if self.artifact_backend == "database" and not self.database_url:
             raise ValueError("artifact_backend='database' requires DATABASE_URL to be set")
+        if self.artifact_backend == "s3" and not self.s3_bucket:
+            raise ValueError("artifact_backend='s3' requires S3_BUCKET to be set")
+        ttl = self.s3_presigned_url_ttl_s
+        if ttl is not None and not 1 <= ttl <= 604800:
+            raise ValueError("s3_presigned_url_ttl_s must be between 1 and 604800 seconds")
+        if self.retention_max_age_days is not None and self.retention_max_age_days < 1:
+            raise ValueError(
+                f"retention_max_age_days must be >= 1 (got {self.retention_max_age_days})"
+            )
+        if self.retention_orphan_grace_hours < 0 or self.retention_batch_size < 1:
+            raise ValueError(
+                "retention_orphan_grace_hours must be >= 0 and retention_batch_size >= 1"
+            )
         if self.database_url and self.database_pool_max_size < 1:
             raise ValueError(
                 f"database_pool_max_size must be >= 1 (got {self.database_pool_max_size})"
@@ -156,6 +232,60 @@ class Settings(BaseSettings):
                 "alternative_dedup_threshold_m must be > 0 "
                 f"(got {self.alternative_dedup_threshold_m})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_cache_settings(self) -> Settings:
+        if self.cache_backend == "redis" and not self.cache_redis_url:
+            raise ValueError("cache_backend='redis' requires CACHE_REDIS_URL to be set")
+        if self.cache_redis_timeout_s <= 0:
+            raise ValueError(
+                f"cache_redis_timeout_s must be > 0 (got {self.cache_redis_timeout_s})"
+            )
+        if not self.cache_key_prefix:
+            raise ValueError("cache_key_prefix must not be empty")
+        return self
+
+    @model_validator(mode="after")
+    def _check_llm_settings(self) -> Settings:
+        if self.llm_parser_enabled and not (self.llm_model and self.llm_model.strip()):
+            raise ValueError(
+                "llm_parser_enabled requires LLM_MODEL (choose a model id for your provider; "
+                "see docs/llm-parser.md)"
+            )
+        if self.llm_parser_enabled and self.llm_provider == "openai":
+            if not (self.llm_base_url and self.llm_base_url.strip()):
+                raise ValueError(
+                    "llm_provider=openai requires LLM_BASE_URL (the server's /v1 root; "
+                    "see docs/llm-parser.md)"
+                )
+            if not self.llm_base_url.startswith(("http://", "https://")):
+                raise ValueError("llm_base_url must start with http:// or https://")
+        if self.llm_timeout_s <= 0:
+            raise ValueError(f"llm_timeout_s must be > 0 (got {self.llm_timeout_s})")
+        if not 256 <= self.llm_max_output_tokens <= 64000:
+            raise ValueError(
+                "llm_max_output_tokens must be between 256 and 64000 "
+                f"(got {self.llm_max_output_tokens})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_weather_settings(self) -> Settings:
+        if self.weather_timeout_s <= 0:
+            raise ValueError(f"weather_timeout_s must be > 0 (got {self.weather_timeout_s})")
+        if self.weather_cache_ttl_s < 0:
+            raise ValueError("weather_cache_ttl_s must be >= 0")
+        if not 2 <= self.weather_max_samples <= 10:
+            raise ValueError(
+                f"weather_max_samples must be between 2 and 10 (got {self.weather_max_samples})"
+            )
+        if self.weather_sample_spacing_km <= 0:
+            raise ValueError(
+                f"weather_sample_spacing_km must be > 0 (got {self.weather_sample_spacing_km})"
+            )
+        if self.weather_provider in ("auto", "met-no") and not self.weather_user_agent.strip():
+            raise ValueError("weather_user_agent must identify your application (MET Norway)")
         return self
 
     @model_validator(mode="after")
@@ -276,6 +406,7 @@ SURFACE_TAXONOMY: dict[str, str] = {
     "mud": "natural_soft",
     "rock": "natural_soft",
 }
+
 
 def surface_category(token: str) -> str | None:
     """Surface-quality category for a caller-supplied surface token.

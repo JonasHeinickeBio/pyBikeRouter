@@ -18,7 +18,7 @@ COPY pyproject.toml poetry.lock README.md ./
 COPY src ./src
 
 # Runtime dependencies only; the project itself is installed as editable-free wheel.
-RUN poetry install --only main --extras db --no-root --no-interaction --no-ansi \
+RUN poetry install --only main --extras "db s3 cache" --no-root --no-interaction --no-ansi \
     && poetry build --format wheel \
     && pip install --no-cache-dir dist/*.whl
 

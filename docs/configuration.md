@@ -27,7 +27,10 @@ cp .env.example .env
 | `GEOCODER_BASE_URL` | Nominatim base URL (ignored for `pelias`) | `https://nominatim.openstreetmap.org` |
 | `GEOCODER_TIMEOUT_S` | geocoder request timeout | `5.0` |
 | `GEOCODER_USER_AGENT` | required by Nominatim's usage policy -- include a contact | `bike-routing-agent/0.1` |
-| `GEOCODER_CACHE_TTL_S` | in-memory geocode cache TTL | `3600` |
+| `GEOCODER_CACHE_TTL_S` | geocode cache TTL | `3600` |
+| `CACHE_BACKEND` | `memory` (per process) or `redis` (shared; needs the `cache` extra and `CACHE_REDIS_URL`) -- [providers.md](providers.md#shared-cache-redis) | `memory` |
+| `CACHE_REDIS_URL` | e.g. `redis://127.0.0.1:6379/0`; use `rediss://` and credentials for anything shared | unset |
+| `CACHE_KEY_PREFIX` / `CACHE_REDIS_TIMEOUT_S` | key namespace per environment; connect/operation timeout (seconds) | `bike-routing` / `2.0` |
 | `GEOCODER_AMBIGUITY_MARGIN` | top-2 confidence gap below which results are ambiguous | `0.05` |
 | `GEOCODER_MIN_CONFIDENCE` | below this, the top result is clarified instead of accepted | `0.3` |
 | `VALHALLA_BASE_URL` | base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |
@@ -37,10 +40,33 @@ cp .env.example .env
 | `HEALTH_PROBE_TIMEOUT_S` | hard timeout per `/readyz` probe | `5.0` |
 | `HEALTH_CACHE_TTL_S` | how long a probe result is reused (seconds; `0` disables) | `30` |
 | `HEALTH_GEOCODER_CACHE_TTL_S` | same for the geocoder, longer because the default is the public Nominatim | `300` |
+| `ORS_XMX` / `ORS_XMS` / `ORS_MEM_LIMIT` | self-hosted ORS container sizing (compose only; defaults `4g` / `128m` / `6g`); a city extract needs far less ([self-hosted.md](self-hosted.md#sizing-knobs)) | see left |
+| `NOMINATIM_THREADS` / `NOMINATIM_MEM_LIMIT` | self-hosted Nominatim import threads and container limit (compose only; defaults `4` / `4g`) | see left |
+| `WEATHER_PROVIDER` | `auto` (Open-Meteo, MET Norway as fallback), `open-meteo`, `met-no`, or `none` (off; no weather request leaves the service) -- [weather.md](weather.md) | `auto` |
+| `WEATHER_USER_AGENT` | identifies your app to MET Norway (required by their terms) | `bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter` |
+| `WEATHER_TIMEOUT_S` / `WEATHER_CACHE_TTL_S` | per-request timeout; how long a forecast is reused (seconds) | `8` / `1800` |
+| `WEATHER_MAX_SAMPLES` / `WEATHER_SAMPLE_SPACING_KM` | forecast points per route (2-10) and their spacing | `5` / `10` |
+| `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Open-Meteo or a proxy) | public URLs |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |
-| `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`) or `database` (requires `DATABASE_URL`) | `local` |
+| `AUTO_MIGRATE` | apply pending schema migrations on first database use; `false` = only warn, migrate with `bike-router db migrate` ([persistence.md](persistence.md#schema-migrations)) | `true` |
+| `ARTIFACT_BACKEND` | `local` (files under `EXPORT_DIR`), `database` (requires `DATABASE_URL`) or `s3` (requires `S3_BUCKET`, the `s3` extra) | `local` |
+| `S3_BUCKET` / `S3_PREFIX` | bucket (must exist) and optional key prefix for `ARTIFACT_BACKEND=s3` | unset / empty |
+| `S3_ENDPOINT_URL` / `S3_REGION` | endpoint for self-hosted S3-compatibles; optional region | unset |
+| `S3_PATH_STYLE` | path-style addressing (most self-hosted S3 servers need it) | `false` |
+| `S3_PRESIGNED_URL_TTL_S` | set (1-604800) to redirect artifact downloads to a presigned URL instead of streaming them | unset (stream) |
+| `RETENTION_MAX_AGE_DAYS` | how long plans and artifacts live; applied only by `bike-router retention prune` ([persistence.md](persistence.md#retention)) | unset (keep forever) |
+| `RETENTION_ORPHAN_GRACE_HOURS` | unreferenced artifacts younger than this are not swept | `24` |
+| `RETENTION_BATCH_SIZE` | plans deleted per batch | `500` |
+| `LLM_PARSER_ENABLED` | enable plain-words planning ([llm-parser.md](llm-parser.md)); needs the `llm` extra | `false` |
+| `LLM_MODEL` | model id for the parser; required when enabled, no default | unset |
+| `LLM_PROVIDER` | `anthropic` or `openai` (any OpenAI-compatible `/chat/completions` server) | `anthropic` |
+| `LLM_BASE_URL` | server root for `LLM_PROVIDER=openai`, e.g. `https://host/v1` (required then) | unset |
+| `LLM_API_KEY` | bearer token for `LLM_PROVIDER=openai` (environment only; optional for local servers) | unset |
+| `ANTHROPIC_API_KEY` | API key for the parser (environment only, never logged) | unset |
+| `LLM_TIMEOUT_S` | per-request timeout for the parser | `30` |
+| `LLM_MAX_OUTPUT_TOKENS` | output cap per parser call (256-64000) | `8000` |
 | `LOG_LEVEL` | log level | `INFO` |
 
 ## Startup validation
@@ -133,12 +159,17 @@ environment variables adjust the uvicorn bind address, and the container
 declares a `/healthz` (liveness) healthcheck; use `/readyz` for load balancers. `EXPORT_DIR` is set to `/app/exports` in
 the image and compose mounts the volume there.
 
-The compose file also defines an optional `self-hosted` profile with a
-self-hosted OpenRouteService container (geocoding/Pelias only works against
-such an instance, see [geocoding.md](geocoding.md)):
+The compose file also defines optional `self-hosted` profiles: a local
+openrouteservice and a local Nominatim built from one OSM extract, with a
+bootstrap script. You can run both or just one (`--only routing` /
+`--only geocoding`; the other keeps using its public service), which is the
+way to go on a small machine -- [self-hosted.md](self-hosted.md) lists the
+measured memory, disk and time each needs (openrouteservice has no geocoder of
+its own, see [geocoding.md](geocoding.md)):
 
 ```bash
-docker compose -f docker/compose.yaml --profile self-hosted up
+scripts/self-hosted-bootstrap.sh                   # both
+scripts/self-hosted-bootstrap.sh --only routing    # local routing, public geocoding
 ```
 
 And an optional `brouter` profile running a local BRouter RouteServer

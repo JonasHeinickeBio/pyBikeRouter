@@ -175,3 +175,57 @@ def test_export_requires_exactly_one_destination(tmp_path):
         build_export_node()
     with pytest.raises(ValueError, match="exactly one"):
         build_export_node(export_dir=tmp_path, artifact_store=MemoryStore())
+
+
+# ------------------------------------------------------- weather in the explanation
+
+
+def _weather(**summary):
+    from datetime import UTC, datetime
+
+    from bike_routing_agent.weather.models import RouteWeather, WeatherSummary
+
+    stamp = datetime(2026, 10, 7, 14, 0, tzinfo=UTC)
+    return RouteWeather(
+        provider="open-meteo",
+        attribution="Weather data by Open-Meteo.com (CC BY 4.0)",
+        departure=stamp,
+        arrival=stamp,
+        duration_source="provider",
+        retrieved_at=stamp,
+        samples=[],
+        summary=WeatherSummary(**summary),
+        advisories=["Wind gusts up to 62 km/h are forecast."],
+    )
+
+
+def test_explanation_states_the_forecast_as_facts_with_its_source():
+    from bike_routing_agent.nodes.export import _weather_sentences
+
+    sentences = _weather_sentences(
+        _weather(
+            temperature_min_c=9.4,
+            temperature_max_c=13.6,
+            precipitation_probability_max=40,
+            wind_speed_max_kmh=31,
+            wind_gust_max_kmh=62,
+            headwind_mean_kmh=11,
+        )
+    )
+    assert sentences[0] == (
+        "Forecast for a 07 Oct 14:00 UTC departure (open-meteo): 9 to 14 °C, up to 40% chance "
+        "of precipitation, wind up to 31 km/h (gusts 62), about 11 km/h of headwind on average."
+    )
+    assert sentences[1] == "Forecast notes: Wind gusts up to 62 km/h are forecast."
+    assert "safe" not in " ".join(sentences).lower()
+
+
+def test_explanation_leaves_out_a_negligible_wind_direction_and_empty_forecasts():
+    from bike_routing_agent.nodes.export import _weather_sentences
+
+    mild = _weather_sentences(
+        _weather(temperature_min_c=12, temperature_max_c=12, headwind_mean_kmh=2)
+    )
+    assert "12 °C" in mild[0] and "headwind" not in mild[0] and "tailwind" not in mild[0]
+    assert "tailwind" in _weather_sentences(_weather(headwind_mean_kmh=-9, temperature_min_c=1))[0]
+    assert _weather_sentences(_weather()) == []

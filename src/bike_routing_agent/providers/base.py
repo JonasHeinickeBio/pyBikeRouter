@@ -33,6 +33,24 @@ class CacheBackend(Protocol):
     async def set(self, key: str, value: object, *, ttl_s: float) -> None: ...
 
 
+class NamespacedCache:
+    """A view of one cache backend under a key prefix.
+
+    Geocoding and Overpass results share one Redis; the prefix keeps their
+    keys apart so one component's key scheme can never collide with another's.
+    """
+
+    def __init__(self, backend: CacheBackend, namespace: str) -> None:
+        self._backend = backend
+        self._namespace = f"{namespace}:"
+
+    async def get(self, key: str) -> object | None:
+        return await self._backend.get(f"{self._namespace}{key}")
+
+    async def set(self, key: str, value: object, *, ttl_s: float) -> None:
+        await self._backend.set(f"{self._namespace}{key}", value, ttl_s=ttl_s)
+
+
 class InMemoryTTLCache:
     """Process-local TTL cache. Adequate for a single API instance; swap for
     a shared backend (Redis, etc.) behind the same CacheBackend protocol for

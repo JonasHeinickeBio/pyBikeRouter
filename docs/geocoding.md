@@ -12,7 +12,7 @@ Two backends are implemented:
 | Backend | Default | Transport | Requires |
 | --- | --- | --- | --- |
 | `nominatim` (`providers/geocoder.py`) | yes | Direct HTTP to OSM Nominatim (`/search`) | Valid `User-Agent` (usage policy), 1 req/s max |
-| `pelias` (`providers/pelias.py`) | no | `OpenRouteServiceClient` → self-hosted ORS `GET /pelias/v1/search` | A **self-hosted** openrouteservice instance |
+| `pelias` (`providers/pelias.py`) | no | `OpenRouteServiceClient` → `GET <ORS_BASE_URL>/pelias/v1/search` | A Pelias API reachable at that path -- **not provided by openrouteservice** (see below); only exercised against mocks so far |
 
 ## Choosing a backend
 
@@ -25,7 +25,23 @@ GEOCODER_PROVIDER=pelias
 ORS_BASE_URL=https://ors.your-instance.example.org
 ```
 
-### Why Pelias needs a self-hosted ORS
+### Caveat: openrouteservice does not include a geocoder
+
+Verified while building the self-hosted stack ([self-hosted.md](self-hosted.md),
+issue #26): the official openrouteservice documentation states that the
+geocoder endpoint "is not part of openrouteservice, but of our public API.
+It is not available when running an own instance of openrouteservice." The
+public API's geocoder is a separate Pelias deployment. So a stock
+self-hosted ORS answers neither `/pelias/v1/*` nor anything else geocoding
+related, and the `pelias` backend can only work if *something* serves a
+Pelias API at `<ORS_BASE_URL>/pelias/v1/...` (for example a reverse proxy
+in front of your own Pelias deployment). That has not been exercised
+end to end -- the adapter's tests mock HTTP. For a local geocoder use the
+**self-hosted Nominatim** that ships in the `self-hosted` compose profile
+(`GEOCODER_PROVIDER=nominatim`, `GEOCODER_BASE_URL=http://127.0.0.1:8081`):
+it needs no extra adapter and removes the public rate limit.
+
+### Why the public ORS cannot be combined with `pelias`
 
 The public `api.openrouteservice.org` does **not** serve the Pelias
 geocoding endpoints — `GET /pelias/v1/*` returns 404 there, the same as
@@ -49,8 +65,8 @@ rather than failing on the public API.
 ORS: it is a free, public endpoint with no per-request credential beyond a
 usage-policy-compliant `User-Agent`.
 
-**Pelias** pays off when you already run (or plan to run) a self-hosted ORS
-instance:
+**Pelias** only pays off when you already operate a Pelias API (see the
+caveat above -- ORS does not provide one):
 
 - One vendor, one credential, one base URL for routing *and* geocoding.
   `api.build_providers` wires the geocoder and the routing adapter to share
@@ -128,8 +144,9 @@ Both adapters cache geocoded results in an in-process TTL cache
 `(provider, query, limit)` with a SHA-256 digest (the Nominatim adapter
 keys on the *normalized* query, so `Kasernenstr 23 ...` and
 `Kasernenstraße 23, ...` share one cache entry), TTL from
-`GEOCODER_CACHE_TTL_S` (default 3600 s). A shared `CacheBackend` (e.g.
-Redis) can be injected for multi-instance deployments. For Pelias the
+`GEOCODER_CACHE_TTL_S` (default 3600 s). With `CACHE_BACKEND=redis` the
+cache is shared by all instances ([providers.md](providers.md#shared-cache-redis)).
+For Pelias the
 cache lives in the same process as the ORS client — no extra HTTP layer.
 
 ## Error handling

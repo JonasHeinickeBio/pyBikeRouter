@@ -141,3 +141,15 @@ async def test_api_end_to_end_with_database_history_and_artifacts(
     assert b"<gpx" in download.content
     assert [p["plan_id"] for p in history] == [plan["plan_id"]]
     assert detail["candidates"][0]["candidate"]["provider"] == "ors"
+
+
+def test_maintenance_lock_excludes_a_second_holder_until_released(postgres_database):
+    from bike_routing_agent.storage.postgres import PostgresRouteHistory
+
+    history = PostgresRouteHistory(postgres_database)
+    with history.maintenance_lock() as first:
+        assert first is True
+        with history.maintenance_lock() as second:  # another pooled connection = another session
+            assert second is False
+    with history.maintenance_lock() as after:
+        assert after is True

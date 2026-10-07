@@ -46,6 +46,14 @@ const els = {
   mapModeKind: $("map-mode-kind"),
   mapModeCancel: $("map-mode-cancel"),
   map: $("map"),
+  departurePreset: $("departure-preset"),
+  departureCustom: $("departure-custom"),
+  departureCustomField: $("departure-custom-field"),
+  departureHint: $("departure-hint"),
+  weatherCard: $("weather-card"),
+  textPanel: $("text-panel"),
+  textInput: $("text-input"),
+  textBtn: $("text-btn"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -62,6 +70,7 @@ const state = {
   selectedRoute: null,
   activeIndex: 0, // index into candidateLayers currently being inspected
   placeMarkers: L.layerGroup(),
+  weatherMarkers: L.layerGroup(), // forecast points along the active candidate
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
   aborted: null,
@@ -79,6 +88,7 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(state.map);
   state.placeMarkers.addTo(state.map);
+  state.weatherMarkers.addTo(state.map);
   state.map.on("click", onMapClick);
 }
 
@@ -251,6 +261,66 @@ function buildConstraints() {
   return constraints;
 }
 
+/* ------------------------------ departure time ---------------------------- */
+
+const MAX_FORECAST_DAYS = 14; // matches the API's departure_time limit
+
+/** The chosen departure as a Date, or null for "now" (the server then uses its own clock). */
+function departureTime() {
+  const preset = els.departurePreset.value;
+  const now = new Date();
+  if (preset === "1h") return new Date(now.getTime() + 3600 * 1000);
+  if (preset === "evening" || preset === "tomorrow") {
+    const hour = preset === "evening" ? 18 : 8;
+    const when = new Date(now);
+    when.setHours(hour, 0, 0, 0);
+    // "tomorrow morning" is always the next day; "this evening" rolls over once it has passed
+    if (preset === "tomorrow" || when <= now) when.setDate(when.getDate() + 1);
+    return when;
+  }
+  if (preset === "custom") {
+    const raw = els.departureCustom.value;
+    if (!raw) return null;
+    const when = new Date(raw); // datetime-local is read as local time
+    return Number.isNaN(when.getTime()) ? null : when;
+  }
+  return null;
+}
+
+function updateDepartureHint() {
+  const isCustom = els.departurePreset.value === "custom";
+  els.departureCustomField.hidden = !isCustom;
+  const when = departureTime();
+  const base = `Sets the weather forecast along the route, up to ${MAX_FORECAST_DAYS} days ahead.`;
+  if (when === null) {
+    els.departureHint.textContent = base;
+    return;
+  }
+  const tooFar = when.getTime() > Date.now() + MAX_FORECAST_DAYS * 86400 * 1000;
+  els.departureHint.textContent = tooFar
+    ? `That is more than ${MAX_FORECAST_DAYS} days ahead; forecasts do not reach that far.`
+    : `Departing ${BikeWeather.dayAndClock(when.toISOString())} your time. ${base}`;
+}
+
+function initDeparture() {
+  const pad = (n) => String(n).padStart(2, "0");
+  const local = (d) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const now = new Date();
+  els.departureCustom.min = local(now);
+  els.departureCustom.max = local(new Date(now.getTime() + MAX_FORECAST_DAYS * 86400 * 1000));
+  els.departurePreset.addEventListener("change", () => {
+    if (els.departurePreset.value === "custom" && !els.departureCustom.value) {
+      const soon = new Date(now.getTime() + 3600 * 1000);
+      soon.setMinutes(0, 0, 0);
+      els.departureCustom.value = local(soon);
+    }
+    updateDepartureHint();
+  });
+  els.departureCustom.addEventListener("input", updateDepartureHint);
+  updateDepartureHint();
+}
+
 // Optional cap on distinct alternatives; empty means "every candidate" and
 // is omitted from the request so the server default applies (issue #24).
 function maxAlternatives() {
@@ -269,6 +339,8 @@ function buildRequest() {
   };
   const alternatives = maxAlternatives();
   if (alternatives !== null) request.max_alternatives = alternatives;
+  const departure = departureTime();
+  if (departure !== null) request.departure_time = departure.toISOString();
   return request;
 }
 
@@ -329,6 +401,100 @@ async function planRoute() {
   }
 }
 
+/* --------------------------- plan from plain words ------------------------ */
+
+/** Show the description box only when the server has a language-model parser configured. */
+async function initTextPlanning() {
+  try {
+    const resp = await fetch(`${API_BASE}/v1/capabilities`);
+    if (!resp.ok) return;
+    const caps = await resp.json();
+    els.textPanel.hidden = !caps.text_planning;
+  } catch {
+    // Older server or offline: the form works exactly as before.
+  }
+}
+
+/** Put what the server understood into the form, so it can be checked and re-planned by hand. */
+function applyInterpretation(interpretation) {
+  const v = BikeText.formValues(interpretation);
+  if (!v) return;
+  els.origin.value = v.origin;
+  els.destination.value = v.destination;
+  els.viaList.innerHTML = "";
+  for (const place of v.via) addViaRow(place);
+  if (v.bikeType) els.bikeType.value = v.bikeType;
+  const setNum = (el, value) => {
+    if (value !== null) el.value = String(value);
+  };
+  setNum(els.targetDistance, v.targetDistance);
+  setNum(els.maxDistance, v.maxDistance);
+  setNum(els.maxAscent, v.maxAscent);
+  if (v.prefer) els.preferSurfaces.value = v.prefer;
+  if (v.avoid) els.avoidSurfaces.value = v.avoid;
+  if (v.avoidTraffic !== null) els.avoidTraffic.checked = v.avoidTraffic;
+  if (v.avoidFerries !== null) els.avoidFerries.checked = v.avoidFerries;
+  if (v.loop !== null) els.returnOrigin.checked = v.loop;
+  if (v.departureLocal) {
+    els.departurePreset.value = "custom";
+    els.departureCustom.value = v.departureLocal;
+  }
+  updateDepartureHint();
+  for (const input of [els.origin, els.destination, ...viaInputs()]) markCoordInput(input);
+  redrawPlaceMarkers();
+}
+
+async function planFromText() {
+  stopPicking();
+  const text = els.textInput.value.trim();
+  if (!text) {
+    setStatus("error", "Describe the ride you want first.");
+    return;
+  }
+  const payload = { text, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const maxAlt = els.maxAlternatives.value.trim();
+  if (maxAlt !== "") payload.max_alternatives = Number(maxAlt);
+
+  els.textBtn.disabled = true;
+  els.planBtn.disabled = true;
+  setStatus("loading", "Reading your description and planning&hellip;");
+  clearResults();
+
+  if (state.aborted) state.aborted.abort();
+  const controller = new AbortController();
+  state.aborted = controller;
+  const startedAt = performance.now();
+
+  try {
+    const resp = await fetch(`${API_BASE}/v1/route/plan-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const detail = await safeErrorText(resp);
+      setStatus("error", `Request failed (HTTP ${resp.status}): ${escapeHtml(detail)}`);
+      return;
+    }
+    const data = await resp.json();
+    state.lastResponse = data;
+    if (data.interpretation) applyInterpretation(data.interpretation);
+    const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+    renderResponse(data, secs);
+    if (data.interpretation && data.status !== "invalid") {
+      const summary = BikeText.summaryHtml(data.interpretation);
+      if (summary) els.status.insertAdjacentHTML("beforeend", `<div class="interpretation">${summary}</div>`);
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    setStatus("error", `Network error: ${escapeHtml(String(err))}`);
+  } finally {
+    els.textBtn.disabled = false;
+    els.planBtn.disabled = false;
+  }
+}
+
 async function safeErrorText(resp) {
   try {
     const body = await resp.json();
@@ -351,6 +517,9 @@ function clearResults() {
   state.candidates = [];
   state.selectedRoute = null;
   state.activeIndex = 0;
+  state.weatherMarkers.clearLayers();
+  els.weatherCard.hidden = true;
+  els.weatherCard.innerHTML = "";
   els.viewingNote.hidden = true;
   els.resultsPanel.hidden = true;
   els.errorsPanel.hidden = true;
@@ -527,6 +696,11 @@ function activateCandidate(index) {
   updateActiveView();
 }
 
+function windCellHtml(candidate) {
+  const cell = BikeWeather.windCell(candidate.weather);
+  return `<span class="wind-cell ${cell.kind}" title="${escapeHtml(cell.title)}">${escapeHtml(cell.text)}</span>`;
+}
+
 function renderCandidatesTable() {
   if (state.candidates.length < 2) {
     els.candidatesDetails.hidden = true;
@@ -538,7 +712,8 @@ function renderCandidatesTable() {
   const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
   const head =
     "<tr><th class='num'>Rank</th><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
-    "<th class='num'>Ascent</th><th class='num'>Score</th><th class='num'>Warnings</th></tr>";
+    "<th class='num'>Ascent</th><th class='num' title='Average wind against (&#9650;) or with (&#9660;) the direction of travel, km/h'>Wind</th>" +
+    "<th class='num'>Score</th><th class='num'>Warnings</th></tr>";
   const rows = state.candidates
     .map((cand, i) => {
       const m = cand.metrics || {};
@@ -566,6 +741,7 @@ function renderCandidatesTable() {
         `<td class="num">${fmtKm(m.distance_m)}</td>` +
         `<td class="num">${fmtDuration(m.duration_s)}</td>` +
         `<td class="num">${fmtM(m.ascent_m)}</td>` +
+        `<td class="num">${windCellHtml(cand)}</td>` +
         `<td class="num">${cand.score != null ? cand.score.toFixed(2) : "—"}</td>` +
         `<td class="num"><span class="warn-count" title="${warnTitle}">${(cand.warnings || []).length || 0}</span></td>` +
         "</tr>"
@@ -601,6 +777,7 @@ function updateActiveView() {
     metric(cand.score != null ? cand.score.toFixed(2) : "—", "Score") +
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
+  renderWeather(cand);
   renderScoreBreakdown(cand.score_breakdown);
   renderSurfaces(m.surface_coverage, m.unknown_surface_fraction);
 
@@ -616,6 +793,32 @@ function updateActiveView() {
     els.viewingNote.innerHTML =
       `Showing <strong>${escapeHtml(cand.provider)}</strong> &mdash; the explanation and export ` +
       `files below refer to the selected candidate (<strong>${escapeHtml(state.selectedRoute.provider)}</strong>).`;
+  }
+}
+
+/* ---------------------------------- weather ------------------------------- */
+
+function renderWeather(candidate) {
+  const status = state.lastResponse ? state.lastResponse.weather_status : null;
+  const html = BikeWeather.weatherCardHtml(candidate.weather, status);
+  els.weatherCard.innerHTML = html;
+  els.weatherCard.hidden = html === "";
+
+  // Forecast points on the map for the candidate being inspected, so the
+  // numbers in the card can be tied to a place along the route.
+  state.weatherMarkers.clearLayers();
+  if (!candidate.weather) return;
+  for (const sample of candidate.weather.samples || []) {
+    const info = BikeWeather.conditionInfo(sample.weather.condition, sample.weather.is_day);
+    const icon = L.divIcon({
+      className: "wx-marker-wrap",
+      html: `<span class="wx-marker" aria-hidden="true">${info.icon}</span>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    });
+    L.marker([sample.lat, sample.lon], { icon, keyboard: false })
+      .bindTooltip(BikeWeather.sampleTooltip(sample), { direction: "top", offset: [0, -12] })
+      .addTo(state.weatherMarkers);
   }
 }
 
@@ -660,7 +863,7 @@ function renderArtifacts(artifacts) {
     const a = document.createElement("a");
     a.href = url;
     a.download = "";
-    a.textContent = `&#11015; ${key.replace(/_url$/, "").toUpperCase()}`;
+    a.textContent = `\u2B07 ${key.replace(/_url$/, "").toUpperCase()}`;
     els.artifacts.appendChild(a);
   }
 }
@@ -756,6 +959,13 @@ function wireEvents() {
   els.addVia.addEventListener("click", () => addViaRow());
   els.swap.addEventListener("click", swapPlaces);
   els.planBtn.addEventListener("click", planRoute);
+  els.textBtn.addEventListener("click", planFromText);
+  els.textInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      planFromText();
+    }
+  });
   els.resetBtn.addEventListener("click", resetAll);
 
   for (const input of document.querySelectorAll("#places-panel input, #constraints-panel input, #constraints-panel select")) {
@@ -783,9 +993,13 @@ function resetAll() {
   for (const id of ["target-distance", "max-distance", "max-ascent", "max-alternatives", "prefer-surfaces", "avoid-surfaces"]) {
     $(id).value = "";
   }
+  els.departurePreset.value = "now";
+  els.departureCustom.value = "";
+  updateDepartureHint();
   els.avoidTraffic.checked = true;
   els.avoidFerries.checked = true;
   els.returnOrigin.checked = false;
+  els.textInput.value = "";
   for (const id of ["origin-input", "destination-input"]) markCoordInput($(id));
   clearResults();
   setStatus("info", "Reset. Enter two places and press <strong>Plan route</strong>.") ;
@@ -797,5 +1011,7 @@ function resetAll() {
 
 document.addEventListener("DOMContentLoaded", () => {
   initMap();
+  initDeparture();
   wireEvents();
+  initTextPlanning();
 });

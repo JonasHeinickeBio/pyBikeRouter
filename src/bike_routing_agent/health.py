@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 ComponentStatusName = Literal["ok", "degraded", "unavailable", "unknown"]
 OverallStatus = Literal["ok", "degraded", "unavailable"]
-ComponentKind = Literal["routing", "geocoder", "database", "artifact_store"]
+ComponentKind = Literal[
+    "routing", "geocoder", "database", "artifact_store", "cache", "weather"
+]
 
 _VALID_STATUSES = ("ok", "degraded", "unavailable", "unknown")
 # "unknown" is what the public ORS reports (it has no health endpoint): no
@@ -213,6 +215,8 @@ def build_health_monitor(
     routing_providers: Sequence[Any],
     artifact_store: Any,
     history: Any | None,
+    cache: Any | None = None,
+    weather: Any | None = None,
     database_is_critical: bool,
     timeout_s: float,
     ttl_s: float,
@@ -249,4 +253,19 @@ def build_health_monitor(
                 required=database_is_critical,
             )
         )
+    if weather is not None:
+        # Informational feature: an outage degrades the instance, never readies it away.
+        components.append(
+            Component(
+                "weather",
+                "weather",
+                _call_health(weather, "health"),
+                required=False,
+                ttl_s=max(ttl_s, geocoder_ttl_s),
+            )
+        )
+    if cache is not None and hasattr(cache, "ping"):
+        # The cache is an optimisation: a Redis outage degrades the instance
+        # (every lookup goes upstream) but never makes it unready.
+        components.append(Component("cache", "cache", _call_health(cache, "ping"), required=False))
     return HealthMonitor(components, timeout_s=timeout_s, ttl_s=ttl_s)
