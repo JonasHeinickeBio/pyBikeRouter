@@ -24,7 +24,21 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         raise RuntimeError("subparsers are required")
 
     plan = route_sub.add_parser("plan", help="plan a route between two places")
-    plan.add_argument("--origin", required=True, help="place text, or 'lat,lon'")
+    plan.add_argument(
+        "--text",
+        default=None,
+        metavar="REQUEST",
+        help="describe the ride in plain words instead of --origin/--destination "
+        '(e.g. "a 50 km gravel loop from Braunschweig, tomorrow at 8"); needs '
+        "LLM_PARSER_ENABLED",
+    )
+    plan.add_argument(
+        "--timezone",
+        default=None,
+        metavar="IANA",
+        help="your time zone for --text (e.g. Europe/Berlin; default UTC)",
+    )
+    plan.add_argument("--origin", default=None, help="place text, or 'lat,lon'")
     plan.add_argument(
         "--destination",
         default=None,
@@ -117,6 +131,14 @@ def _csv(text: str) -> list[str]:
 def _loop_usage_error(args: argparse.Namespace) -> str | None:
     """Loop contract as CLI usage messages (issue #5); the API enforces the
     same rules through the request model."""
+    if args.text is not None:
+        if not args.text.strip():
+            return "--text must not be empty"
+        if args.origin or args.destination or args.via:
+            return "--text replaces --origin/--destination/--via: use one or the other"
+        return None
+    if not args.origin:
+        return "--origin is required (or describe the ride with --text)"
     if args.loop and args.destination:
         return "--loop takes no --destination: a loop starts and ends at --origin"
     if args.loop and args.target_distance_km is None:
@@ -135,6 +157,8 @@ def _loop_usage_error(args: argparse.Namespace) -> str | None:
 
 
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
+    if args.text is not None:
+        return {"text": args.text, "timezone": args.timezone}
     request: dict[str, Any] = {
         "origin": _place(args.origin),
         "via": [_place(v) for v in args.via],
@@ -246,6 +270,9 @@ def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
         "explanation": final_state.get("explanation"),
         "errors": final_state.get("errors", []),
     }
+    if final_state.get("interpretation"):
+        # How a --text request was read, so a wrong parse is visible.
+        payload["interpretation"] = final_state["interpretation"]
     if status == "ready":
         selected = dict(final_state.get("selected_candidate") or {})
         selected.pop("raw_provider_response", None)

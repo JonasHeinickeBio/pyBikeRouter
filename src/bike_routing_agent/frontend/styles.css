@@ -94,6 +94,8 @@ details[open] > summary h2 { margin-bottom: 0.6rem; }
 
 input[type="text"],
 input[type="number"],
+input[type="datetime-local"],
+textarea,
 select {
   width: 100%;
   padding: 0.45rem 0.55rem;
@@ -557,3 +559,23 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   }
   .leaflet-container { background: #1d252c; }
 }
+
+
+/* ------------------------------ plan from plain words ------------------------------ */
+
+textarea {
+  resize: vertical;
+  min-height: 4.2rem;
+  line-height: 1.35;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.interpretation-notes { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--caution-ink); }
+.interpretation-notes li { margin-bottom: 0.15rem; }
+.interpretation { margin-top: 0.5rem; font-size: 0.9em; }

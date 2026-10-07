@@ -51,6 +51,9 @@ const els = {
   departureCustomField: $("departure-custom-field"),
   departureHint: $("departure-hint"),
   weatherCard: $("weather-card"),
+  textPanel: $("text-panel"),
+  textInput: $("text-input"),
+  textBtn: $("text-btn"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -394,6 +397,100 @@ async function planRoute() {
     if (err.name === "AbortError") return;
     setStatus("error", `Network error: ${escapeHtml(String(err))}`);
   } finally {
+    els.planBtn.disabled = false;
+  }
+}
+
+/* --------------------------- plan from plain words ------------------------ */
+
+/** Show the description box only when the server has a language-model parser configured. */
+async function initTextPlanning() {
+  try {
+    const resp = await fetch(`${API_BASE}/v1/capabilities`);
+    if (!resp.ok) return;
+    const caps = await resp.json();
+    els.textPanel.hidden = !caps.text_planning;
+  } catch {
+    // Older server or offline: the form works exactly as before.
+  }
+}
+
+/** Put what the server understood into the form, so it can be checked and re-planned by hand. */
+function applyInterpretation(interpretation) {
+  const v = BikeText.formValues(interpretation);
+  if (!v) return;
+  els.origin.value = v.origin;
+  els.destination.value = v.destination;
+  els.viaList.innerHTML = "";
+  for (const place of v.via) addViaRow(place);
+  if (v.bikeType) els.bikeType.value = v.bikeType;
+  const setNum = (el, value) => {
+    if (value !== null) el.value = String(value);
+  };
+  setNum(els.targetDistance, v.targetDistance);
+  setNum(els.maxDistance, v.maxDistance);
+  setNum(els.maxAscent, v.maxAscent);
+  if (v.prefer) els.preferSurfaces.value = v.prefer;
+  if (v.avoid) els.avoidSurfaces.value = v.avoid;
+  if (v.avoidTraffic !== null) els.avoidTraffic.checked = v.avoidTraffic;
+  if (v.avoidFerries !== null) els.avoidFerries.checked = v.avoidFerries;
+  if (v.loop !== null) els.returnOrigin.checked = v.loop;
+  if (v.departureLocal) {
+    els.departurePreset.value = "custom";
+    els.departureCustom.value = v.departureLocal;
+  }
+  updateDepartureHint();
+  for (const input of [els.origin, els.destination, ...viaInputs()]) markCoordInput(input);
+  redrawPlaceMarkers();
+}
+
+async function planFromText() {
+  stopPicking();
+  const text = els.textInput.value.trim();
+  if (!text) {
+    setStatus("error", "Describe the ride you want first.");
+    return;
+  }
+  const payload = { text, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const maxAlt = els.maxAlternatives.value.trim();
+  if (maxAlt !== "") payload.max_alternatives = Number(maxAlt);
+
+  els.textBtn.disabled = true;
+  els.planBtn.disabled = true;
+  setStatus("loading", "Reading your description and planning&hellip;");
+  clearResults();
+
+  if (state.aborted) state.aborted.abort();
+  const controller = new AbortController();
+  state.aborted = controller;
+  const startedAt = performance.now();
+
+  try {
+    const resp = await fetch(`${API_BASE}/v1/route/plan-text`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const detail = await safeErrorText(resp);
+      setStatus("error", `Request failed (HTTP ${resp.status}): ${escapeHtml(detail)}`);
+      return;
+    }
+    const data = await resp.json();
+    state.lastResponse = data;
+    if (data.interpretation) applyInterpretation(data.interpretation);
+    const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+    renderResponse(data, secs);
+    if (data.interpretation && data.status !== "invalid") {
+      const summary = BikeText.summaryHtml(data.interpretation);
+      if (summary) els.status.insertAdjacentHTML("beforeend", `<div class="interpretation">${summary}</div>`);
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    setStatus("error", `Network error: ${escapeHtml(String(err))}`);
+  } finally {
+    els.textBtn.disabled = false;
     els.planBtn.disabled = false;
   }
 }
@@ -862,6 +959,13 @@ function wireEvents() {
   els.addVia.addEventListener("click", () => addViaRow());
   els.swap.addEventListener("click", swapPlaces);
   els.planBtn.addEventListener("click", planRoute);
+  els.textBtn.addEventListener("click", planFromText);
+  els.textInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {
+      ev.preventDefault();
+      planFromText();
+    }
+  });
   els.resetBtn.addEventListener("click", resetAll);
 
   for (const input of document.querySelectorAll("#places-panel input, #constraints-panel input, #constraints-panel select")) {
@@ -895,6 +999,7 @@ function resetAll() {
   els.avoidTraffic.checked = true;
   els.avoidFerries.checked = true;
   els.returnOrigin.checked = false;
+  els.textInput.value = "";
   for (const id of ["origin-input", "destination-input"]) markCoordInput($(id));
   clearResults();
   setStatus("info", "Reset. Enter two places and press <strong>Plan route</strong>.") ;
@@ -908,4 +1013,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initMap();
   initDeparture();
   wireEvents();
+  initTextPlanning();
 });

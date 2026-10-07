@@ -71,12 +71,15 @@ provider unless validation **and** geocoding have both succeeded.
 `parse_request` is deterministic by default: `api.py` has already validated a
 `RoutePlanAPIRequest` before the graph runs, so the node mostly reshapes that
 payload. Free-text (`{"text": "..."}`) input requires an `llm_parser`
-callable, injected at graph build time. It is a plain
-`Callable[[str], dict]` so the extraction step can be swapped or mocked
-without touching graph wiring -- and its contract is to return the *same
-structured shape* the API would, never coordinates or geometry. No LLM parser
-is wired up in this milestone; free-text requests without one return
-`invalid` with code `nl_parsing_unavailable`.
+callable, injected at graph build time. It is a plain callable
+`(text, *, timezone=None) -> dict` so the extraction step can be swapped or
+mocked without touching graph wiring -- and its contract is to return the
+*same structured shape* the API would, never coordinates or geometry. The
+node enforces that again at the graph boundary (places must be strings) and
+records an `interpretation` in state. `LLM_PARSER_ENABLED=true` wires the
+Anthropic-backed `RouteRequestParser` ([llm-parser.md](llm-parser.md)); with
+none configured, free-text requests return `invalid` with code
+`nl_parsing_unavailable`.
 
 ## State contract
 

@@ -21,6 +21,8 @@ db = ["psycopg[binary,pool]>=3.2"]
 s3 = ["boto3>=1.34"]
 # Shared cache backend for multi-instance deployments (issue #29).
 cache = ["redis>=5"]
+# Free-text request parsing with an LLM (issue #30).
+llm = ["anthropic>=1.0"]
 
 [project.scripts]
 bike-router = "bike_routing_agent.cli:main"
@@ -73,4 +75,9 @@ warn_redundant_casts = true
 [[tool.mypy.overrides]]
 # boto3/botocore ship no type information; the S3 store is the only user.
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The Anthropic SDK is the optional `llm` extra; CI's typecheck job does not install it.
+module = ["anthropic", "anthropic.*"]
 ignore_missing_imports = true

@@ -30,6 +30,7 @@ so the default run never touches the network and always reports coverage.
 | `tests/exporters/` | GeoJSON/GPX output shapes | none |
 | `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous) | -- |
 | `tests/storage/` | Artifact stores, the route-history contract, retention and schema migrations. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends; `test_migrate.py` covers the migration rules offline and `test_postgres_migrations.py` runs them against PostGIS (atomicity, adoption, concurrent starts, lock waiting) | none (PostGIS params are `live`) |
+| `tests/llm/` | The LLM request parser against a fake client (schema, injection handling, coordinate rule, repair retry, error codes) and the benchmark harness | none |
 | `tests/live/` | Real ORS/Nominatim calls through the API | **real** |
 
 `tests/conftest.py` exposes the fixtures as `ors_directions_response`,

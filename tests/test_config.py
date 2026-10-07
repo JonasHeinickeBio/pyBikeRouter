@@ -518,3 +518,75 @@ def test_the_met_no_provider_gets_the_configured_user_agent_and_urls():
     provider = service._providers[0]
     assert provider._user_agent == "my-app/2 me@example.org"
     assert provider._base_url == "https://met.example/x"
+
+
+def test_llm_settings_defaults_and_validation():
+    s = Settings(_env_file=None)
+    assert (s.llm_parser_enabled, s.llm_model, s.anthropic_api_key) == (False, None, None)
+    for bad, match in [
+        ({"llm_parser_enabled": True}, "LLM_MODEL"),
+        ({"llm_parser_enabled": True, "llm_model": "  "}, "LLM_MODEL"),
+        ({"llm_timeout_s": 0}, "llm_timeout_s"),
+        ({"llm_max_output_tokens": 10}, "llm_max_output_tokens"),
+        ({"llm_max_output_tokens": 10**6}, "llm_max_output_tokens"),
+    ]:
+        with pytest.raises(ValidationError, match=match):
+            Settings(_env_file=None, **bad)
+    ok = Settings(_env_file=None, llm_parser_enabled=True, llm_model="claude-test")
+    assert ok.llm_model == "claude-test"
+
+
+def test_the_api_key_never_appears_in_the_settings_repr():
+    s = Settings(_env_file=None, anthropic_api_key="sk-ant-very-secret")
+    assert "very-secret" not in repr(s) and "very-secret" not in str(s.model_dump())
+    assert s.anthropic_api_key.get_secret_value() == "sk-ant-very-secret"
+
+
+def test_build_llm_parser_follows_the_setting():
+    pytest.importorskip("anthropic", reason="the llm extra is not installed")
+    from bike_routing_agent.api import build_llm_parser
+    from bike_routing_agent.llm.parser import RouteRequestParser
+
+    assert build_llm_parser(Settings(_env_file=None)) is None
+    parser = build_llm_parser(
+        Settings(
+            _env_file=None,
+            llm_parser_enabled=True,
+            llm_model="claude-test",
+            anthropic_api_key="sk-ant-test",
+            llm_max_output_tokens=4000,
+        )
+    )
+    assert isinstance(parser, RouteRequestParser)
+    assert parser._model == "claude-test" and parser._backend._max_output_tokens == 4000
+    assert parser._backend._client.api_key == "sk-ant-test"
+
+
+def test_openai_compatible_provider_needs_a_base_url():
+    base = {"_env_file": None, "llm_parser_enabled": True, "llm_model": "m"}
+    assert Settings(**base).llm_provider == "anthropic"
+    for bad in (None, "  ", "ftp://x"):
+        with pytest.raises(ValueError, match="LLM_BASE_URL|http"):
+            Settings(**base, llm_provider="openai", llm_base_url=bad)
+    ok = Settings(**base, llm_provider="openai", llm_base_url="http://localhost:11434/v1")
+    assert ok.llm_api_key is None  # local servers need no key
+    # not enabled: nothing to validate
+    Settings(_env_file=None, llm_provider="openai")
+
+
+def test_build_llm_parser_uses_the_openai_backend_and_hides_its_key():
+    from bike_routing_agent.api import build_llm_parser
+    from bike_routing_agent.llm.backends import OpenAICompatBackend
+
+    cfg = Settings(
+        _env_file=None,
+        llm_parser_enabled=True,
+        llm_model="alias-large",
+        llm_provider="openai",
+        llm_base_url="https://llm.example/v1/",
+        llm_api_key="sk-secret-key",
+    )
+    parser = build_llm_parser(cfg)
+    assert isinstance(parser._backend, OpenAICompatBackend)
+    assert parser._backend._url == "https://llm.example/v1/chat/completions"
+    assert "sk-secret-key" not in repr(cfg)

@@ -625,3 +625,63 @@ def test_a_bad_departure_time_is_a_usage_error(value: str, message: str) -> None
     args = parse("route", "plan", "--origin", "a", "--destination", "b", "--departure-time", value)
     assert route_cmd.run(args, out, err, graph_factory=lambda: FakeGraph(READY_STATE)) == 2
     assert message in err.getvalue() and out.getvalue() == ""
+
+
+# ----------------------------------------------------- free text (issue #30)
+
+
+def test_text_is_sent_to_the_graph_as_free_text_with_the_timezone() -> None:
+    graph = FakeGraph(READY_STATE)
+    args = parse(
+        "route", "plan", "--text", "a 50 km loop from Braunschweig", "--timezone", "Europe/Berlin"
+    )
+    assert route_cmd.run(args, io.StringIO(), io.StringIO(), graph_factory=lambda: graph) == 0
+    assert graph.invoked_with["raw_input"] == {  # type: ignore[index]
+        "text": "a 50 km loop from Braunschweig",
+        "timezone": "Europe/Berlin",
+    }
+
+
+def test_the_interpretation_is_printed_so_a_wrong_parse_is_visible() -> None:
+    state = {
+        **READY_STATE,
+        "interpretation": {
+            "request": {"origin": "Braunschweig"},
+            "notes": ["note"],
+            "parser": None,
+        },
+    }
+    out = io.StringIO()
+    args = parse("route", "plan", "--text", "ride")
+    route_cmd.run(args, out, io.StringIO(), graph_factory=lambda: FakeGraph(state))
+    assert json.loads(out.getvalue())["interpretation"]["notes"] == ["note"]
+
+
+def test_without_a_parser_the_cli_reports_it_and_fails() -> None:
+    state = {
+        "status": "invalid",
+        "errors": [{"code": "nl_parsing_unavailable", "message": "no parser"}],
+    }
+    out = io.StringIO()
+    args = parse("route", "plan", "--text", "ride")
+    rc = route_cmd.run(args, out, io.StringIO(), graph_factory=lambda: FakeGraph(state))
+    assert rc == 1 and json.loads(out.getvalue())["errors"][0]["code"] == "nl_parsing_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["--text", "ride", "--origin", "A"], "--text replaces"),
+        (["--text", "ride", "--destination", "B"], "--text replaces"),
+        (["--text", "ride", "--via", "C"], "--text replaces"),
+        (["--text", "   "], "--text must not be empty"),
+        ([], "--origin is required"),
+        (["--destination", "B"], "--origin is required"),
+    ],
+)
+def test_text_and_structured_arguments_are_mutually_exclusive(argv, message) -> None:
+    graph = FakeGraph(READY_STATE)
+    out, err = io.StringIO(), io.StringIO()
+    args = parse("route", "plan", *argv)
+    assert route_cmd.run(args, out, err, graph_factory=lambda: graph) == 2
+    assert message in err.getvalue() and graph.invoked_with is None

@@ -263,6 +263,27 @@ provider payloads). `404` for unknown or malformed ids, `503` without a
 database. `plan_id` is the `plan_id` of a plan response, which is also the
 artifact id.
 
+## POST /v1/route/plan-text
+
+Plan from a description (issue #30; [llm-parser.md](llm-parser.md)).
+
+```json
+{"text": "50 km gravel loop from Braunschweig, tomorrow at 8",
+ "timezone": "Europe/Berlin", "max_alternatives": 3}
+```
+
+`text` is 1-500 characters; `timezone` (optional IANA name) anchors words like
+"tomorrow"; `max_alternatives` is the same cap as on `/v1/route/plan`. The
+response is the usual plan response plus `interpretation` (`request`,
+`departure_time`, `notes`, `parser` provenance). `503` when
+`LLM_PARSER_ENABLED` is off; parse failures are `200` with `status: "invalid"`
+and a `llm_parser_*` error code.
+
+## GET /v1/capabilities
+
+`{"text_planning": bool, "weather": bool, "history": bool}` -- which optional
+features this instance has, used by the web form to show or hide controls.
+
 ## GET /healthz
 
 Liveness probe for the API process itself: `{"status": "ok"}`. It does not

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
@@ -19,10 +20,15 @@ from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.health import build_health_monitor
+from bike_routing_agent.llm.backends import OpenAICompatBackend
+from bike_routing_agent.llm.parser import RouteRequestParser
 from bike_routing_agent.models import (
+    MAX_TEXT_CHARS,
     ClarificationOption,
     Coordinate,
+    Interpretation,
     PlanStatus,
+    PlanTextRequest,
     RouteCandidate,
     RoutePlanAPIRequest,
     RoutePlanResponse,
@@ -83,6 +89,32 @@ def build_cache(cfg: Settings) -> CacheBackend:
             timeout_s=cfg.cache_redis_timeout_s,
         )
     return InMemoryTTLCache()
+
+
+def build_llm_parser(
+    cfg: Settings, *, now: Callable[[], datetime] | None = None
+) -> RouteRequestParser | None:
+    """The free-text parser for a configuration, or ``None`` when it is off."""
+    if not cfg.llm_parser_enabled:
+        return None
+    backend = None
+    if cfg.llm_provider == "openai":
+        backend = OpenAICompatBackend(
+            base_url=str(cfg.llm_base_url),
+            model=str(cfg.llm_model),
+            api_key=cfg.llm_api_key.get_secret_value() if cfg.llm_api_key else None,
+            timeout_s=cfg.llm_timeout_s,
+            max_output_tokens=cfg.llm_max_output_tokens,
+        )
+    return RouteRequestParser(
+        model=str(cfg.llm_model),
+        api_key=cfg.anthropic_api_key.get_secret_value() if cfg.anthropic_api_key else None,
+        timeout_s=cfg.llm_timeout_s,
+        max_output_tokens=cfg.llm_max_output_tokens,
+        max_input_chars=MAX_TEXT_CHARS,
+        backend=backend,
+        **({"now": now} if now is not None else {}),
+    )
 
 
 def build_weather_service(
@@ -287,6 +319,7 @@ _geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
 
 _weather_service = build_weather_service(settings, cache=_cache)
+_llm_parser = build_llm_parser(settings)
 
 _health_monitor = build_health_monitor(
     geocoder=_geocode_provider,
@@ -311,6 +344,7 @@ _graph = build_graph(
     min_confidence=settings.geocoder_min_confidence,
     surface_enricher=build_surface_enricher(settings, cache=_cache),
     alternative_dedup_threshold_m=settings.alternative_dedup_threshold_m,
+    llm_parser=_llm_parser,
     weather_service=_weather_service,
     weather_max_samples=settings.weather_max_samples,
     weather_spacing_km=settings.weather_sample_spacing_km,
@@ -330,6 +364,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         min_confidence=cfg.geocoder_min_confidence,
         surface_enricher=build_surface_enricher(cfg, cache=cache),
         alternative_dedup_threshold_m=cfg.alternative_dedup_threshold_m,
+        llm_parser=build_llm_parser(cfg),
         weather_service=build_weather_service(cfg, cache=cache),
         weather_max_samples=cfg.weather_max_samples,
         weather_spacing_km=cfg.weather_sample_spacing_km,
@@ -358,7 +393,46 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
+    return await _plan_response(final_state)
 
+
+@app.post("/v1/route/plan-text", response_model=RoutePlanResponse)
+async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
+    """Plan from a request written in plain words (issue #30).
+
+    The text is turned into the same structured request ``/v1/route/plan``
+    takes -- places stay strings for the geocoder, which asks for clarification
+    when they are ambiguous -- and the response says how it was understood
+    (``interpretation``). Needs ``LLM_PARSER_ENABLED``.
+    """
+    if _llm_parser is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "free-text planning is not enabled: set LLM_PARSER_ENABLED=true and LLM_MODEL "
+                "(see docs/llm-parser.md)"
+            ),
+        )
+    raw_input = {
+        "text": request.text,
+        "timezone": request.timezone,
+        "max_alternatives": request.max_alternatives,
+    }
+    final_state = await _graph.ainvoke({"raw_input": raw_input})
+    return await _plan_response(final_state)
+
+
+@app.get("/v1/capabilities")
+async def capabilities() -> dict[str, bool]:
+    """Which optional features this instance has, for clients to adapt to."""
+    return {
+        "text_planning": _llm_parser is not None,
+        "weather": _weather_service is not None,
+        "history": _history is not None,
+    }
+
+
+async def _plan_response(final_state: dict[str, Any]) -> RoutePlanResponse:
     status = final_state.get("status", "provider_failure")
     route = None
     candidates: list[RouteCandidate] = []
@@ -379,9 +453,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         # (null-scored last).
         candidates = sorted(
             (
-                RouteCandidate.model_validate(c).model_copy(
-                    update={"raw_provider_response": None}
-                )
+                RouteCandidate.model_validate(c).model_copy(update={"raw_provider_response": None})
                 for c in final_state.get("candidates", [])
             ),
             key=lambda c: (
@@ -406,6 +478,11 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         errors=final_state.get("errors", []),
         plan_id=await _record_plan(final_state),
         weather_status=final_state.get("weather_status"),
+        interpretation=(
+            Interpretation.model_validate(final_state["interpretation"])
+            if final_state.get("interpretation")
+            else None
+        ),
     )
 
 

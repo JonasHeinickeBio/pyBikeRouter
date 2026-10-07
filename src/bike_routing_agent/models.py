@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
     BaseModel,
@@ -208,6 +209,52 @@ PlanStatus = Literal[
 ]
 
 
+MAX_TEXT_CHARS = 500
+
+
+class PlanTextRequest(BaseModel):
+    """Body of ``POST /v1/route/plan-text``: a request in the user's own words."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=MAX_TEXT_CHARS)
+    # The user's IANA time zone ("Europe/Berlin"), so "tomorrow at 8" means 8
+    # local time. Omitted: UTC.
+    timezone: str | None = Field(default=None, max_length=64)
+    max_alternatives: int | None = Field(default=None, ge=1, le=MAX_ALTERNATIVES)
+
+    @field_validator("text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("text must not be blank")
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(
+                f"unknown time zone {value!r} (use an IANA name like Europe/Berlin)"
+            ) from exc
+        return value
+
+
+class Interpretation(BaseModel):
+    """What the free-text parser understood, so the user can check it."""
+
+    request: dict[str, Any]
+    departure_time: str | None = None
+    # Anything unclear or not expressible, in the parser's words.
+    notes: list[str] = Field(default_factory=list)
+    # Which model and prompt version produced it (provenance).
+    parser: dict[str, Any] | None = None
+
+
 class ClarificationOption(BaseModel):
     field: str
     candidates: list[GeocodeCandidate]
@@ -234,3 +281,5 @@ class RoutePlanResponse(BaseModel):
     # "ok", "unavailable" (all providers failed), "not_covered" (the forecast
     # does not reach the ride) or "skipped" (nothing to forecast).
     weather_status: str | None = None
+    # Set by POST /v1/route/plan-text: the structured request the text was read as.
+    interpretation: Interpretation | None = None
