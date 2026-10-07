@@ -543,6 +543,7 @@ def test_the_api_key_never_appears_in_the_settings_repr():
 
 
 def test_build_llm_parser_follows_the_setting():
+    pytest.importorskip("anthropic", reason="the llm extra is not installed")
     from bike_routing_agent.api import build_llm_parser
     from bike_routing_agent.llm.parser import RouteRequestParser
 
