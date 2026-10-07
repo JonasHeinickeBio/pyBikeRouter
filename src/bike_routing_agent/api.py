@@ -31,6 +31,7 @@ from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
     InMemoryTTLCache,
+    NamespacedCache,
     RoutingProvider,
 )
 from bike_routing_agent.providers.brouter import BRouterAdapter
@@ -63,7 +64,26 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="bike-routing-agent", version="0.1.0")
 
 
-def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvider]]:
+def build_cache(cfg: Settings) -> CacheBackend:
+    """The cache geocoding and Overpass results go through (issue #29).
+
+    ``memory`` is process-local; ``redis`` is shared by every API instance and
+    degrades to uncached lookups when Redis is unreachable.
+    """
+    if cfg.cache_backend == "redis":
+        from bike_routing_agent.providers.redis_cache import RedisCacheBackend
+
+        return RedisCacheBackend(
+            str(cfg.cache_redis_url),
+            prefix=cfg.cache_key_prefix,
+            timeout_s=cfg.cache_redis_timeout_s,
+        )
+    return InMemoryTTLCache()
+
+
+def build_providers(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> tuple[GeocodeProvider, list[RoutingProvider]]:
     """Instantiate the geocode + routing providers for a configuration.
 
     With ``geocoder_provider == "pelias"`` the geocoder is served by the
@@ -72,8 +92,10 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
     timeout policy). ``config.Settings`` rejects "pelias" for the public
     ORS base URL at construction time. With ``routing_provider`` set to
     another engine, the Pelias geocoder still uses the shared ORS client but
-    routing goes through :func:`build_routing_providers`.
+    routing goes through :func:`build_routing_providers`. ``cache`` is the
+    shared geocode cache (a per-geocoder in-memory one when omitted).
     """
+    geocode_cache = NamespacedCache(cache, "geocode") if cache is not None else None
     if cfg.geocoder_provider == "pelias":
         ors_client = OpenRouteServiceClient(
             api_key=cfg.ors_api_key,
@@ -83,6 +105,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
         )
         geocoder: GeocodeProvider = PeliasGeocoder(
             client=ors_client,
+            cache=geocode_cache,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         )
         if cfg.routing_provider == "ors":
@@ -106,6 +129,7 @@ def build_providers(cfg: Settings) -> tuple[GeocodeProvider, list[RoutingProvide
             base_url=cfg.geocoder_base_url,
             user_agent=cfg.geocoder_user_agent,
             timeout_s=cfg.geocoder_timeout_s,
+            cache=geocode_cache,
             cache_ttl_s=cfg.geocoder_cache_ttl_s,
         ),
         build_routing_providers(cfg),
@@ -176,7 +200,7 @@ def build_surface_enricher(
         timeout_s=cfg.overpass_timeout_s,
         max_retries=cfg.overpass_max_retries,
         buffer_m=cfg.overpass_buffer_m,
-        cache=cache if cache is not None else InMemoryTTLCache(),
+        cache=NamespacedCache(cache, "overpass") if cache is not None else InMemoryTTLCache(),
         cache_ttl_s=cfg.overpass_cache_ttl_s,
     )
 
@@ -228,7 +252,8 @@ def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
 
 _export_dir = Path(settings.export_dir)
 
-_geocode_provider, _routing_providers = build_providers(settings)
+_cache = build_cache(settings)
+_geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
 
 _health_monitor = build_health_monitor(
@@ -236,6 +261,7 @@ _health_monitor = build_health_monitor(
     routing_providers=_routing_providers,
     artifact_store=_artifact_store,
     history=_history,
+    cache=_cache,
     # With the exports in the database a database outage fails plans, so it
     # gates readiness; otherwise history is best effort and only degrades.
     database_is_critical=settings.artifact_backend == "database",
@@ -250,14 +276,15 @@ _graph = build_graph(
     artifact_store=_artifact_store,
     ambiguity_margin=settings.geocoder_ambiguity_margin,
     min_confidence=settings.geocoder_min_confidence,
-    surface_enricher=build_surface_enricher(settings),
+    surface_enricher=build_surface_enricher(settings, cache=_cache),
     alternative_dedup_threshold_m=settings.alternative_dedup_threshold_m,
 )
 
 
 def build_graph_for_settings(cfg: Settings) -> Any:
     """Build a fresh graph from the given settings (used by the CLI)."""
-    geocode_provider, routing_providers = build_providers(cfg)
+    cache = build_cache(cfg)
+    geocode_provider, routing_providers = build_providers(cfg, cache=cache)
     artifact_store, _ = build_storage(cfg)
     return build_graph(
         geocode_provider=geocode_provider,
@@ -265,7 +292,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         artifact_store=artifact_store,
         ambiguity_margin=cfg.geocoder_ambiguity_margin,
         min_confidence=cfg.geocoder_min_confidence,
-        surface_enricher=build_surface_enricher(cfg),
+        surface_enricher=build_surface_enricher(cfg, cache=cache),
         alternative_dedup_threshold_m=cfg.alternative_dedup_threshold_m,
     )
 

@@ -409,3 +409,60 @@ def test_auto_migrate_defaults_on_and_reaches_the_database_object():
     assert history is not None and history._db._auto_migrate is False
     _, default_history = build_storage(cfg.model_copy(update={"auto_migrate": True}))
     assert default_history is not None and default_history._db._auto_migrate is True
+
+
+def test_cache_settings_defaults_and_validation():
+    s = Settings(_env_file=None)
+    assert (s.cache_backend, s.cache_redis_url, s.cache_key_prefix, s.cache_redis_timeout_s) == (
+        "memory",
+        None,
+        "bike-routing",
+        2.0,
+    )
+    with pytest.raises(ValidationError, match="CACHE_REDIS_URL"):
+        Settings(_env_file=None, cache_backend="redis")
+    with pytest.raises(ValidationError, match="cache_redis_timeout_s"):
+        Settings(_env_file=None, cache_redis_timeout_s=0)
+    with pytest.raises(ValidationError, match="cache_key_prefix"):
+        Settings(_env_file=None, cache_key_prefix="")
+
+
+def test_build_cache_selects_the_backend():
+    pytest.importorskip("redis")
+    from bike_routing_agent.api import build_cache
+    from bike_routing_agent.providers.base import InMemoryTTLCache
+    from bike_routing_agent.providers.redis_cache import RedisCacheBackend
+
+    assert isinstance(build_cache(Settings(_env_file=None)), InMemoryTTLCache)
+    shared = build_cache(
+        Settings(
+            _env_file=None,
+            cache_backend="redis",
+            cache_redis_url="redis://127.0.0.1:6379/0",
+            cache_key_prefix="bikes",
+        )
+    )
+    assert isinstance(shared, RedisCacheBackend)
+    assert shared._key("k") == "bikes:v1:k"
+
+
+def test_one_shared_cache_serves_the_geocoder_and_the_enricher_under_separate_namespaces():
+    from bike_routing_agent.api import build_providers, build_surface_enricher
+    from bike_routing_agent.providers.base import InMemoryTTLCache, NamespacedCache
+
+    cache = InMemoryTTLCache()
+    geocoder, _ = build_providers(Settings(_env_file=None), cache=cache)
+    assert isinstance(geocoder._cache, NamespacedCache)
+    assert geocoder._cache._backend is cache and geocoder._cache._namespace == "geocode:"
+
+    enriching = Settings(_env_file=None, osm_enrichment_enabled=True)
+    enricher = build_surface_enricher(enriching, cache=cache)
+    assert isinstance(enricher._cache, NamespacedCache)
+    assert enricher._cache._backend is cache and enricher._cache._namespace == "overpass:"
+
+
+def test_without_a_shared_cache_each_component_keeps_its_own_default():
+    from bike_routing_agent.api import build_providers
+
+    geocoder, _ = build_providers(Settings(_env_file=None))
+    assert geocoder._cache.__class__.__name__ == "InMemoryTTLCache"

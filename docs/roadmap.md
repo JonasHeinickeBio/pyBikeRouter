@@ -89,9 +89,11 @@ decisions still open.
   recording from the CLI. Open follow-ups: dashboard depth, count/size
   retention.
 
-- **Shared cache backend** -- `CacheBackend` protocol exists; a Redis (or
-  similar) implementation is needed for multi-instance deployments to share
-  geocode results.
+- **Shared cache backend** -- done (issue #29): `CACHE_BACKEND=redis` shares
+  geocode and Overpass results across instances, fail-open with a circuit
+  breaker, JSON-only, reported by `/readyz`, `cache` compose profile
+  ([providers.md](providers.md#shared-cache-redis)). Open follow-ups:
+  negative caching of not-found geocodes, and metrics on hit rates.
 - **Provider health over HTTP** -- done (issue #25): `GET /readyz`
   aggregates cached, time-bounded probes of the routing engines, geocoder,
   artifact store and database ([api.md](api.md#get-readyz)). Open

@@ -27,7 +27,10 @@ cp .env.example .env
 | `GEOCODER_BASE_URL` | Nominatim base URL (ignored for `pelias`) | `https://nominatim.openstreetmap.org` |
 | `GEOCODER_TIMEOUT_S` | geocoder request timeout | `5.0` |
 | `GEOCODER_USER_AGENT` | required by Nominatim's usage policy -- include a contact | `bike-routing-agent/0.1` |
-| `GEOCODER_CACHE_TTL_S` | in-memory geocode cache TTL | `3600` |
+| `GEOCODER_CACHE_TTL_S` | geocode cache TTL | `3600` |
+| `CACHE_BACKEND` | `memory` (per process) or `redis` (shared; needs the `cache` extra and `CACHE_REDIS_URL`) -- [providers.md](providers.md#shared-cache-redis) | `memory` |
+| `CACHE_REDIS_URL` | e.g. `redis://127.0.0.1:6379/0`; use `rediss://` and credentials for anything shared | unset |
+| `CACHE_KEY_PREFIX` / `CACHE_REDIS_TIMEOUT_S` | key namespace per environment; connect/operation timeout (seconds) | `bike-routing` / `2.0` |
 | `GEOCODER_AMBIGUITY_MARGIN` | top-2 confidence gap below which results are ambiguous | `0.05` |
 | `GEOCODER_MIN_CONFIDENCE` | below this, the top result is clarified instead of accepted | `0.3` |
 | `VALHALLA_BASE_URL` | base URL of a self-hosted Valhalla (meili) server | `http://localhost:8002` |

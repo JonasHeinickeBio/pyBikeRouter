@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     overpass_buffer_m: float = 25.0
     overpass_cache_ttl_s: int = 86_400
 
+    # Shared cache for geocode and Overpass results (issue #29). "memory" is
+    # per-process (the default); "redis" shares it across API instances and
+    # needs the `cache` extra. A Redis outage only makes lookups uncached.
+    cache_backend: Literal["memory", "redis"] = "memory"
+    cache_redis_url: str | None = None  # e.g. redis://127.0.0.1:6379/0
+    cache_key_prefix: str = "bike-routing"
+    cache_redis_timeout_s: float = 2.0
+
     # Two candidates whose routes stay within this many metres of each other
     # (discrete Frechet distance) are one alternative, not two (issue #24).
     # Deliberately small: engines snapping to the same streets differ by a
@@ -193,6 +201,18 @@ class Settings(BaseSettings):
                 "alternative_dedup_threshold_m must be > 0 "
                 f"(got {self.alternative_dedup_threshold_m})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_cache_settings(self) -> Settings:
+        if self.cache_backend == "redis" and not self.cache_redis_url:
+            raise ValueError("cache_backend='redis' requires CACHE_REDIS_URL to be set")
+        if self.cache_redis_timeout_s <= 0:
+            raise ValueError(
+                f"cache_redis_timeout_s must be > 0 (got {self.cache_redis_timeout_s})"
+            )
+        if not self.cache_key_prefix:
+            raise ValueError("cache_key_prefix must not be empty")
         return self
 
     @model_validator(mode="after")
