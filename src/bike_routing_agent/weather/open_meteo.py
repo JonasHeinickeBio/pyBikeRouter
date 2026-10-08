@@ -50,6 +50,10 @@ def _number(value: Any) -> float | None:
 
 class OpenMeteoProvider:
     name = "open-meteo"
+    # Optional fields it can supply to fill gaps in another provider's forecast.
+    provides = frozenset(
+        {"apparent_temperature_c", "uv_index", "wind_gust_kmh", "precipitation_probability"}
+    )
     attribution = "Weather data by Open-Meteo.com (CC BY 4.0)"
 
     def __init__(

@@ -270,3 +270,28 @@ async def test_without_a_service_or_candidates_the_node_does_nothing():
     assert await off(state(candidate())) == {}
     run, _ = node()
     assert await run({"candidates": []}) == {}
+
+
+async def test_merged_sources_reach_the_route_weather_and_the_summary():
+    class Donor(FakeProvider):
+        provides = frozenset({"uv_index", "apparent_temperature_c"})
+
+        async def forecast(self, points, start, end):
+            return [
+                hourly(start, self.hours, uv_index=4.0, apparent_temperature_c=7.0) for _ in points
+            ]
+
+    service = WeatherService([FakeProvider("primary"), Donor("donor")], merge=True)
+    run = build_weather_node(service=service, now=lambda: NOW)
+    update = await run(state(candidate()))
+    weather = update["candidates"][0]["weather"]
+    assert weather["provider"] == "primary" and weather["sources"] == ["primary", "donor"]
+    assert weather["attribution"] == "data by primary; data by donor"
+    assert weather["summary"]["uv_index_max"] == 4.0
+    assert weather["summary"]["apparent_temperature_min_c"] == 7.0
+
+
+async def test_without_merging_the_only_source_is_the_provider():
+    run, _ = node()
+    weather = (await run(state(candidate())))["candidates"][0]["weather"]
+    assert weather["sources"] == ["fake"]

@@ -499,6 +499,9 @@ def test_build_weather_service_follows_the_provider_setting(monkeypatch):
         service = build_weather_service(Settings(_env_file=None, weather_provider=setting))
         assert service is not None and service.provider_names == expected
 
+    assert build_weather_service(Settings(_env_file=None))._merge is True
+    assert build_weather_service(Settings(_env_file=None, weather_merge=False))._merge is False
+
     cache = InMemoryTTLCache()
     shared = build_weather_service(Settings(_env_file=None), cache=cache)
     assert isinstance(shared._cache, NamespacedCache) and shared._cache._namespace == "weather:"

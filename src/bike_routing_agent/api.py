@@ -151,6 +151,7 @@ def build_weather_service(
         providers,
         cache=NamespacedCache(cache, "weather") if cache is not None else None,
         cache_ttl_s=cfg.weather_cache_ttl_s,
+        merge=cfg.weather_merge,
     )
 
 

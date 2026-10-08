@@ -35,16 +35,42 @@ provider is down or rate-limiting us the next one answers instead of the
 feature disappearing. DWD declines a route with any point outside Germany, so
 those go straight to Open-Meteo.
 
-What you give up with DWD: it publishes **no UV index and no feels-like
-temperature** (both stay missing, never zero), and it is a per-station forecast.
-If you prefer Open-Meteo's grid forecast with UV and feels-like in Germany too,
-set `WEATHER_PROVIDER=open-meteo` (keeping its non-commercial limitation in
-mind), or `dwd` to use DWD alone. The free Open-Meteo tier
+DWD publishes **no UV index and no feels-like temperature** and it is a
+per-station forecast, so by default the gaps are filled from a second source
+(next section). To use Open-Meteo's grid forecast alone set
+`WEATHER_PROVIDER=open-meteo` (keeping its non-commercial limitation in mind),
+or `dwd` to use DWD alone.
+
+### Merging sources
+
+With `WEATHER_MERGE=true` (the default) the first provider that answers is the
+**primary** and its values are never replaced. Only the *optional* fields it
+leaves missing (feels-like, UV index, gusts, precipitation probability) are
+taken from a later provider **that can supply them**, matched by point and hour.
+Nothing is averaged: two forecast models disagreeing is not settled by splitting
+the difference, and every value has one origin.
+
+- In Germany that means DWD for wind, rain and temperature, plus Open-Meteo's UV
+  and feels-like (and any hour where DWD has no gust or rain probability).
+- Outside Germany Open-Meteo has all the optional fields, so nothing is merged
+  and MET Norway (which supplies none of them) is only the fallback.
+- A donor is asked only when something is actually missing, concurrently with
+  the others, and its failure is ignored -- the primary forecast is still
+  returned. Each provider's result is cached on its own.
+- `route.weather.sources` lists every provider whose data is in the forecast
+  (primary first), the credits are combined, and the card links all of them.
+
+Two consequences to know: the route's coordinates go to **every** provider that
+is asked (set `WEATHER_MERGE=false` to send them to the primary only), and if you
+chose DWD for its commercial-use licence, a merged forecast also contains
+Open-Meteo data, whose free tier is non-commercial -- turn merging off (or use
+`WEATHER_PROVIDER=dwd`) in that case. The free Open-Meteo tier
 is for non-commercial use; a commercial deployment needs their subscription (or
 `WEATHER_PROVIDER=met-no` and its terms).
 
 **Privacy.** The coordinates of the route (a handful of points, rounded to
-~5 km grid cells) are sent to the chosen provider. Set `WEATHER_PROVIDER=none`
+~5 km grid cells) are sent to the chosen provider (and to a second one when
+[merging](#merging-sources) fills gaps). Set `WEATHER_PROVIDER=none`
 to switch the feature off completely -- then no weather request ever leaves the
 service.
 
@@ -138,7 +164,7 @@ switches it off).
 
 See [configuration.md](configuration.md): `WEATHER_PROVIDER` (`auto`, `dwd`, `open-meteo`,
 `met-no`, `none`), `WEATHER_USER_AGENT` (MET Norway requires you to identify
-your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MAX_SAMPLES`,
+your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MERGE`, `WEATHER_MAX_SAMPLES`,
 `WEATHER_SAMPLE_SPACING_KM`, and the two base URLs.
 
 ## Not included
@@ -160,7 +186,7 @@ known values, sunrise/sunset against published London solstice times, the rain
 stretch and feels-like rules, the providers against responses captured from the real APIs
 (`tests/fixtures/open_meteo_*.json`, `met_no_compact_response.json`,
 `dwd_brightsky_response.json`), including DWD's Germany-only coverage rule, the
-service's fallback and caching, and the node. `tests/test_frontend_weather.py`
+service's fallback, caching and gap-filling merge, and the node. `tests/test_frontend_weather.py`
 runs the UI helpers under node. `tests/live/test_live_weather.py` calls the real
 services (`pytest -m live`). The suite sets `WEATHER_PROVIDER=none` so no test
 can reach a real weather API by accident.

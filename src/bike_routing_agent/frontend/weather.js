@@ -155,11 +155,17 @@
     return `${day} ${clock(iso)}`;
   }
 
+  /** The licence credit plus a link for every source that contributed to the forecast. */
   function providerCredit(weather) {
-    const site = PROVIDER_SITES[weather.provider];
-    if (!site) return escapeHtml(weather.attribution || "");
-    const text = escapeHtml(weather.attribution || `Weather data by ${site.name}`);
-    return `${text} &middot; <a href="${site.url}" target="_blank" rel="noopener">${site.name}</a>`;
+    const names =
+      Array.isArray(weather.sources) && weather.sources.length ? weather.sources : [weather.provider];
+    const sites = names.map((n) => PROVIDER_SITES[n]).filter(Boolean);
+    if (!sites.length) return escapeHtml(weather.attribution || "");
+    const text = escapeHtml(weather.attribution || `Weather data by ${sites[0].name}`);
+    const links = sites
+      .map((s) => `<a href="${s.url}" target="_blank" rel="noopener">${s.name}</a>`)
+      .join(" &middot; ");
+    return `${text} &middot; ${links}`;
   }
 
   function stripItem(sample) {

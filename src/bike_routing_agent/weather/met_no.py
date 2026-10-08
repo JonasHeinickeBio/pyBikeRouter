@@ -39,6 +39,7 @@ def _number(value: Any) -> float | None:
 
 class MetNoProvider:
     name = "met-no"
+    provides: frozenset[str] = frozenset()  # the compact format has none of the optional fields
     attribution = "Weather data from MET Norway (CC BY 4.0)"
 
     def __init__(
