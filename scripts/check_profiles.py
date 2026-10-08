@@ -130,7 +130,7 @@ def main() -> None:
         for label, profile in targets:
             m = route_metrics(options.base_url, profile, origin, dest)
             results[name][label] = {"profile": profile, **m}
-            print(row(label if options.profile is None else profile, profile, m, options.profile))
+            print(row(profile if options.profile else label, profile, m, options.profile))
     if options.out:
         options.out.write_text(json.dumps(results, indent=1))
         print(f"\nwrote {options.out}")
