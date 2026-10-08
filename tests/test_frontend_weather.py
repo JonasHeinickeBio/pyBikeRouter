@@ -255,3 +255,14 @@ def test_the_card_lists_the_new_facts():
     html = run_js(f"W.weatherCardHtml({json.dumps(weather)}, 'ok')")
     assert "Feels like" in html and "Precipitation" in html and "Sunrise / sunset" in html
     assert run_js("W.daylightText(null)") is None
+
+
+def test_the_credit_names_every_source_that_contributed():
+    one = {"provider": "dwd", "attribution": "Weather data: DWD"}
+    text = run_js(f"W.providerCredit({json.dumps(one)})")
+    assert text.count("<a ") == 1 and "Deutscher Wetterdienst" in text
+    merged = {**one, "sources": ["dwd", "open-meteo"], "attribution": "DWD; Open-Meteo"}
+    text = run_js(f"W.providerCredit({json.dumps(merged)})")
+    assert text.count("<a ") == 2 and "Open-Meteo</a>" in text
+    unknown = {"provider": "other", "attribution": "x <b>"}
+    assert run_js(f"W.providerCredit({json.dumps(unknown)})") == "x &lt;b&gt;"

@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     # coordinates are sent to the chosen provider.
     weather_provider: Literal["auto", "dwd", "open-meteo", "met-no", "none"] = "auto"
     weather_open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    # Fill what the first provider lacks (UV, feels-like, ...) from the others.
+    weather_merge: bool = True
     weather_dwd_url: str = "https://api.brightsky.dev/weather"
     weather_met_no_url: str = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
     # MET Norway rejects anonymous/generic clients: say who you are.

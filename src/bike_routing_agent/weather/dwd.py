@@ -104,6 +104,7 @@ def _is_day(icon: Any) -> bool | None:
 
 class DwdProvider:
     name = "dwd"
+    provides = frozenset({"wind_gust_kmh", "precipitation_probability"})
     attribution = "Weather data: Deutscher Wetterdienst (DWD), via Bright Sky"
 
     def __init__(

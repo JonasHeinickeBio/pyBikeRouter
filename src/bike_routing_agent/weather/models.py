@@ -129,6 +129,9 @@ class WeatherSummary(BaseModel):
 
 class RouteWeather(BaseModel):
     provider: str
+    # Every provider whose data is in this forecast, the primary one first. More than
+    # one only when gaps in the primary forecast were filled from another source.
+    sources: list[str] = Field(default_factory=list)
     attribution: str
     departure: datetime
     arrival: datetime

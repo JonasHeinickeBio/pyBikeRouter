@@ -383,6 +383,7 @@ def build_route_weather(
     attribution: str,
     retrieved_at: datetime,
     distance_m: float | None = None,
+    sources: Sequence[str] = (),
 ) -> RouteWeather | None:
     """Weather for one route, or ``None`` when the forecast covers none of it."""
     samples: list[WeatherSample] = []
@@ -415,6 +416,7 @@ def build_route_weather(
     daylight = daylight_for(points, departure, arrival)
     return RouteWeather(
         provider=provider,
+        sources=list(sources) or [provider],
         attribution=attribution,
         departure=departure,
         arrival=arrival,
