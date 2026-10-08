@@ -42,11 +42,11 @@ cp .env.example .env
 | `HEALTH_GEOCODER_CACHE_TTL_S` | same for the geocoder, longer because the default is the public Nominatim | `300` |
 | `ORS_XMX` / `ORS_XMS` / `ORS_MEM_LIMIT` | self-hosted ORS container sizing (compose only; defaults `4g` / `128m` / `6g`); a city extract needs far less ([self-hosted.md](self-hosted.md#sizing-knobs)) | see left |
 | `NOMINATIM_THREADS` / `NOMINATIM_MEM_LIMIT` | self-hosted Nominatim import threads and container limit (compose only; defaults `4` / `4g`) | see left |
-| `WEATHER_PROVIDER` | `auto` (Open-Meteo, MET Norway as fallback), `open-meteo`, `met-no`, or `none` (off; no weather request leaves the service) -- [weather.md](weather.md) | `auto` |
-| `WEATHER_USER_AGENT` | identifies your app to MET Norway (required by their terms) | `bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter` |
+| `WEATHER_PROVIDER` | `auto` (DWD for routes in Germany, then Open-Meteo, then MET Norway), `dwd`, `open-meteo`, `met-no`, or `none` (off; no weather request leaves the service) -- [weather.md](weather.md) | `auto` |
+| `WEATHER_USER_AGENT` | identifies your app to MET Norway (required by their terms) and Bright Sky | `bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter` |
 | `WEATHER_TIMEOUT_S` / `WEATHER_CACHE_TTL_S` | per-request timeout; how long a forecast is reused (seconds) | `8` / `1800` |
 | `WEATHER_MAX_SAMPLES` / `WEATHER_SAMPLE_SPACING_KM` | forecast points per route (2-10) and their spacing | `5` / `10` |
-| `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Open-Meteo or a proxy) | public URLs |
+| `WEATHER_DWD_URL` / `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Bright Sky/Open-Meteo or a proxy) | public URLs |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |
 | `DATABASE_POOL_MAX_SIZE` | connection pool size (>= 1) | `5` |

@@ -24,6 +24,7 @@
   const PROVIDER_SITES = {
     "open-meteo": { name: "Open-Meteo", url: "https://open-meteo.com/" },
     "met-no": { name: "MET Norway", url: "https://api.met.no/" },
+    dwd: { name: "Deutscher Wetterdienst", url: "https://www.dwd.de/" },
   };
 
   const COMPASS = [

@@ -63,6 +63,10 @@ class WeatherService:
     ) -> WeatherForecast:
         last_error: Exception | None = None
         for provider in self._providers:
+            # A regional provider (DWD) is skipped for routes it does not cover.
+            covers = getattr(provider, "covers", None)
+            if covers is not None and not covers(points):
+                continue
             key = _cache_key(provider.name, points, start, end)
             cached = await self._cache.get(key)
             if isinstance(cached, dict):
@@ -94,6 +98,10 @@ class WeatherService:
                 ttl_s=self._cache_ttl_s,
             )
             return WeatherForecast(provider.name, provider.attribution, series, retrieved_at)
+        if last_error is None:
+            raise ProviderUnavailableError(
+                "no weather provider covers these points", provider="weather"
+            )
         raise ProviderUnavailableError(
             "no weather provider could be reached", provider="weather"
         ) from last_error

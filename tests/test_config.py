@@ -490,7 +490,8 @@ def test_build_weather_service_follows_the_provider_setting(monkeypatch):
 
     assert build_weather_service(Settings(_env_file=None, weather_provider="none")) is None
     names = {
-        "auto": ["open-meteo", "met-no"],
+        "auto": ["dwd", "open-meteo", "met-no"],
+        "dwd": ["dwd"],
         "open-meteo": ["open-meteo"],
         "met-no": ["met-no"],
     }

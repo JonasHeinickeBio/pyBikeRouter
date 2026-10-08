@@ -98,8 +98,9 @@ class Settings(BaseSettings):
     # (global, hourly, gusts/UV/probability) and falls back to MET Norway;
     # "none" switches the feature off (no request leaves the service). Route
     # coordinates are sent to the chosen provider.
-    weather_provider: Literal["auto", "open-meteo", "met-no", "none"] = "auto"
+    weather_provider: Literal["auto", "dwd", "open-meteo", "met-no", "none"] = "auto"
     weather_open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
+    weather_dwd_url: str = "https://api.brightsky.dev/weather"
     weather_met_no_url: str = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
     # MET Norway rejects anonymous/generic clients: say who you are.
     weather_user_agent: str = "bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter"
@@ -284,8 +285,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"weather_sample_spacing_km must be > 0 (got {self.weather_sample_spacing_km})"
             )
-        if self.weather_provider in ("auto", "met-no") and not self.weather_user_agent.strip():
-            raise ValueError("weather_user_agent must identify your application (MET Norway)")
+        if (
+            self.weather_provider in ("auto", "dwd", "met-no")
+            and not self.weather_user_agent.strip()
+        ):
+            raise ValueError(
+                "weather_user_agent must identify your application (MET Norway, Bright Sky)"
+            )
         return self
 
     @model_validator(mode="after")
