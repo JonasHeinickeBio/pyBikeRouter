@@ -18,13 +18,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from bike_routing_agent.weather.daylight import local_solar_date, sun_times
 from bike_routing_agent.weather.models import (
     CONDITION_SEVERITY,
     Condition,
+    Daylight,
     HourlyWeather,
     RouteWeather,
     WeatherSample,
     WeatherSummary,
+    WetStretch,
 )
 
 EARTH_RADIUS_M = 6_371_008.8
@@ -46,6 +49,16 @@ HEADWIND_NOTE_KMH = 15.0
 COLD_NOTE_C = 3.0
 HEAT_NOTE_C = 32.0
 UV_NOTE = 6.0
+# A sample counts as wet for the "where is the rain" stretch from this on.
+WET_PROBABILITY = RAIN_PROBABILITY_NOTE
+WET_MM_PER_HOUR = 0.3
+WET_CONDITIONS: frozenset[str] = frozenset(
+    {"drizzle", "rain", "freezing_rain", "snow", "thunderstorm"}
+)
+# Feels-like is worth stating when it is at least this much colder/warmer than the air.
+FEELS_LIKE_GAP_C = 3.0
+# Mention the light running out when sunset follows arrival within this long.
+SUNSET_SOON_MIN = 45.0
 
 
 @dataclass(frozen=True)
@@ -172,15 +185,69 @@ def _worst(conditions: Sequence[Condition]) -> Condition:
     return max(conditions, key=CONDITION_SEVERITY.index, default="unknown")
 
 
-def summarize(samples: Sequence[WeatherSample]) -> WeatherSummary:
+def _is_wet(hour: HourlyWeather) -> bool:
+    return (
+        (
+            hour.precipitation_probability is not None
+            and hour.precipitation_probability >= WET_PROBABILITY
+        )
+        or (hour.precipitation_mm is not None and hour.precipitation_mm >= WET_MM_PER_HOUR)
+        or hour.condition in WET_CONDITIONS
+    )
+
+
+def wet_stretch(samples: Sequence[WeatherSample], distance_m: float | None) -> WetStretch | None:
+    """From the first to the last wet sample along the route, or ``None`` when dry."""
+    wet = [s for s in samples if _is_wet(s.weather)]
+    if not wet:
+        return None
+    first, last = wet[0], wet[-1]
+    km = (lambda f: f * distance_m / 1000.0) if distance_m else (lambda f: None)
+    return WetStretch(
+        from_fraction=first.fraction,
+        to_fraction=last.fraction,
+        from_km=km(first.fraction),
+        to_km=km(last.fraction),
+        from_time=first.time,
+        to_time=last.time,
+        whole_route=len(wet) == len(samples),
+    )
+
+
+def daylight_for(
+    points: Sequence[RoutePoint], departure: datetime, arrival: datetime
+) -> Daylight | None:
+    """Sunrise/sunset at the start of the route and how they sit around the ride."""
+    if not points:
+        return None
+    start = points[0]
+    times = sun_times(local_solar_date(departure, start.lon), start.lat, start.lon)
+    if times is None:
+        return None
+    sunrise, sunset = times
+    return Daylight(
+        sunrise=sunrise,
+        sunset=sunset,
+        minutes_of_light_left_at_arrival=(sunset - arrival).total_seconds() / 60.0,
+        minutes_before_sunrise_at_start=(sunrise - departure).total_seconds() / 60.0,
+    )
+
+
+def summarize(
+    samples: Sequence[WeatherSample], *, distance_m: float | None = None
+) -> WeatherSummary:
     hours = [s.weather for s in samples]
     temps = _present([h.temperature_c for h in hours])
+    feels = _present([h.apparent_temperature_c for h in hours])
     speeds = _present([h.wind_speed_kmh for h in hours])
     headwinds = _present([s.headwind_kmh for s in samples])
     day_flags = [h.is_day for h in hours if h.is_day is not None]
     return WeatherSummary(
         temperature_min_c=min(temps, default=None),
         temperature_max_c=max(temps, default=None),
+        apparent_temperature_min_c=min(feels, default=None),
+        apparent_temperature_max_c=max(feels, default=None),
+        wet_stretch=wet_stretch(samples, distance_m),
         precipitation_probability_max=max(
             _present([h.precipitation_probability for h in hours]), default=None
         ),
@@ -207,7 +274,36 @@ def summarize(samples: Sequence[WeatherSample]) -> WeatherSummary:
     )
 
 
-def advisories(summary: WeatherSummary) -> list[str]:
+def _km(value: float) -> str:
+    return f"{value:.0f}"
+
+
+def _wet_note(stretch: WetStretch) -> str:
+    if stretch.whole_route:
+        return "Precipitation is forecast along the whole route."
+    if stretch.from_km is None or stretch.to_km is None:
+        return "Precipitation is forecast along part of the route."
+    start, end = _km(stretch.from_km), _km(stretch.to_km)
+    if start == end:
+        return f"Precipitation is forecast around km {start} of the route."
+    return f"Precipitation is forecast between about km {start} and km {end} of the route."
+
+
+def _daylight_note(daylight: Daylight) -> str | None:
+    if daylight.minutes_before_sunrise_at_start > 0:
+        return (
+            f"The ride starts about {daylight.minutes_before_sunrise_at_start:.0f} "
+            "minutes before sunrise."
+        )
+    left = daylight.minutes_of_light_left_at_arrival
+    if left < 0:
+        return f"You arrive about {-left:.0f} minutes after sunset."
+    if left <= SUNSET_SOON_MIN:
+        return f"Sunset is about {left:.0f} minutes after you arrive."
+    return None
+
+
+def advisories(summary: WeatherSummary, daylight: Daylight | None = None) -> list[str]:
     """Forecast facts worth stating. Never a statement about safety."""
     notes: list[str] = []
     condition = summary.worst_condition
@@ -231,6 +327,9 @@ def advisories(summary: WeatherSummary) -> list[str]:
             detail.append(f"up to {rate:.1f} mm/h")
         notes.append("Rain is likely: " + ", ".join(detail) + ".")
 
+    if summary.wet_stretch is not None:
+        notes.append(_wet_note(summary.wet_stretch))
+
     gust = summary.wind_gust_max_kmh
     if gust is not None and gust >= GUST_NOTE_KMH:
         notes.append(f"Wind gusts up to {gust:.0f} km/h are forecast.")
@@ -252,10 +351,23 @@ def advisories(summary: WeatherSummary) -> list[str]:
     heat = summary.temperature_max_c
     if heat is not None and heat >= HEAT_NOTE_C:
         notes.append(f"Temperatures up to {heat:.0f} °C are forecast.")
+    feels = summary.apparent_temperature_min_c
+    if (
+        feels is not None
+        and cold is not None
+        and cold - feels >= FEELS_LIKE_GAP_C
+        and feels <= COLD_NOTE_C + FEELS_LIKE_GAP_C
+    ):
+        notes.append(f"With the wind it feels like {feels:.0f} °C.")
     uv = summary.uv_index_max
     if uv is not None and uv >= UV_NOTE:
         notes.append(f"UV index up to {uv:.0f} is forecast.")
-    if summary.after_dark:
+    # Sunrise and sunset are computed for the place and date, so they are preferred
+    # to the forecast's daylight flag; the flag is the fallback (e.g. polar days).
+    daylight_note = _daylight_note(daylight) if daylight is not None else None
+    if daylight_note:
+        notes.append(daylight_note)
+    elif daylight is None and summary.after_dark:
         notes.append("Part of the ride is after dark according to the forecast.")
     return notes
 
@@ -270,6 +382,7 @@ def build_route_weather(
     provider: str,
     attribution: str,
     retrieved_at: datetime,
+    distance_m: float | None = None,
 ) -> RouteWeather | None:
     """Weather for one route, or ``None`` when the forecast covers none of it."""
     samples: list[WeatherSample] = []
@@ -297,15 +410,18 @@ def build_route_weather(
         )
     if not samples:
         return None
-    summary = summarize(samples)
+    arrival = departure + timedelta(seconds=duration_s)
+    summary = summarize(samples, distance_m=distance_m)
+    daylight = daylight_for(points, departure, arrival)
     return RouteWeather(
         provider=provider,
         attribution=attribution,
         departure=departure,
-        arrival=departure + timedelta(seconds=duration_s),
+        arrival=arrival,
         duration_source="provider" if duration_source == "provider" else "estimated",
         retrieved_at=retrieved_at,
         samples=samples,
         summary=summary,
-        advisories=advisories(summary),
+        daylight=daylight,
+        advisories=advisories(summary, daylight),
     )

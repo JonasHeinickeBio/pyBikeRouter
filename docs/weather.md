@@ -55,10 +55,21 @@ service.
    crosswind = `speed x sin(from - b)` (positive crosswind = from the right).
    Because each candidate has its own geometry, candidates differ in how much
    headwind they have, which is what the table's *Wind* column compares.
-5. **Summarise**: temperature range, rain probability and rate, wind mean/max/
-   gusts, mean headwind and the share of the route with at least 10 km/h of head
-   or tailwind, UV, the worst condition and whether part of the ride is after
-   dark.
+5. **Summarise**: temperature range, "feels like" range (Open-Meteo only; MET
+   Norway has none, so it stays missing), rain probability and rate, wind mean/
+   max/gusts, mean headwind and the share of the route with at least 10 km/h of
+   head or tailwind, UV, the worst condition and whether part of the ride is
+   after dark.
+6. **Where the rain is** (`summary.wet_stretch`): the first to the last sample
+   that is wet (precipitation probability >= 60 %, >= 0.3 mm/h, or a rain/snow/
+   storm condition), as kilometres along the route and the clock times there.
+   It is bounded by forecast *samples*, so it is approximate.
+7. **Daylight** (`daylight`): sunrise and sunset at the start of the route on the
+   day of the ride, **computed** from date and place (NOAA solar formulas, within
+   a couple of minutes) rather than fetched, so it works with every provider and
+   offline. `minutes_of_light_left_at_arrival` is negative when you arrive after
+   sunset. In polar day/night there is no sunrise or sunset and the field is
+   empty.
 
 ## Advisories
 
@@ -72,8 +83,11 @@ safety (the explanation still ends "not a guarantee of safety"):
 | Wind gusts / sustained wind | >= 50 km/h / >= 30 km/h |
 | Headwind / tailwind | mean >= 15 km/h |
 | Cold / freezing / heat | <= 3 C / <= 0 C / >= 32 C |
+| Where the rain is | any wet sample: "between about km 12 and km 31", "around km 20" or "along the whole route" |
+| Feels like | at least 3 degrees below the air temperature and at or below 6 C |
 | UV | index >= 6 |
-| After dark | the forecast's daylight flag is off for some sample |
+| Sunrise / sunset | the ride starts before sunrise, ends after sunset, or sunset follows arrival within 45 minutes |
+| After dark | only when sunrise/sunset cannot be computed (polar day/night): the forecast's daylight flag is off for some sample |
 
 These thresholds decide what is *mentioned* (`weather/analysis.py`); they are
 not calibrated against anything and not used for ranking.
@@ -94,7 +108,9 @@ only degrade the instance, never make it unready.
 - **When**: depart now, in an hour, this evening, tomorrow morning, or any date
   and time (your local time, up to 14 days ahead).
 - **Weather card** for the candidate you are inspecting: conditions and
-  temperature range, rain chance, wind with direction, a headwind/tailwind bar,
+  temperature range, "feels like" (when it differs by 2 degrees or more), rain
+  chance, **where and when the rain is** (kilometres and local clock times),
+  sunrise / sunset in your local time, wind with direction, a headwind/tailwind bar,
   the forecast hour by hour along the ride, advisory notes, and the provider's
   required attribution.
 - **Map**: a marker per forecast point on the route (hover for the details).
@@ -120,14 +136,17 @@ your app), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MAX_SAMPLES`,
 - **No effect on the score or ranking**: weights for weather would need the same
   calibration evidence as every other term ([scoring-and-exports.md](scoring-and-exports.md)).
 - **No wind-adjusted travel time**: durations are the engine's.
-- No radar nowcast, historical weather, or sunrise/sunset beyond the daylight flag.
+- No radar nowcast and no historical weather.
+- No "best time to leave" comparison yet (it would need the forecast for
+  several departure times; see the [roadmap](roadmap.md)).
 - MET Norway's compact format has no gusts, probability or UV, so those stay
   missing (reported as missing, never as zero) when it answers.
 
 ## Tests
 
 `tests/weather/` (offline): condition mappings, the sampling and wind maths with
-known values, both providers against responses captured from the real APIs
+known values, sunrise/sunset against published London solstice times, the rain
+stretch and feels-like rules, both providers against responses captured from the real APIs
 (`tests/fixtures/open_meteo_*.json`, `met_no_compact_response.json`), the
 service's fallback and caching, and the node. `tests/test_frontend_weather.py`
 runs the UI helpers under node. `tests/live/test_live_weather.py` calls the real

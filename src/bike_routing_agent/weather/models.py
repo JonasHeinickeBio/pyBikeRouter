@@ -75,9 +75,42 @@ class WeatherSample(BaseModel):
     crosswind_kmh: float | None = None
 
 
+class WetStretch(BaseModel):
+    """Where along the route (and when) precipitation is forecast.
+
+    Bounded by the first and last wet *sample*, so it is approximate: forecast
+    points are kilometres apart. ``from_km``/``to_km`` are ``None`` when the
+    route length is unknown.
+    """
+
+    from_fraction: float = Field(ge=0, le=1)
+    to_fraction: float = Field(ge=0, le=1)
+    from_km: float | None = None
+    to_km: float | None = None
+    from_time: datetime
+    to_time: datetime
+    # True when every sample on the route is wet.
+    whole_route: bool = False
+
+
+class Daylight(BaseModel):
+    """Sunrise and sunset at the start of the route (computed, not forecast)."""
+
+    sunrise: datetime
+    sunset: datetime
+    # Minutes between arriving and sunset: negative = arriving after sunset.
+    minutes_of_light_left_at_arrival: float
+    # Minutes between starting and sunrise: positive = starting before sunrise.
+    minutes_before_sunrise_at_start: float
+
+
 class WeatherSummary(BaseModel):
     temperature_min_c: float | None = None
     temperature_max_c: float | None = None
+    # "Feels like" (wind chill / heat index) where the provider supplies it.
+    apparent_temperature_min_c: float | None = None
+    apparent_temperature_max_c: float | None = None
+    wet_stretch: WetStretch | None = None
     precipitation_probability_max: float | None = None
     precipitation_mm_per_hour_max: float | None = None
     wind_speed_mean_kmh: float | None = None
@@ -105,5 +138,6 @@ class RouteWeather(BaseModel):
     retrieved_at: datetime
     samples: list[WeatherSample]
     summary: WeatherSummary
+    daylight: Daylight | None = None
     # Facts about the forecast, never statements about safety.
     advisories: list[str] = Field(default_factory=list)

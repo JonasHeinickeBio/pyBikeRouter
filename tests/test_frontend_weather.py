@@ -195,3 +195,63 @@ def test_provider_credit_links_known_providers_and_plain_text_otherwise():
         "W.providerCredit({provider: 'open-meteo', attribution: 'Weather data by Open-Meteo.com'})"
     )
     assert "<a" not in run_js("W.providerCredit({provider: 'other', attribution: 'By <b>x</b>'})")
+
+
+def test_feels_like_only_when_it_differs_from_the_air():
+    cold = {
+        "temperature_min_c": 6,
+        "temperature_max_c": 8,
+        "apparent_temperature_min_c": 2.2,
+        "apparent_temperature_max_c": 4.4,
+    }
+    assert run_js(f"W.feelsLike({json.dumps(cold)})") == "2–4 °C"
+    same = {**cold, "apparent_temperature_min_c": 5.5, "apparent_temperature_max_c": 8.5}
+    assert run_js(f"W.feelsLike({json.dumps(same)})") is None
+    assert run_js("W.feelsLike({temperature_min_c: 5})") is None
+
+
+def test_wet_stretch_text_says_where_and_when():
+    stretch = {
+        "from_km": 11.6,
+        "to_km": 30.2,
+        "from_time": "2026-10-07T12:00:00Z",
+        "to_time": "2026-10-07T13:00:00Z",
+        "whole_route": False,
+    }
+    text = run_js(f"W.wetStretchText({json.dumps(stretch)})")
+    assert text.startswith("km 12–30 (") and "–" in text.split("(")[1]
+    assert run_js(f"W.wetStretchText({json.dumps({**stretch, 'whole_route': True})})").startswith(
+        "along the whole route"
+    )
+    unknown = {**stretch, "from_km": None, "to_km": None}
+    assert run_js(f"W.wetStretchText({json.dumps(unknown)})").startswith("part of the route")
+    assert run_js("W.wetStretchText(null)") is None
+
+
+def test_the_card_lists_the_new_facts():
+    weather = {
+        "provider": "open-meteo",
+        "attribution": "x",
+        "departure": "2026-10-07T12:00:00Z",
+        "duration_source": "provider",
+        "samples": [],
+        "advisories": [],
+        "daylight": {"sunrise": "2026-10-07T05:29:00Z", "sunset": "2026-10-07T16:46:00Z"},
+        "summary": {
+            "worst_condition": "rain",
+            "temperature_min_c": 6,
+            "temperature_max_c": 8,
+            "apparent_temperature_min_c": 1,
+            "apparent_temperature_max_c": 3,
+            "wet_stretch": {
+                "from_km": 5,
+                "to_km": 20,
+                "from_time": "2026-10-07T12:00:00Z",
+                "to_time": "2026-10-07T13:00:00Z",
+                "whole_route": False,
+            },
+        },
+    }
+    html = run_js(f"W.weatherCardHtml({json.dumps(weather)}, 'ok')")
+    assert "Feels like" in html and "Precipitation" in html and "Sunrise / sunset" in html
+    assert run_js("W.daylightText(null)") is None
