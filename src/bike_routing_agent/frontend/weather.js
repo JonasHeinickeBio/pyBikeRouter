@@ -89,6 +89,43 @@
     return lo === hi ? `${lo} °C` : `${lo}–${hi} °C`;
   }
 
+  /** "Feels like 2–5 °C", only when it differs from the air temperature by 2 °C or more. */
+  function feelsLike(summary) {
+    const lo = num(summary.apparent_temperature_min_c);
+    const hi = num(summary.apparent_temperature_max_c);
+    if (lo === null || hi === null) return null;
+    const airLo = summary.temperature_min_c;
+    const airHi = summary.temperature_max_c;
+    if (
+      typeof airLo === "number" &&
+      typeof airHi === "number" &&
+      Math.abs(summary.apparent_temperature_min_c - airLo) < 2 &&
+      Math.abs(summary.apparent_temperature_max_c - airHi) < 2
+    ) {
+      return null;
+    }
+    return lo === hi ? `${lo} °C` : `${lo}–${hi} °C`;
+  }
+
+  /** Where and when the rain is: "km 12–31 (14:00–16:00)", or null for a dry forecast. */
+  function wetStretchText(stretch) {
+    if (!stretch) return null;
+    const when = `${clock(stretch.from_time)}–${clock(stretch.to_time)}`;
+    if (stretch.whole_route) return `along the whole route (${when})`;
+    if (typeof stretch.from_km !== "number" || typeof stretch.to_km !== "number") {
+      return `part of the route (${when})`;
+    }
+    const a = Math.round(stretch.from_km);
+    const b = Math.round(stretch.to_km);
+    return a === b ? `around km ${a} (${when})` : `km ${a}–${b} (${when})`;
+  }
+
+  /** "Sunrise 07:12 · sunset 18:31" in the viewer's local time, or null. */
+  function daylightText(daylight) {
+    if (!daylight) return null;
+    return `${clock(daylight.sunrise)} / ${clock(daylight.sunset)}`;
+  }
+
   /** Mean head/tailwind as {kind, text}; calm below 3 km/h. */
   function windVsRoute(meanHeadwind) {
     if (typeof meanHeadwind !== "number" || !Number.isFinite(meanHeadwind)) return null;
@@ -169,6 +206,12 @@
     }
     const uv = num(s.uv_index_max);
     if (uv !== null && Number(uv) > 0) facts.push(["UV index", `up to ${uv}`]);
+    const feels = feelsLike(s);
+    if (feels !== null) facts.push(["Feels like", feels]);
+    const wet = wetStretchText(s.wet_stretch);
+    if (wet !== null) facts.push(["Precipitation", wet]);
+    const sun = daylightText(weather.daylight);
+    if (sun !== null) facts.push(["Sunrise / sunset", sun]);
 
     const headShare = typeof s.headwind_share === "number" ? s.headwind_share : null;
     const tailShare = typeof s.tailwind_share === "number" ? s.tailwind_share : null;
@@ -249,6 +292,9 @@
     circularMean,
     windArrow,
     temperatureRange,
+    feelsLike,
+    wetStretchText,
+    daylightText,
     windVsRoute,
     clock,
     dayAndClock,

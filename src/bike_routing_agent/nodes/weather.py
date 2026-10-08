@@ -118,6 +118,7 @@ def build_weather_node(
                 provider=forecast.provider,
                 attribution=forecast.attribution,
                 retrieved_at=forecast.retrieved_at,
+                distance_m=candidate.metrics.distance_m,
             )
             any_weather = any_weather or weather is not None
             updated.append(
