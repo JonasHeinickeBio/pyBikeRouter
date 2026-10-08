@@ -266,3 +266,64 @@ def test_the_credit_names_every_source_that_contributed():
     assert text.count("<a ") == 2 and "Open-Meteo</a>" in text
     unknown = {"provider": "other", "attribution": "x <b>"}
     assert run_js(f"W.providerCredit({json.dumps(unknown)})") == "x &lt;b&gt;"
+
+
+def _option(offset, wet=0, dark=False, headwind=4.0, departure=None):
+    hour = 12 + offset // 60
+    return {
+        "departure": departure or f"2026-10-07T{hour:02d}:00:00Z",
+        "arrival": f"2026-10-07T{hour + 1:02d}:00:00Z",
+        "offset_minutes": offset,
+        "samples": 3,
+        "wet_samples": wet,
+        "headwind_mean_kmh": headwind,
+        "after_dark": dark,
+    }
+
+
+def test_offset_labels():
+    assert run_js("W.offsetLabel(0)") == "your time"
+    assert run_js("W.offsetLabel(120)") == "+2 h"
+    assert run_js("W.offsetLabel(-60)") == "−1 h"
+    assert run_js("W.offsetLabel(90)") == "+1.5 h"
+
+
+def test_departure_options_list_each_start_and_mark_the_suggestion():
+    weather = {
+        "departure_options": [_option(-120), _option(0, wet=3), _option(120, dark=True)],
+        "suggested_departure": "2026-10-07T10:00:00Z",
+    }
+    html = run_js(f"W.departureOptionsHtml({json.dumps(weather)})")
+    assert html.count("<button") == 3
+    assert html.count('data-departure="2026-10-07T10:00:00Z"') == 1
+    assert html.count("suggested</span>") == 1 and "💧 3/3" in html and "🌙" in html
+    assert 'class="opt-row requested"' in html and "<details" in html and " open>" in html
+    assert html.count(">dry<") == 2  # the two options without precipitation
+
+
+def test_no_comparison_means_no_list_and_it_stays_closed_without_a_suggestion():
+    assert run_js("W.departureOptionsHtml({departure_options: [{}]})") == ""
+    assert run_js("W.departureOptionsHtml({})") == ""
+    quiet = {"departure_options": [_option(0), _option(60)], "suggested_departure": None}
+    html = run_js(f"W.departureOptionsHtml({json.dumps(quiet)})")
+    assert "<details" in html and " open>" not in html
+
+
+def test_the_card_includes_the_options_between_notes_and_credit():
+    weather = {
+        "provider": "dwd",
+        "attribution": "x",
+        "departure": "2026-10-07T12:00:00Z",
+        "duration_source": "provider",
+        "samples": [],
+        "advisories": [
+            "Leaving 2 hours earlier would avoid the forecast precipitation on this route."
+        ],
+        "summary": {"worst_condition": "rain"},
+        "departure_options": [_option(-120), _option(0, wet=3)],
+        "suggested_departure": "2026-10-07T10:00:00Z",
+    }
+    html = run_js(f"W.weatherCardHtml({json.dumps(weather)}, 'ok')")
+    assert (
+        html.index("weather-notes") < html.index("departure-options") < html.index("weather-credit")
+    )

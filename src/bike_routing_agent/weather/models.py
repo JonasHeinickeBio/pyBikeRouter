@@ -127,6 +127,30 @@ class WeatherSummary(BaseModel):
     after_dark: bool | None = None
 
 
+class DepartureOption(BaseModel):
+    """The same route ridden at another departure time, as forecast facts.
+
+    No score: the options are compared on what a rider can check themselves
+    (rain along the route, daylight, wind) and listed in time order.
+    """
+
+    departure: datetime
+    arrival: datetime
+    # Minutes relative to the requested departure (0 = the requested one).
+    offset_minutes: int
+    samples: int
+    # How many of the samples are forecast wet (see WetStretch).
+    wet_samples: int
+    precipitation_probability_max: float | None = None
+    temperature_min_c: float | None = None
+    temperature_max_c: float | None = None
+    wind_speed_max_kmh: float | None = None
+    headwind_mean_kmh: float | None = None
+    # True when the ride starts before sunrise or ends after sunset (computed);
+    # the forecast's daylight flag when sunrise/sunset cannot be computed.
+    after_dark: bool | None = None
+
+
 class RouteWeather(BaseModel):
     provider: str
     # Every provider whose data is in this forecast, the primary one first. More than
@@ -142,5 +166,10 @@ class RouteWeather(BaseModel):
     samples: list[WeatherSample]
     summary: WeatherSummary
     daylight: Daylight | None = None
+    # The requested departure and its neighbours, in time order (empty when switched
+    # off or the forecast does not cover them), and the one that would be drier or
+    # in daylight where the requested one is not (never set when yours is as good).
+    departure_options: list[DepartureOption] = Field(default_factory=list)
+    suggested_departure: datetime | None = None
     # Facts about the forecast, never statements about safety.
     advisories: list[str] = Field(default_factory=list)

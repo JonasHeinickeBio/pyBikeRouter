@@ -110,8 +110,8 @@ decisions still open.
   wind resolved against the direction of travel, advisories, and a weather
   card/markers/wind column in the UI ([weather.md](weather.md)). Also: "feels
   like", where and when the rain is along the route, and computed
-  sunrise/sunset against arrival. Open follow-ups: a "best time to leave"
-  comparison over several departure times, letting weather influence ranking
+  sunrise/sunset against arrival, and a comparison of departure times around the
+  requested one. Open follow-ups: letting weather influence ranking
   (needs calibration evidence), wind-adjusted travel times, and exporting the
   forecast in the GPX/GeoJSON files.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose

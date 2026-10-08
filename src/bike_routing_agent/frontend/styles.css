@@ -579,3 +579,24 @@ textarea {
 .interpretation-notes { margin: 0.35rem 0 0; padding-left: 1.1rem; color: var(--caution-ink); }
 .interpretation-notes li { margin-bottom: 0.15rem; }
 .interpretation { margin-top: 0.5rem; font-size: 0.9em; }
+
+/* ------------------------------ other departure times ------------------------------ */
+
+.departure-options { margin: 0.6rem 0 0; }
+.departure-options summary { cursor: pointer; font-size: 0.85rem; color: var(--muted); }
+.opt-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.opt-row {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  padding: 0.3rem 0.5rem; border-radius: 6px; font: inherit; font-size: 0.82rem;
+  color: inherit; background: transparent; border: 1px solid var(--border, rgba(127,127,127,0.3));
+  cursor: pointer; text-align: left;
+}
+.opt-row:hover, .opt-row:focus-visible { background: rgba(127,127,127,0.12); }
+.opt-row.requested { border-color: var(--accent); }
+.opt-row.suggested { border-color: var(--accent); background: rgba(14,122,74,0.14); }
+.opt-time { font-weight: 600; min-width: 2.6rem; font-variant-numeric: tabular-nums; }
+.opt-offset { color: var(--muted); min-width: 3.2rem; }
+.opt-rain.dry { color: var(--accent); }
+.opt-rain.wet { color: #3b82f6; }
+.opt-wind { margin-left: auto; font-variant-numeric: tabular-nums; }
+.opt-tag { font-size: 0.7rem; padding: 0 0.35rem; border-radius: 999px; background: var(--accent); color: #fff; }

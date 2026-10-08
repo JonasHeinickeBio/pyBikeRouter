@@ -258,8 +258,61 @@
       bar +
       `<ol class="weather-strip" aria-label="Forecast along the route">${(weather.samples || []).map(stripItem).join("")}</ol>` +
       (notes ? `<ul class="weather-notes">${notes}</ul>` : "") +
+      departureOptionsHtml(weather) +
       estimated +
       `<p class="weather-credit">${providerCredit(weather)}</p>`
+    );
+  }
+
+  /** "+2 h" / "-1 h" / "requested" relative to the departure you asked for. */
+  function offsetLabel(minutes) {
+    if (minutes === 0) return "your time";
+    const hours = Math.abs(minutes) / 60;
+    return `${minutes > 0 ? "+" : "−"}${Number.isInteger(hours) ? hours : hours.toFixed(1)} h`;
+  }
+
+  /** One departure option as a button row: time, rain, wind, daylight. */
+  function departureOptionHtml(option, suggestedIso) {
+    const raining = option.wet_samples > 0;
+    const rain = raining
+      ? `<span class="opt-rain wet" title="${option.wet_samples} of ${option.samples} forecast points wet">` +
+        `💧 ${option.wet_samples}/${option.samples}</span>`
+      : '<span class="opt-rain dry" title="No precipitation forecast along the route">dry</span>';
+    const head = windCell({ summary: { headwind_mean_kmh: option.headwind_mean_kmh } });
+    const dark = option.after_dark
+      ? '<span class="opt-dark" title="Starts before sunrise or ends after sunset">🌙</span>'
+      : "";
+    const isSuggested = suggestedIso && new Date(suggestedIso).getTime() === new Date(option.departure).getTime();
+    const classes = ["opt-row"];
+    if (option.offset_minutes === 0) classes.push("requested");
+    if (isSuggested) classes.push("suggested");
+    return (
+      `<li><button type="button" class="${classes.join(" ")}" data-departure="${escapeHtml(option.departure)}" ` +
+      `title="Plan this route for a ${escapeHtml(clock(option.departure))} departure">` +
+      `<span class="opt-time">${escapeHtml(clock(option.departure))}</span>` +
+      `<span class="opt-offset">${offsetLabel(option.offset_minutes)}</span>` +
+      rain +
+      `<span class="opt-wind wind-${head.kind}" title="${escapeHtml(head.title)}">${escapeHtml(head.text)}</span>` +
+      dark +
+      (isSuggested ? '<span class="opt-tag">suggested</span>' : "") +
+      "</button></li>"
+    );
+  }
+
+  /** "Other departure times" list, or "" when the forecast has no comparison. */
+  function departureOptionsHtml(weather) {
+    const options = (weather && weather.departure_options) || [];
+    if (options.length < 2) return "";
+    return (
+      '<details class="departure-options"' +
+      (weather.suggested_departure ? " open" : "") +
+      "><summary>Other departure times</summary>" +
+      '<ul class="opt-list">' +
+      options.map((o) => departureOptionHtml(o, weather.suggested_departure)).join("") +
+      "</ul>" +
+      '<p class="weather-note">Same route, forecast for each start. Suggested only when it is ' +
+      "drier or keeps you in daylight; wind and temperature are shown, not weighed.</p>" +
+      "</details>"
     );
   }
 
@@ -308,6 +361,8 @@
     providerCredit,
     weatherCardHtml,
     windCell,
+    offsetLabel,
+    departureOptionsHtml,
     sampleTooltip,
     escapeHtml,
   };

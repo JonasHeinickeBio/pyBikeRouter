@@ -959,6 +959,17 @@ function wireEvents() {
   els.addVia.addEventListener("click", () => addViaRow());
   els.swap.addEventListener("click", swapPlaces);
   els.planBtn.addEventListener("click", planRoute);
+  // "Other departure times": choosing one sets the departure picker and plans again.
+  els.weatherCard.addEventListener("click", (ev) => {
+    const row = ev.target.closest("button[data-departure]");
+    if (!row) return;
+    const local = BikeText.toLocalInputValue(row.dataset.departure);
+    if (!local) return;
+    els.departurePreset.value = "custom";
+    els.departureCustom.value = local;
+    updateDepartureHint();
+    planRoute();
+  });
   els.textBtn.addEventListener("click", planFromText);
   els.textInput.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) {

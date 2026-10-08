@@ -295,3 +295,29 @@ async def test_without_merging_the_only_source_is_the_provider():
     run, _ = node()
     weather = (await run(state(candidate())))["candidates"][0]["weather"]
     assert weather["sources"] == ["fake"]
+
+
+async def test_departure_options_widen_the_window_but_never_into_the_past():
+    provider = FakeProvider(hours=30)
+    service = WeatherService([provider])
+    run = build_weather_node(
+        service=service, now=lambda: NOW, option_hours_before=3, option_hours_after=6
+    )
+    departure = (NOW + timedelta(hours=2)).isoformat()  # 14:30
+    update = await run(state(candidate(), departure_time=departure))
+    _, start, end = provider.calls[0]
+    # 3 h before 14:30 would be 11:30, but it is 12:30 now: the window starts at 12:00
+    assert start == datetime(2026, 10, 7, 12, 0, tzinfo=UTC)
+    # arrival 15:30 + 6 h = 21:30, plus the closing hour
+    assert end == datetime(2026, 10, 7, 22, 0, tzinfo=UTC)
+    weather = update["candidates"][0]["weather"]
+    offsets = [o["offset_minutes"] for o in weather["departure_options"]]
+    assert offsets == sorted(offsets) and 0 in offsets and min(offsets) == -120  # 12:30 = now
+    assert max(offsets) == 360
+    assert provider.calls and len(provider.calls) == 1  # one lookup serves every option
+
+
+async def test_departure_options_are_off_by_default():
+    run, _ = node()
+    weather = (await run(state(candidate())))["candidates"][0]["weather"]
+    assert weather["departure_options"] == [] and weather["suggested_departure"] is None
