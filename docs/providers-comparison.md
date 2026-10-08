@@ -1,3 +1,7 @@
+> **Note (2026-10):** the BRouter `gravel` rows below were measured with `custom_gravel-v1`;
+> the app now uses `custom_gravel-v2` (elevation costs on), see
+> [profile-evaluation.md](profile-evaluation.md).
+
 # Backend comparison: ORS vs BRouter (real-world test)
 
 Measured 2026-09-18 with the repo's own adapters (`OpenRouteServiceAdapter`,

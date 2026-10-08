@@ -40,13 +40,14 @@ repository:
 
 | app request (`profile=`) | file | base |
 | --- | --- | --- |
-| `custom_gravel-v1` | `profiles/gravel-v1.brf` | stock `gravel.brf` (pinned copy) |
+| `custom_gravel-v2` | `profiles/gravel-v2.brf` | stock `gravel.brf` with `consider_elevation=true` (current) |
+| `custom_gravel-v1` | `profiles/gravel-v1.brf` | stock `gravel.brf`, pinned copy (superseded; kept so older plans stay reproducible) |
 | `custom_touring-v1` | `profiles/touring-v1.brf` | stock `trekking.brf`, steps+ferries disallowed |
 
 Stock profiles shipped inside the image (`fastbike`, `mtb`, `trekking`) are
 used for the remaining bike types; the mapping lives in
 `config.BROUTER_PROFILE_MAP`. Profile files are versioned: never edit one
-in place, add `gravel-v2.brf` and update the map instead (exports must stay
+in place, add `gravel-v3.brf` and update the map instead (exports must stay
 reproducible). Files are GPLv3 derivatives of BRouter's `misc/profiles2`.
 
 ## Verification

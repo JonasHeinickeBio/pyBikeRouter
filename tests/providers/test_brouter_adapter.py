@@ -42,18 +42,18 @@ async def test_route_normalizes_fixture_into_candidate(brouter_route_response: d
     candidate = await adapter.route(make_request())
 
     assert candidate.provider == "brouter"
-    assert candidate.provider_profile == "custom_gravel-v1"
+    assert candidate.provider_profile == "custom_gravel-v2"
     assert candidate.metrics.distance_m == 5761.0
     assert candidate.metrics.duration_s == 1224.0
     assert candidate.metrics.ascent_m == 64.0
     assert candidate.metrics.descent_m is None
     assert candidate.geometry_geojson["type"] == "LineString"
-    assert candidate.provenance == {"provider": "brouter", "profile": "custom_gravel-v1"}
+    assert candidate.provenance == {"provider": "brouter", "profile": "custom_gravel-v2"}
     assert candidate.raw_provider_response == brouter_route_response
     # Default constraints (avoid_ferries/avoid_high_traffic_roads True) on the
     # gravel custom profile produce the two profile-specific warnings.
     assert len(candidate.warnings) == 2
-    assert "avoid_ferries=True is not enforced by custom_gravel-v1" in candidate.warnings[0]
+    assert "avoid_ferries=True is not enforced by custom_gravel-v2" in candidate.warnings[0]
     assert "avoid_high_traffic_roads=True is not applied per request" in candidate.warnings[1]
 
 
@@ -68,7 +68,7 @@ async def test_route_sends_lonlats_and_profile_params(brouter_route_response: di
 
     params = route.calls[0].request.url.params
     assert params["lonlats"] == "10.5267132,52.2689081|10.5450128,52.2201356"
-    assert params["profile"] == "custom_gravel-v1"
+    assert params["profile"] == "custom_gravel-v2"
     assert params["alternativeidx"] == "0"
     assert params["format"] == "geojson"
 
@@ -297,7 +297,7 @@ async def test_allow_ferries_warns_generically_not_enforcement(
     candidate = await adapter.route(make_request(avoid_ferries=False))
 
     assert any("avoid_ferries=False is not supported per request" in w for w in candidate.warnings)
-    assert not any("not enforced by custom_gravel-v1" in w for w in candidate.warnings)
+    assert not any("not enforced by custom_gravel-v2" in w for w in candidate.warnings)
 
 
 @respx.mock
@@ -325,3 +325,34 @@ async def test_health_unavailable_on_connection_error() -> None:
 
     assert result["status"] == "unavailable"
     assert "refused" in result["error"]
+
+
+@pytest.mark.parametrize("profile", ["custom_gravel-v1", "custom_gravel-v2"])
+def test_every_gravel_profile_version_keeps_its_ferry_and_traffic_warnings(profile):
+    adapter = BRouterAdapter(base_url="http://x")
+    request = RoutingRequest(
+        origin=Coordinate(lon=10.0, lat=52.0),
+        destination=Coordinate(lon=10.1, lat=52.1),
+        constraints=RouteConstraints(bike_type="gravel", avoid_high_traffic_roads=True),
+    )
+    warnings = adapter._build_warnings(request, profile)
+    assert any(f"avoid_ferries=True is not enforced by {profile}" in w for w in warnings)
+    assert any(
+        f"avoid_high_traffic_roads=True is not applied per request by {profile}" in w
+        for w in warnings
+    )
+
+
+def test_the_gravel_bike_type_uses_the_current_profile_version_and_the_file_exists():
+    from pathlib import Path
+
+    from bike_routing_agent.config import BROUTER_PROFILE_MAP
+
+    name = BROUTER_PROFILE_MAP["gravel"]
+    assert name == "custom_gravel-v2"
+    profiles = Path(__file__).resolve().parents[2] / "docker" / "brouter" / "profiles"
+    text = (profiles / f"{name.removeprefix('custom_')}.brf").read_text()
+    assert "assign consider_elevation true" in text
+    # v1 stays for reproducibility and differs only in that switch
+    old = (profiles / "gravel-v1.brf").read_text()
+    assert "assign consider_elevation false" in old

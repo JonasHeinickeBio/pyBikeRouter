@@ -111,7 +111,7 @@ profiles with genuinely different cost models:
 | `bike_type` | BRouter profile |
 | --- | --- |
 | `road` | `fastbike` (stock) |
-| `gravel` | `custom_gravel-v1` (repo: `docker/brouter/profiles/`) |
+| `gravel` | `custom_gravel-v2` (repo: `docker/brouter/profiles/`) |
 | `touring` | `custom_touring-v1` (repo: `docker/brouter/profiles/`) |
 | `mountain` | `mtb` (stock) |
 | `city` | `trekking` (stock) |

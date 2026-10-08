@@ -37,6 +37,9 @@ from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingReque
 
 # Fragments BRouter puts in its plain-text 400 body when the request was
 # well-formed but no path exists (as opposed to a bad profile/coordinates).
+# Every version of the gravel profile: results recorded with an older one (the
+# profile name is in each plan's provenance) keep their warnings.
+GRAVEL_PROFILES = frozenset({"custom_gravel-v1", "custom_gravel-v2"})
 _NO_ROUTE_MARKERS = ("not reachable", "no route", "no track")
 
 _MAX_ERROR_BODY_CHARS = 500
@@ -86,17 +89,16 @@ class BRouterAdapter:
                 "avoid_ferries=False is not supported per request; the mapped BRouter "
                 "profile decides ferry handling"
             )
-        elif profile == "custom_gravel-v1":
+        elif profile in GRAVEL_PROFILES:
             # Stock gravel only penalises ferry segments (initialcost 20000),
             # it never forbids them; custom_touring-v1 sets allow_ferries=false
             # and stock profile behaviour is not inferred.
             warnings.append(
-                "avoid_ferries=True is not enforced by custom_gravel-v1: the profile "
+                f"avoid_ferries=True is not enforced by {profile}: the profile "
                 "penalises ferry segments but may still route over them"
             )
-        if request.constraints.avoid_high_traffic_roads and profile in (
-            "custom_gravel-v1",
-            "custom_touring-v1",
+        if request.constraints.avoid_high_traffic_roads and (
+            profile in GRAVEL_PROFILES or profile == "custom_touring-v1"
         ):
             warnings.append(
                 f"avoid_high_traffic_roads=True is not applied per request by {profile}: "
