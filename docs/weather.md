@@ -107,6 +107,33 @@ service.
    sunset. In polar day/night there is no sunrise or sunset and the field is
    empty.
 
+## Other departure times
+
+"Should I leave now or later?" The same route is also evaluated for departures
+from `WEATHER_OPTION_HOURS_BEFORE` hours before to `WEATHER_OPTION_HOURS_AFTER`
+hours after the one you asked for (defaults 3 and 6, hourly; set both to `0` to
+switch it off). The forecast is fetched **once** for the widened window, so it
+costs no extra request.
+
+`route.weather.departure_options` lists them in time order, each with how many of
+its forecast points are wet, the highest rain probability, wind and headwind,
+temperature, and whether the ride starts before sunrise or ends after sunset.
+Rules, so the list can be trusted:
+
+- Options the forecast does not cover **completely** are left out, never compared
+  partially; options in the past are not offered; your own time is always included.
+- There is **no score**. `suggested_departure` is set only when another start is
+  strictly better on, in this order, (1) fewer wet points and (2) daylight, ties
+  going to the start closest to yours. Wind and temperature are shown but not
+  weighed: that would need calibration evidence, like every other weather weight.
+- Less rain is **never bought with darkness**: an option before sunrise or after
+  sunset is not suggested in place of a daylight one.
+- A suggestion also becomes an advisory, worded without clock times:
+  "Leaving 2 hours earlier would avoid the forecast precipitation on this route."
+
+The web card has an *Other departure times* list (open when there is a
+suggestion); choosing a row sets the departure picker and plans again for it.
+
 ## Advisories
 
 Short facts worth stating, derived from the summary -- never a statement about
@@ -164,7 +191,7 @@ switches it off).
 
 See [configuration.md](configuration.md): `WEATHER_PROVIDER` (`auto`, `dwd`, `open-meteo`,
 `met-no`, `none`), `WEATHER_USER_AGENT` (MET Norway requires you to identify
-your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MERGE`, `WEATHER_MAX_SAMPLES`,
+your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MERGE`, `WEATHER_OPTION_HOURS_BEFORE`/`WEATHER_OPTION_HOURS_AFTER`, `WEATHER_MAX_SAMPLES`,
 `WEATHER_SAMPLE_SPACING_KM`, and the two base URLs.
 
 ## Not included
@@ -173,8 +200,8 @@ your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, 
   calibration evidence as every other term ([scoring-and-exports.md](scoring-and-exports.md)).
 - **No wind-adjusted travel time**: durations are the engine's.
 - No radar nowcast and no historical weather.
-- No "best time to leave" comparison yet (it would need the forecast for
-  several departure times; see the [roadmap](roadmap.md)).
+- The departure comparison is for the route you got: it does not re-route (a
+  different time never changes the path) and compares hourly steps only.
 - MET Norway's compact format has no gusts, probability or UV, and DWD has no UV
   or feels-like, so those stay missing (reported as missing, never as zero) when
   they answer.
@@ -183,7 +210,7 @@ your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, 
 
 `tests/weather/` (offline): condition mappings, the sampling and wind maths with
 known values, sunrise/sunset against published London solstice times, the rain
-stretch and feels-like rules, the providers against responses captured from the real APIs
+stretch and feels-like rules, the departure comparison and its suggestion rule, the providers against responses captured from the real APIs
 (`tests/fixtures/open_meteo_*.json`, `met_no_compact_response.json`,
 `dwd_brightsky_response.json`), including DWD's Germany-only coverage rule, the
 service's fallback, caching and gap-filling merge, and the node. `tests/test_frontend_weather.py`

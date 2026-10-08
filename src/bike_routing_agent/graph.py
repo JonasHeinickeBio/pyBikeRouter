@@ -77,6 +77,7 @@ def build_graph(
     weather_service: WeatherService | None = None,
     weather_max_samples: int = 5,
     weather_spacing_km: float = 10.0,
+    weather_option_hours: tuple[int, int] = (0, 0),
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
@@ -105,6 +106,8 @@ def build_graph(
             service=weather_service,
             max_samples=weather_max_samples,
             spacing_km=weather_spacing_km,
+            option_hours_before=weather_option_hours[0],
+            option_hours_after=weather_option_hours[1],
         ),
     )
     graph.add_node(

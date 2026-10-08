@@ -23,6 +23,7 @@ from bike_routing_agent.weather.models import (
     CONDITION_SEVERITY,
     Condition,
     Daylight,
+    DepartureOption,
     HourlyWeather,
     RouteWeather,
     WeatherSample,
@@ -372,20 +373,13 @@ def advisories(summary: WeatherSummary, daylight: Daylight | None = None) -> lis
     return notes
 
 
-def build_route_weather(
+def _samples_at(
     points: Sequence[RoutePoint],
     series_per_point: Sequence[Sequence[HourlyWeather]],
-    *,
     departure: datetime,
     duration_s: float,
-    duration_source: str,
-    provider: str,
-    attribution: str,
-    retrieved_at: datetime,
-    distance_m: float | None = None,
-    sources: Sequence[str] = (),
-) -> RouteWeather | None:
-    """Weather for one route, or ``None`` when the forecast covers none of it."""
+) -> list[WeatherSample]:
+    """The forecast at each point of the route for a ride that leaves at ``departure``."""
     samples: list[WeatherSample] = []
     for point, series in zip(points, series_per_point, strict=True):
         when = departure + timedelta(seconds=duration_s * point.fraction)
@@ -409,11 +403,136 @@ def build_route_weather(
                 crosswind_kmh=crosswind,
             )
         )
+    return samples
+
+
+def _is_dark(daylight: Daylight | None, summary: WeatherSummary) -> bool | None:
+    if daylight is not None:
+        return (
+            daylight.minutes_before_sunrise_at_start > 0
+            or daylight.minutes_of_light_left_at_arrival < 0
+        )
+    return summary.after_dark
+
+
+def departure_options(
+    points: Sequence[RoutePoint],
+    series_per_point: Sequence[Sequence[HourlyWeather]],
+    *,
+    departure: datetime,
+    duration_s: float,
+    offsets_h: Sequence[int],
+    earliest: datetime | None = None,
+) -> list[DepartureOption]:
+    """The route at the requested departure and at ``offsets_h`` hours around it.
+
+    Only options the forecast covers completely are listed (never a partial
+    comparison), none before ``earliest`` (you cannot leave in the past), and the
+    requested departure is always included.
+    """
+    options: list[DepartureOption] = []
+    for offset in sorted({0, *offsets_h}):
+        start = departure + timedelta(hours=offset)
+        if offset != 0 and earliest is not None and start < earliest:
+            continue
+        samples = _samples_at(points, series_per_point, start, duration_s)
+        if len(samples) != len(points) or not samples:
+            continue
+        summary = summarize(samples)
+        arrival = start + timedelta(seconds=duration_s)
+        options.append(
+            DepartureOption(
+                departure=start,
+                arrival=arrival,
+                offset_minutes=offset * 60,
+                samples=len(samples),
+                wet_samples=sum(1 for s in samples if _is_wet(s.weather)),
+                precipitation_probability_max=summary.precipitation_probability_max,
+                temperature_min_c=summary.temperature_min_c,
+                temperature_max_c=summary.temperature_max_c,
+                wind_speed_max_kmh=summary.wind_speed_max_kmh,
+                headwind_mean_kmh=summary.headwind_mean_kmh,
+                after_dark=_is_dark(daylight_for(points, start, arrival), summary),
+            )
+        )
+    return options
+
+
+def suggest_departure(options: Sequence[DepartureOption]) -> DepartureOption | None:
+    """A neighbouring departure that is drier or in daylight where the requested one is not.
+
+    Ordered by (wet samples, dark, distance from the requested time) and only
+    suggested when it is strictly better on the first two: wind and temperature
+    are listed but not weighed, because that would need calibration evidence.
+    An option in the dark is never suggested in place of one in daylight: less
+    rain is not worth a ride before sunrise or after sunset.
+    """
+    requested = next((o for o in options if o.offset_minutes == 0), None)
+    if requested is None:
+        return None
+    if not requested.after_dark:
+        options = [o for o in options if not o.after_dark]
+
+    def key(option: DepartureOption) -> tuple[int, int, int]:
+        return (option.wet_samples, 1 if option.after_dark else 0, abs(option.offset_minutes))
+
+    best = min(options, key=key)
+    return best if best.offset_minutes != 0 and key(best)[:2] < key(requested)[:2] else None
+
+
+def _offset_phrase(minutes: int) -> str:
+    hours = abs(minutes) // 60
+    unit = "hour" if hours == 1 else "hours"
+    return f"{hours} {unit} {'later' if minutes > 0 else 'earlier'}"
+
+
+def _suggestion_note(requested: DepartureOption, better: DepartureOption) -> str:
+    when = _offset_phrase(better.offset_minutes)
+    if better.wet_samples == 0 < requested.wet_samples:
+        return f"Leaving {when} would avoid the forecast precipitation on this route."
+    if better.wet_samples < requested.wet_samples:
+        return f"Leaving {when} would have less precipitation along this route."
+    return f"Leaving {when} would keep the whole ride in daylight."
+
+
+def build_route_weather(
+    points: Sequence[RoutePoint],
+    series_per_point: Sequence[Sequence[HourlyWeather]],
+    *,
+    departure: datetime,
+    duration_s: float,
+    duration_source: str,
+    provider: str,
+    attribution: str,
+    retrieved_at: datetime,
+    distance_m: float | None = None,
+    sources: Sequence[str] = (),
+    option_offsets_h: Sequence[int] = (),
+    earliest: datetime | None = None,
+) -> RouteWeather | None:
+    """Weather for one route, or ``None`` when the forecast covers none of it."""
+    samples = _samples_at(points, series_per_point, departure, duration_s)
     if not samples:
         return None
     arrival = departure + timedelta(seconds=duration_s)
     summary = summarize(samples, distance_m=distance_m)
     daylight = daylight_for(points, departure, arrival)
+    notes = advisories(summary, daylight)
+    options: list[DepartureOption] = []
+    suggested: DepartureOption | None = None
+    if option_offsets_h:
+        options = departure_options(
+            points,
+            series_per_point,
+            departure=departure,
+            duration_s=duration_s,
+            offsets_h=option_offsets_h,
+            earliest=earliest,
+        )
+        suggested = suggest_departure(options)
+        if suggested is not None:
+            requested = next(o for o in options if o.offset_minutes == 0)
+            notes.append(_suggestion_note(requested, suggested))
     return RouteWeather(
         provider=provider,
         sources=list(sources) or [provider],
@@ -425,5 +544,7 @@ def build_route_weather(
         samples=samples,
         summary=summary,
         daylight=daylight,
-        advisories=advisories(summary, daylight),
+        departure_options=options if len(options) > 1 else [],
+        suggested_departure=suggested.departure if suggested else None,
+        advisories=notes,
     )

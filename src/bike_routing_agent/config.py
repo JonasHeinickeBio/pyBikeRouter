@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     weather_user_agent: str = "bike-routing-agent/0.1 github.com/JonasHeinickeBio/pyBikeRouter"
     weather_timeout_s: float = 8.0
     weather_cache_ttl_s: float = 1800.0
+    # Compare departures this many hours before/after the requested one (0 = off).
+    weather_option_hours_before: int = 3
+    weather_option_hours_after: int = 6
     weather_max_samples: int = 5
     weather_sample_spacing_km: float = 10.0
 
@@ -279,6 +282,9 @@ class Settings(BaseSettings):
             raise ValueError(f"weather_timeout_s must be > 0 (got {self.weather_timeout_s})")
         if self.weather_cache_ttl_s < 0:
             raise ValueError("weather_cache_ttl_s must be >= 0")
+        for name in ("weather_option_hours_before", "weather_option_hours_after"):
+            if not 0 <= getattr(self, name) <= 12:
+                raise ValueError(f"{name} must be between 0 and 12 (got {getattr(self, name)})")
         if not 2 <= self.weather_max_samples <= 10:
             raise ValueError(
                 f"weather_max_samples must be between 2 and 10 (got {self.weather_max_samples})"

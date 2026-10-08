@@ -62,8 +62,18 @@ def build_weather_node(
     service: WeatherService | None,
     max_samples: int = 5,
     spacing_km: float = 10.0,
+    option_hours_before: int = 0,
+    option_hours_after: int = 0,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> WeatherNodeFn:
+    """``option_hours_before/after``: also compare departures this many hours around the
+    requested one (0/0 = off); the forecast window is widened to cover them."""
+    offsets = (
+        list(range(-option_hours_before, option_hours_after + 1))
+        if option_hours_before or option_hours_after
+        else []
+    )
+
     async def weather_candidates(state: RouteAgentState) -> dict[str, Any]:
         raw_candidates = state.get("candidates", [])
         if service is None or not raw_candidates:
@@ -95,8 +105,10 @@ def build_weather_node(
             return {"weather_status": "skipped"}
 
         arrival = max(departure + timedelta(seconds=duration) for _, duration, _ in plans)
-        start = _floor_hour(departure)
-        end = _floor_hour(arrival) + timedelta(hours=1)
+        # Alternatives widen the window, but never into the past: you cannot leave earlier than now.
+        earliest_option = max(departure - timedelta(hours=option_hours_before), current)
+        start = _floor_hour(min(departure, earliest_option))
+        end = _floor_hour(arrival + timedelta(hours=option_hours_after)) + timedelta(hours=1)
         try:
             forecast = await service.forecast(list(grid_index), start, end)
         except Exception:
@@ -120,6 +132,8 @@ def build_weather_node(
                 retrieved_at=forecast.retrieved_at,
                 distance_m=candidate.metrics.distance_m,
                 sources=forecast.sources,
+                option_offsets_h=offsets,
+                earliest=current,
             )
             any_weather = any_weather or weather is not None
             updated.append(

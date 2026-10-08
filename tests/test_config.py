@@ -594,3 +594,14 @@ def test_build_llm_parser_uses_the_openai_backend_and_hides_its_key():
     assert isinstance(parser._backend, OpenAICompatBackend)
     assert parser._backend._url == "https://llm.example/v1/chat/completions"
     assert "sk-secret-key" not in repr(cfg)
+
+
+def test_weather_departure_option_window_is_validated(monkeypatch):
+    monkeypatch.delenv("WEATHER_PROVIDER", raising=False)
+    s = Settings(_env_file=None)
+    assert (s.weather_option_hours_before, s.weather_option_hours_after) == (3, 6)
+    Settings(_env_file=None, weather_option_hours_before=0, weather_option_hours_after=0)  # off
+    for name in ("weather_option_hours_before", "weather_option_hours_after"):
+        for bad in (-1, 13):
+            with pytest.raises(ValueError, match=name):
+                Settings(_env_file=None, **{name: bad})

@@ -360,6 +360,10 @@ _graph = build_graph(
     weather_service=_weather_service,
     weather_max_samples=settings.weather_max_samples,
     weather_spacing_km=settings.weather_sample_spacing_km,
+    weather_option_hours=(
+        settings.weather_option_hours_before,
+        settings.weather_option_hours_after,
+    ),
 )
 
 
@@ -380,6 +384,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         weather_service=build_weather_service(cfg, cache=cache),
         weather_max_samples=cfg.weather_max_samples,
         weather_spacing_km=cfg.weather_sample_spacing_km,
+        weather_option_hours=(cfg.weather_option_hours_before, cfg.weather_option_hours_after),
     )
 
 
