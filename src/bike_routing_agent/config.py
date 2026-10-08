@@ -357,7 +357,7 @@ ORS_PROFILE_MAP: dict[str, str] = {
 # Non-prefixed entries are stock profiles shipped with the BRouter image.
 BROUTER_PROFILE_MAP: dict[str, str] = {
     "road": "fastbike",
-    "gravel": "custom_gravel-v1",
+    "gravel": "custom_gravel-v2",
     "touring": "custom_touring-v1",
     "mountain": "mtb",
     "city": "trekking",

@@ -8,6 +8,7 @@ Documentation for the bike-routing-agent service.
 | [api.md](api.md) | HTTP endpoints, request/response schemas, status semantics, artifact downloads |
 | [configuration.md](configuration.md) | Environment variables, `.env`, provider profile mapping, startup validation, Docker/compose |
 | [providers.md](providers.md) | Provider protocols, the full openrouteservice client, ORS routing adapter, geocoders, BRouter/Valhalla adapters |
+| [profile-evaluation.md](profile-evaluation.md) | Do the BRouter profiles deliver what each bike type promises? 40-route evidence, the gravel-v2 change, open findings (commuter, recumbent) |
 | [providers-comparison.md](providers-comparison.md) | Real-world ORS vs BRouter measurement, findings, options for running both |
 | [geocoding.md](geocoding.md) | Nominatim vs Pelias backends, confidence semantics, clarification policy, caching |
 | [enrichment.md](enrichment.md) | OSM surface enrichment, Overpass prototype, unknown-is-unknown data-quality policy |

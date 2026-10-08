@@ -357,7 +357,7 @@ def test_providers_list_reports_brouter_when_selected(monkeypatch: pytest.Monkey
     payload = json.loads(out.getvalue())
     assert payload["routing"]["configured"] == "brouter"
     assert payload["routing"]["base_url"] == "http://127.0.0.1:17777"
-    assert payload["bike_type_profiles"]["gravel"] == "custom_gravel-v1"
+    assert payload["bike_type_profiles"]["gravel"] == "custom_gravel-v2"
 
 
 # ------------------------------------------------- dispatch and default wiring

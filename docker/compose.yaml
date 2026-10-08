@@ -214,8 +214,8 @@ services:
   # Needs at least one .rd5 segment file in ./brouter/segments (download from
   # https://brouter.de/brouter/segments4/, see docker/brouter/README.md). The
   # versioned custom profiles in ./brouter/profiles are mounted as
-  # /customprofiles, so "profile=custom_gravel-v1" resolves to
-  # gravel-v1.brf here in the repository.
+  # /customprofiles, so "profile=custom_gravel-v2" resolves to
+  # gravel-v2.brf here in the repository.
   # ---------------------------------------------------------------------------
   brouter:
     profiles: ["brouter"]
