@@ -62,6 +62,7 @@ from bike_routing_agent.storage.history import (
     record_from_state,
 )
 from bike_routing_agent.weather.base import WeatherProvider
+from bike_routing_agent.weather.dwd import DwdProvider
 from bike_routing_agent.weather.met_no import MetNoProvider
 from bike_routing_agent.weather.open_meteo import OpenMeteoProvider
 from bike_routing_agent.weather.service import WeatherService
@@ -124,6 +125,16 @@ def build_weather_service(
     if cfg.weather_provider == "none":
         return None
     providers: list[WeatherProvider] = []
+    # Germany first: DWD is the authoritative source there and open for commercial
+    # use; it declines routes outside Germany, so the others answer those.
+    if cfg.weather_provider in ("auto", "dwd"):
+        providers.append(
+            DwdProvider(
+                base_url=cfg.weather_dwd_url,
+                timeout_s=cfg.weather_timeout_s,
+                user_agent=cfg.weather_user_agent,
+            )
+        )
     if cfg.weather_provider in ("auto", "open-meteo"):
         providers.append(
             OpenMeteoProvider(base_url=cfg.weather_open_meteo_url, timeout_s=cfg.weather_timeout_s)

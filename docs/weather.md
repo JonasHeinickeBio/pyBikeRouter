@@ -21,15 +21,25 @@ provider's own terms (checked 2026-10).
 | Provider | Cost / key | Coverage | Hourly wind dir. + gusts | Catch |
 | --- | --- | --- | --- | --- |
 | **[Open-Meteo](https://open-meteo.com/en/terms)** (primary) | free, **no key**; 600 calls/min, 5,000/h, 10,000/day | global, up to 16 days | yes, plus precipitation probability, UV, daylight flag, WMO weather code | **non-commercial use only**, data CC BY 4.0 (credit required); a subscription removes both limits |
+| **[DWD via Bright Sky](https://brightsky.dev/docs/)** (Germany) | free, **no key** | stations in Germany (a few km beyond the border too) | yes: wind and direction, **gusts, precipitation probability**; no UV, no feels-like | DWD data is open for **any use incl. commercial** (credit "Deutscher Wetterdienst"); Bright Sky itself is a volunteer-run service with no SLA; per-station, one request per point |
 | **[MET Norway Locationforecast](https://api.met.no/weatherapi/locationforecast/2.0/documentation)** (fallback) | free, **no key**, needs an identifying `User-Agent` | global, ~9 days | wind and direction yes; no gusts, probability or UV in the compact format | one request per location; CC BY 4.0 / NLOD; generic client names get 403 |
-| Bright Sky (DWD) | free, no key | Germany-focused | yes | poor outside Germany |
 | NOAA / NWS | free, no key | US only | yes | US only |
 | OpenWeatherMap, WeatherAPI.com | free tier but **API key** | global | partly | key and account, small free quotas |
 
-So the default is **Open-Meteo, with MET Norway as an automatic fallback**
-(`WEATHER_PROVIDER=auto`): both are keyless, a plan costs **one** Open-Meteo
-request (several locations per call), and if it is down or rate-limiting us the
-fallback answers instead of the feature disappearing. The free Open-Meteo tier
+So the default (`WEATHER_PROVIDER=auto`) tries, in order: **DWD for routes
+entirely inside Germany** (the authoritative source there, and the one whose
+data licence allows commercial use), then **Open-Meteo**, then **MET Norway**.
+All are keyless; a plan costs one Open-Meteo request (several locations per
+call) or one Bright Sky request per forecast point (at most five), and if a
+provider is down or rate-limiting us the next one answers instead of the
+feature disappearing. DWD declines a route with any point outside Germany, so
+those go straight to Open-Meteo.
+
+What you give up with DWD: it publishes **no UV index and no feels-like
+temperature** (both stay missing, never zero), and it is a per-station forecast.
+If you prefer Open-Meteo's grid forecast with UV and feels-like in Germany too,
+set `WEATHER_PROVIDER=open-meteo` (keeping its non-commercial limitation in
+mind), or `dwd` to use DWD alone. The free Open-Meteo tier
 is for non-commercial use; a commercial deployment needs their subscription (or
 `WEATHER_PROVIDER=met-no` and its terms).
 
@@ -126,9 +136,9 @@ switches it off).
 
 ## Configuration
 
-See [configuration.md](configuration.md): `WEATHER_PROVIDER` (`auto`, `open-meteo`,
+See [configuration.md](configuration.md): `WEATHER_PROVIDER` (`auto`, `dwd`, `open-meteo`,
 `met-no`, `none`), `WEATHER_USER_AGENT` (MET Norway requires you to identify
-your app), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MAX_SAMPLES`,
+your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MAX_SAMPLES`,
 `WEATHER_SAMPLE_SPACING_KM`, and the two base URLs.
 
 ## Not included
@@ -139,15 +149,17 @@ your app), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, `WEATHER_MAX_SAMPLES`,
 - No radar nowcast and no historical weather.
 - No "best time to leave" comparison yet (it would need the forecast for
   several departure times; see the [roadmap](roadmap.md)).
-- MET Norway's compact format has no gusts, probability or UV, so those stay
-  missing (reported as missing, never as zero) when it answers.
+- MET Norway's compact format has no gusts, probability or UV, and DWD has no UV
+  or feels-like, so those stay missing (reported as missing, never as zero) when
+  they answer.
 
 ## Tests
 
 `tests/weather/` (offline): condition mappings, the sampling and wind maths with
 known values, sunrise/sunset against published London solstice times, the rain
-stretch and feels-like rules, both providers against responses captured from the real APIs
-(`tests/fixtures/open_meteo_*.json`, `met_no_compact_response.json`), the
+stretch and feels-like rules, the providers against responses captured from the real APIs
+(`tests/fixtures/open_meteo_*.json`, `met_no_compact_response.json`,
+`dwd_brightsky_response.json`), including DWD's Germany-only coverage rule, the
 service's fallback and caching, and the node. `tests/test_frontend_weather.py`
 runs the UI helpers under node. `tests/live/test_live_weather.py` calls the real
 services (`pytest -m live`). The suite sets `WEATHER_PROVIDER=none` so no test
