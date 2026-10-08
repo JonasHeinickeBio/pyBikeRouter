@@ -220,6 +220,15 @@ def test_explanation_states_the_forecast_as_facts_with_its_source():
     assert "safe" not in " ".join(sentences).lower()
 
 
+def test_a_merged_forecast_names_every_source_in_the_explanation():
+    from bike_routing_agent.nodes.export import _weather_sentences
+
+    weather = _weather(temperature_min_c=9.0, temperature_max_c=12.0).model_copy(
+        update={"provider": "dwd", "sources": ["dwd", "open-meteo"]}
+    )
+    assert "(dwd + open-meteo)" in _weather_sentences(weather)[0]
+
+
 def test_explanation_leaves_out_a_negligible_wind_direction_and_empty_forecasts():
     from bike_routing_agent.nodes.export import _weather_sentences
 
