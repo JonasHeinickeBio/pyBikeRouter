@@ -15,8 +15,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
+from bike_routing_agent.chat.models import (
+    ChatRequest,
+    PlanError,
+    SightsUnavailableError,
+    TextUnavailableError,
+)
+from bike_routing_agent.chat.service import ChatService
 from bike_routing_agent.config import PUBLIC_ORS_BASE_URLS, Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
@@ -228,6 +235,7 @@ def build_optional_routing_providers(
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+                max_concurrency=cfg.brouter_max_concurrency,
             )
         )
     return optional
@@ -330,6 +338,7 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+                max_concurrency=cfg.brouter_max_concurrency,
             )
         ]
     if cfg.routing_provider == "valhalla":
@@ -356,6 +365,7 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
             max_retries=cfg.brouter_max_retries,
             alternatives=cfg.brouter_alternatives,
             alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+            max_concurrency=cfg.brouter_max_concurrency,
         ),
         ValhallaAdapter(
             base_url=cfg.valhalla_base_url,
@@ -583,6 +593,106 @@ async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
     return await _plan_response(final_state)
 
 
+class _ApiPlanner:
+    """The chat's planner: the same code path as ``POST /v1/route/plan`` and ``/plan-text``."""
+
+    async def plan(self, request: dict[str, Any]) -> dict[str, Any]:
+        try:
+            model = RoutePlanAPIRequest.model_validate(request)
+        except ValidationError as exc:
+            raise PlanError(_validation_message(exc)) from exc
+        response = await plan_route(model)
+        return response.model_dump(mode="json")
+
+    async def plan_text(self, text: str, timezone: str | None) -> dict[str, Any]:
+        if _llm_parser is None:
+            raise TextUnavailableError
+        try:
+            model = PlanTextRequest(text=text, timezone=timezone)
+        except ValidationError as exc:
+            raise PlanError(_validation_message(exc)) from exc
+        response = await plan_route_from_text(model)
+        if response.status == "invalid" and response.errors:
+            raise PlanError(str(response.errors[0].get("message") or "I could not read that."))
+        return response.model_dump(mode="json")
+
+
+class _ApiSights:
+    """Well-known places along a route for the chat, from the POI service."""
+
+    async def along(self, line: list[list[float]], limit: int) -> list[dict[str, Any]]:
+        if _poi_service is None:
+            raise SightsUnavailableError
+        from bike_routing_agent.poi.categories import SIGHT_KEYS
+
+        try:
+            found = await _poi_service.along_route(
+                [(p[0], p[1]) for p in line],
+                list(SIGHT_KEYS),
+                buffer_m=settings.poi_default_buffer_m,
+                linked_only=True,
+            )
+        except ProviderError as exc:
+            raise SightsUnavailableError from exc
+        ranked = [p for p in found.pois if p.kind == "sight" and p.fame is not None]
+        return [p.model_dump(mode="json") for p in ranked[:limit]]
+
+
+def _validation_message(exc: ValidationError) -> str:
+    return "; ".join(
+        (f"{'.'.join(str(p) for p in e['loc'])}: " if e["loc"] else "") + str(e["msg"])
+        for e in exc.errors()[:3]
+    )
+
+
+def build_chat_service(cfg: Settings) -> ChatService | None:
+    """The chat, or ``None`` when ``CHAT_ENABLED`` is false."""
+    if not cfg.chat_enabled:
+        return None
+    return ChatService(
+        _ApiPlanner(),
+        sights=_ApiSights() if _poi_service is not None else None,
+        text_enabled=_llm_parser is not None,
+        max_sessions=cfg.chat_max_sessions,
+    )
+
+
+_chat_service = build_chat_service(settings)
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    suggestions: list[str] = Field(default_factory=list)
+    # A plan to draw this turn (a new route, or the alternatives of the last one).
+    plan: RoutePlanResponse | None = None
+    focus_rank: int | None = None
+    intent: str | None = None
+    # "place_choice": an ambiguous place waits for an answer; "guided": a question is open.
+    awaiting: str | None = None
+
+
+@app.post("/v1/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest) -> ChatResponse:
+    """One chat turn: plan a route (one line, free text or step by step), change it, compare
+    the alternatives, ask about it, look for sights, get the files. Returns the reply, quick
+    answers and, when there is one to draw, the plan. See docs/chat.md."""
+    if _chat_service is None:
+        raise HTTPException(status_code=503, detail="the chat is switched off (CHAT_ENABLED)")
+    reply = await _chat_service.send(
+        request.message, session_id=request.session_id, timezone=request.timezone
+    )
+    return ChatResponse(
+        session_id=reply.session_id,
+        reply=reply.reply,
+        suggestions=reply.suggestions,
+        plan=RoutePlanResponse.model_validate(reply.plan) if reply.plan else None,
+        focus_rank=reply.focus_rank,
+        intent=reply.intent,
+        awaiting=reply.awaiting,
+    )
+
+
 @app.get("/v1/capabilities")
 async def capabilities() -> dict[str, Any]:
     """Which optional features this instance has, for clients to adapt to.
@@ -596,6 +706,7 @@ async def capabilities() -> dict[str, Any]:
         "history": _history is not None,
         "pois": _poi_service is not None,
         "segment_downloads": _segment_downloader is not None,
+        "chat": _chat_service is not None,
         "engines": [p.name for p in [*_routing_providers, *_optional_routing_providers]],
     }
 

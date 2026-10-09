@@ -14,6 +14,7 @@ Exit codes: `0` success, `1` the command ran but failed (no route, a service is 
 | `poi` | sights and services along a route or in an area, and what Wikipedia says about one |
 | `brouter` | map tiles: which a trip needs, what is on disk, download them |
 | `history` | past plans from the PostGIS route history |
+| `chat` | plan routes by chatting in the terminal ([chat.md](chat.md)) |
 | `status` | readiness of every component and the active features |
 | `deploy` | build the image, (re)create the container, check it, roll back, publish to the tailnet |
 | `serve`, `docker`, `config`, `providers`, `retention`, `db` | run and operate the stack (`docker` is the compose wrapper) |
@@ -77,6 +78,18 @@ fetching (`--yes` skips the question; without a terminal it refuses unless `--ye
 shows progress, and writes each tile through a `.part` file and an atomic rename; the same limits
 as the server apply (`BROUTER_SEGMENTS_MAX_MB`, free disk space, official source only). The folder
 is `--dir` or `BROUTER_SEGMENTS_DIR`.
+
+## `chat`
+
+```bash
+bike-router chat start                                  # interactive; type 1, 2 ... to pick a quick reply
+bike-router chat start -m "from Braunschweig to Goslar" -m "make it shorter" -m "send me the gpx"
+bike-router chat start -m "40 km loop from Goslar" --format json
+```
+
+The conversation of [chat.md](chat.md), in-process: one-line requests, step by step, changes,
+alternatives, questions, sights, files (shown as files in the export folder). Free text needs the
+LLM parser. `--message` (repeatable) scripts the turns of one conversation.
 
 ## `history`
 

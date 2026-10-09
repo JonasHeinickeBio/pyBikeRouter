@@ -7,6 +7,9 @@ request-parameter contract (lonlats ordering, custom_ profile names).
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import httpx
 import pytest
 import respx
@@ -20,6 +23,9 @@ from bike_routing_agent.errors import (
 from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
 from bike_routing_agent.providers.brouter import BRouterAdapter
 
+ROUTE_FIXTURE = json.loads(
+    (Path(__file__).resolve().parents[1] / "fixtures" / "brouter_route_response.json").read_text()
+)
 BROUTER_BASE = "http://brouter.test"
 BROUTER_URL = f"{BROUTER_BASE}/brouter"
 ROBOTS_URL = f"{BROUTER_BASE}/robots.txt"
@@ -618,3 +624,73 @@ async def test_other_400s_keep_their_classification() -> None:
     respx.get(BROUTER_URL).mock(return_value=httpx.Response(400, text="unknown profile"))
     with pytest.raises(ProviderBadResponseError):
         await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+
+
+KILLED = "operation killed by thread-priority-watchdog after 1 seconds\n"
+
+
+async def _no_sleep(_: float) -> None:
+    return None
+
+
+@respx.mock
+async def test_a_request_cancelled_for_waiting_too_long_is_retried(monkeypatch) -> None:
+    import bike_routing_agent.providers.brouter as brouter_module
+
+    monkeypatch.setattr(brouter_module.asyncio, "sleep", _no_sleep)
+    route = respx.get(BROUTER_URL).mock(
+        side_effect=[httpx.Response(400, text=KILLED), httpx.Response(200, json=ROUTE_FIXTURE)]
+    )
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE, max_retries=1).route(make_request())
+    assert route.call_count == 2 and candidate.provider == "brouter"
+
+
+@respx.mock
+async def test_a_request_that_keeps_being_cancelled_is_reported_as_busy_not_as_a_bad_request(
+    monkeypatch,
+) -> None:
+    import bike_routing_agent.providers.brouter as brouter_module
+
+    monkeypatch.setattr(brouter_module.asyncio, "sleep", _no_sleep)
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(400, text=KILLED))
+    with pytest.raises(ProviderUnavailableError) as raised:
+        await BRouterAdapter(base_url=BROUTER_BASE, max_retries=1).route(make_request())
+    assert "busy" in raised.value.message and raised.value.detail["attempts"] == 2
+    assert "thread-priority-watchdog" in raised.value.detail["body"]
+    with pytest.raises(ProviderUnavailableError):  # no retries configured: reported at once
+        await BRouterAdapter(base_url=BROUTER_BASE, max_retries=0).route(make_request())
+
+
+@respx.mock
+async def test_other_400s_are_still_not_retried() -> None:
+    route = respx.get(BROUTER_URL).mock(return_value=httpx.Response(400, text="unknown profile"))
+    with pytest.raises(ProviderBadResponseError):
+        await BRouterAdapter(base_url=BROUTER_BASE, max_retries=2).route(make_request())
+    assert route.call_count == 1
+
+
+@pytest.mark.parametrize(("limit", "expected_peak"), [(1, 1), (2, 2), (5, 3)])
+@respx.mock
+async def test_requests_to_brouter_are_queued_to_the_configured_concurrency(
+    limit: int, expected_peak: int
+) -> None:
+    import asyncio
+
+    running = {"now": 0, "peak": 0}
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        running["now"] += 1
+        running["peak"] = max(running["peak"], running["now"])
+        await asyncio.sleep(0.03)
+        running["now"] -= 1
+        return httpx.Response(200, json=ROUTE_FIXTURE)
+
+    respx.get(BROUTER_URL).mock(side_effect=slow)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, max_concurrency=limit)
+    results = await asyncio.gather(*(adapter.route(make_request()) for _ in range(3)))
+    assert len(results) == 3 and running["peak"] == expected_peak
+
+
+def test_the_concurrency_must_be_at_least_one() -> None:
+    with pytest.raises(ValueError):
+        BRouterAdapter(base_url=BROUTER_BASE, max_concurrency=0)

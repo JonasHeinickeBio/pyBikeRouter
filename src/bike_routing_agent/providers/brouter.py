@@ -52,6 +52,13 @@ logger = logging.getLogger(__name__)
 
 _NO_ROUTE_MARKERS = ("not reachable", "no route", "no track")
 
+
+def _was_killed(body: str) -> bool:
+    """BRouter's answer when its watchdog cancelled a request that waited too long."""
+    lowered = body.lower()
+    return "operation killed" in lowered or "thread-priority-watchdog" in lowered
+
+
 _MAX_ERROR_BODY_CHARS = 500
 
 
@@ -68,8 +75,16 @@ class BRouterAdapter:
         max_retries: int = 0,
         alternatives: bool = False,
         alternatives_timeout_s: float = 8.0,
+        max_concurrency: int = 1,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be >= 1")
+        # A BRouter server runs one routing thread unless it was started with more; a request
+        # that has to wait more than ~2 s for the thread is killed ("contention", HTTP 400
+        # "operation killed by thread-priority-watchdog"). The main route and its alternatives
+        # are sent together, so they are queued here instead of racing each other there.
+        self._slots = asyncio.Semaphore(max_concurrency)
         self._alternatives = alternatives
         self._alternatives_timeout_s = alternatives_timeout_s
         self._base_url = base_url.rstrip("/")
@@ -128,6 +143,10 @@ class BRouterAdapter:
         return {variable: 1 if request.constraints.avoid_high_traffic_roads else 0}
 
     async def _get(self, params: dict[str, str]) -> httpx.Response:
+        async with self._slots:
+            return await self._get_unqueued(params)
+
+    async def _get_unqueued(self, params: dict[str, str]) -> httpx.Response:
         attempt = 0
         while True:
             try:
@@ -153,6 +172,21 @@ class BRouterAdapter:
                     "BRouter request failed", provider=self.name, detail={"error": str(exc)}
                 ) from exc
 
+            if response.status_code == 400 and _was_killed(response.text):
+                # Busy, not wrong: BRouter cancelled this request itself. Try again.
+                if attempt >= self._max_retries:
+                    raise ProviderUnavailableError(
+                        "BRouter was busy and cancelled the request",
+                        provider=self.name,
+                        detail={
+                            "status_code": 400,
+                            "body": response.text[:_MAX_ERROR_BODY_CHARS],
+                            "attempts": attempt + 1,
+                        },
+                    )
+                attempt += 1
+                await asyncio.sleep(1.0 * attempt)
+                continue
             if response.status_code >= 500:
                 if attempt >= self._max_retries:
                     raise ProviderUnavailableError(

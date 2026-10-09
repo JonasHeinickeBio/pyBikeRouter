@@ -73,6 +73,12 @@ const els = {
   poiStopsHint: $("poi-stops-hint"),
   poiStopsNote: $("poi-stops-note"),
   coverageCard: $("coverage-card"),
+  chatPanel: $("chat-panel"),
+  chatLog: $("chat-log"),
+  chatChips: $("chat-chips"),
+  chatForm: $("chat-form"),
+  chatInput: $("chat-input"),
+  chatSend: $("chat-send"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -98,6 +104,8 @@ const state = {
   poiTimer: null,
   engineOverride: null, // engines for the next plan only (set by "plan with openrouteservice")
   segmentJob: null, // the tile download being followed
+  chatSession: null, // the server-side conversation (kept in memory there)
+  chatBusy: false,
   capsPromise: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
@@ -1469,6 +1477,86 @@ function renderPoiStops(data) {
   for (const poi of data.poi_stops || []) addPoiMarker(poi, state.poiStopLayer, true);
 }
 
+/* --------------------------------- chat --------------------------------- */
+
+function chatSay(role, text, pending = false) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = BikeChat.bubbleHtml(role, text);
+  const node = wrapper.firstElementChild;
+  if (pending) node.classList.add("pending");
+  els.chatLog.appendChild(node);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return node;
+}
+
+function setChatChips(suggestions) {
+  els.chatChips.innerHTML = BikeChat.chipsHtml(suggestions);
+}
+
+/** Send one chat message; draw the reply, the quick answers and the plan, if there is one. */
+async function sendChat(text) {
+  const message = BikeChat.outgoing(text);
+  if (message === null || state.chatBusy) return;
+  state.chatBusy = true;
+  els.chatSend.disabled = true;
+  chatSay("user", message);
+  setChatChips([]);
+  const waiting = chatSay("bot", "\u2026", true);
+  const startedAt = performance.now();
+  try {
+    const resp = await fetch(`${API_BASE}/v1/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        session_id: state.chatSession,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    });
+    waiting.remove();
+    if (!resp.ok) {
+      chatSay("bot", BikeChat.failureText(resp.status));
+      return;
+    }
+    const data = await resp.json();
+    state.chatSession = data.session_id;
+    chatSay("bot", data.reply);
+    setChatChips(data.suggestions);
+    if (data.plan) {
+      state.lastResponse = data.plan;
+      renderResponse(data.plan, ((performance.now() - startedAt) / 1000).toFixed(1));
+      const index = BikeChat.candidateIndex(data.plan, data.focus_rank);
+      if (index >= 0) activateCandidate(index);
+    }
+  } catch {
+    waiting.remove();
+    chatSay("bot", BikeChat.failureText(0));
+  } finally {
+    state.chatBusy = false;
+    els.chatSend.disabled = false;
+    els.chatInput.focus();
+  }
+}
+
+/** Show the chat only when the server has one. */
+async function initChat() {
+  const caps = await getCapabilities();
+  if (!caps.chat) return;
+  els.chatPanel.hidden = false;
+  chatSay("bot", "Hi! Tell me where you want to ride -- for example \"from Braunschweig to Goslar by gravel bike\" or \"40 km loop from Goslar\". Or say \"plan a route\" and I will ask.");
+  setChatChips(["Plan a route", "40 km loop from Goslar", "Help"]);
+  els.chatForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const text = els.chatInput.value;
+    els.chatInput.value = "";
+    sendChat(text);
+  });
+  els.chatChips.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("button[data-say]");
+    if (chip) sendChat(chip.dataset.say);
+  });
+}
+
 /* --------------------------- settings panel (right) --------------------------- */
 
 function updateSettingsEmpty() {
@@ -1510,4 +1598,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initTextPlanning();
   initSettingsPanel();
   initPois();
+  initChat();
 });

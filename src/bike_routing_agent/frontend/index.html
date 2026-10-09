@@ -29,6 +29,20 @@
         <p class="tagline"><a href="dashboard.html">Evaluation dashboard</a></p>
       </header>
 
+      <section class="panel" id="chat-panel" hidden>
+        <details open>
+          <summary><h2>Chat</h2></summary>
+          <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation"></div>
+          <div id="chat-chips" class="chat-chips"></div>
+          <form id="chat-form" class="chat-form" autocomplete="off">
+            <label for="chat-input" class="visually-hidden">Message</label>
+            <input id="chat-input" type="text" maxlength="500" placeholder="e.g. from Braunschweig to Goslar by gravel" />
+            <button id="chat-send" class="primary" type="submit">Send</button>
+          </form>
+          <p class="hint">Plan, change and compare routes by talking: a one-line request, your own words, or step by step. Routes appear on the map.</p>
+        </details>
+      </section>
+
       <section class="panel" id="text-panel" hidden>
         <h2>Describe your ride</h2>
         <div class="field">
@@ -249,6 +263,7 @@
   <script src="pois.js"></script>
   <script src="coverage.js"></script>
   <script src="settings.js"></script>
+  <script src="chat.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>

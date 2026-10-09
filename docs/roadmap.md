@@ -65,10 +65,10 @@ decisions still open.
   metrics. Anthropic structured outputs behind the `llm` extra, with a
   labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
   benchmark against a live model in CI, and more languages in the benchmark.
-- **Clarification dialogue** -- `awaiting_clarification` responses already
-  carry candidate lists; a conversational layer could ask about them and
-  resubmit with a chosen coordinate. The graph supports resumption via
-  `checkpointer` (LangGraph checkpointers) -- unexercised so far.
+- **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
+  a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
+  checkpointer) ([chat.md](chat.md)). Open follow-ups: a model-based intent step for follow-ups, free
+  text verified against a real model, persistent sessions, filling the web form from the chat.
 
 ## Geocoding
 
