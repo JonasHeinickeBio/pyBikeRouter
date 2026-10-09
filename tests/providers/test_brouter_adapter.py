@@ -48,13 +48,17 @@ async def test_route_normalizes_fixture_into_candidate(brouter_route_response: d
     assert candidate.metrics.ascent_m == 64.0
     assert candidate.metrics.descent_m is None
     assert candidate.geometry_geojson["type"] == "LineString"
-    assert candidate.provenance == {"provider": "brouter", "profile": "custom_gravel-v2"}
+    # What was set per request is recorded: avoid_high_traffic_roads=True (the default)
+    # turns the gravel profile's traffic switch on.
+    assert candidate.provenance == {
+        "provider": "brouter",
+        "profile": "custom_gravel-v2",
+        "profile_overrides": {"consider_traffic_estimate": 1},
+    }
     assert candidate.raw_provider_response == brouter_route_response
-    # Default constraints (avoid_ferries/avoid_high_traffic_roads True) on the
-    # gravel custom profile produce the two profile-specific warnings.
-    assert len(candidate.warnings) == 2
+    # Traffic is now applied per request, so only the ferry limitation is left to warn about.
+    assert len(candidate.warnings) == 1
     assert "avoid_ferries=True is not enforced by custom_gravel-v2" in candidate.warnings[0]
-    assert "avoid_high_traffic_roads=True is not applied per request" in candidate.warnings[1]
 
 
 @respx.mock
@@ -269,8 +273,7 @@ async def test_touring_avoid_ferries_true_has_no_ferry_warning(
 
     assert candidate.provider_profile == "custom_touring-v1"
     assert not any("ferry" in w or "ferries" in w for w in candidate.warnings)
-    assert len(candidate.warnings) == 1  # only the traffic-estimate warning
-    assert "avoid_high_traffic_roads=True" in candidate.warnings[0]
+    assert candidate.warnings == []  # traffic is applied per request: nothing left to declare
 
 
 @respx.mock
@@ -328,7 +331,7 @@ async def test_health_unavailable_on_connection_error() -> None:
 
 
 @pytest.mark.parametrize("profile", ["custom_gravel-v1", "custom_gravel-v2"])
-def test_every_gravel_profile_version_keeps_its_ferry_and_traffic_warnings(profile):
+def test_every_gravel_profile_version_keeps_its_ferry_warning_but_traffic_is_applied(profile):
     adapter = BRouterAdapter(base_url="http://x")
     request = RoutingRequest(
         origin=Coordinate(lon=10.0, lat=52.0),
@@ -337,10 +340,7 @@ def test_every_gravel_profile_version_keeps_its_ferry_and_traffic_warnings(profi
     )
     warnings = adapter._build_warnings(request, profile)
     assert any(f"avoid_ferries=True is not enforced by {profile}" in w for w in warnings)
-    assert any(
-        f"avoid_high_traffic_roads=True is not applied per request by {profile}" in w
-        for w in warnings
-    )
+    assert not any("avoid_high_traffic_roads" in w for w in warnings)
 
 
 def test_the_gravel_bike_type_uses_the_current_profile_version_and_the_file_exists():
@@ -520,3 +520,75 @@ def test_way_tags_missing_on_some_rows_do_not_pass_for_quiet_roads() -> None:
     # enough coverage: the share is of the tagged length, untagged rows are not "quiet"
     covered = rows((450, "highway=primary"), (450, "highway=residential"), (100, ""))
     assert main_road_share(covered) == 0.5
+
+
+@pytest.mark.parametrize(
+    ("bike_type", "profile", "variable"),
+    [
+        ("gravel", "custom_gravel-v2", "consider_traffic_estimate"),
+        ("touring", "custom_touring-v1", "consider_traffic"),
+        ("commuter", "custom_commuter-v1", "consider_traffic"),
+        ("city", "trekking", "consider_traffic"),
+        ("road", "fastbike", "consider_traffic"),
+        ("ebike", "fastbike", "consider_traffic"),
+    ],
+)
+@pytest.mark.parametrize("avoid", [True, False])
+@respx.mock
+async def test_avoid_high_traffic_roads_sets_the_profiles_traffic_switch_per_request(
+    bike_type: str, profile: str, variable: str, avoid: bool, brouter_route_response: dict
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    request = make_request(bike_type=bike_type, avoid_high_traffic_roads=avoid)
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(request)
+
+    params = route.calls[0].request.url.params
+    expected = 1 if avoid else 0
+    assert params[f"profile:{variable}"] == str(expected)  # numbers only: BRouter rejects "true"
+    assert candidate.provider_profile == profile
+    assert candidate.provenance["profile_overrides"] == {variable: expected}
+    assert not any("avoid_high_traffic_roads" in w for w in candidate.warnings)
+
+
+@pytest.mark.parametrize(
+    ("bike_type", "profile"), [("mountain", "mtb"), ("recumbent", "vm-forum-liegerad-schnell")]
+)
+@respx.mock
+async def test_profiles_without_a_traffic_setting_say_so_and_send_nothing(
+    bike_type: str, profile: str, brouter_route_response: dict
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request(bike_type=bike_type))
+    assert not any(k.startswith("profile:") for k in route.calls[0].request.url.params)
+    assert "profile_overrides" not in candidate.provenance
+    assert any(
+        f"avoid_high_traffic_roads=True cannot be applied by {profile}" in w
+        for w in candidate.warnings
+    )
+    # asking for traffic not to be avoided leaves nothing to declare
+    off = await BRouterAdapter(base_url=BROUTER_BASE).route(
+        make_request(bike_type=bike_type, avoid_high_traffic_roads=False)
+    )
+    assert not any("avoid_high_traffic_roads" in w for w in off.warnings)
+
+
+@respx.mock
+async def test_alternatives_get_their_own_profiles_traffic_switch() -> None:
+    ok = httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+    route = respx.get(BROUTER_URL).mock(return_value=ok)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True)
+    found = await adapter.alternatives(make_request())  # gravel: touring (switch) + mtb (none)
+    by_profile = {c.provider_profile: c for c in found}
+    assert by_profile["custom_touring-v1"].provenance["profile_overrides"] == {
+        "consider_traffic": 1
+    }
+    assert "profile_overrides" not in by_profile["mtb"].provenance
+    sent = {
+        call.request.url.params["profile"]: dict(call.request.url.params) for call in route.calls
+    }
+    assert sent["custom_touring-v1"]["profile:consider_traffic"] == "1"
+    assert not any(k.startswith("profile:") for k in sent["mtb"])
