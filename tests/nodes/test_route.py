@@ -420,3 +420,20 @@ async def test_alternatives_are_not_asked_for_when_the_main_route_has_no_route()
     router = StyleRouter(name="brouter", error=ProviderNoRouteError("none", provider="brouter"))
     update = await build_route_node(routing_providers=[router])(base_state())
     assert update["status"] == "no_route" and "candidates" not in update
+
+
+async def test_a_provider_whose_alternatives_hang_cannot_hold_back_the_main_route(monkeypatch):
+    import time
+
+    class HangingAlternatives(StyleRouter):
+        async def alternatives(self, request):
+            await asyncio.sleep(60)
+            return await super().alternatives(request)
+
+    monkeypatch.setattr("bike_routing_agent.nodes.route.ALTERNATIVES_DEADLINE_S", 0.2)
+    node = build_route_node(routing_providers=[HangingAlternatives(name="brouter")])
+    started = time.monotonic()
+    update = await node(base_state())
+    assert time.monotonic() - started < 5
+    assert update["status"] == "in_progress" and len(update["candidates"]) == 1
+    assert update["errors"] == []

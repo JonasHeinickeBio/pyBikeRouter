@@ -297,3 +297,28 @@ def test_a_stock_profile_does_not_win_just_because_it_warns_less():
     ranked = rank_candidates([stock, main])
     assert [c.provider for c in ranked] == ["brouter", "mtb"]
     assert [c.score for c in ranked] == [0.90, 1.00]  # shown scores stay the real ones
+
+
+def test_the_rationale_credits_the_margin_not_the_raw_score_when_it_set_the_order():
+    main = _candidate("brouter", _line(0), score=0.90, profile="custom_gravel-v2")
+    alt = _style_alternative("mtb", _line(1000), score=1.00)
+    first, second = rank_candidates([alt, main])
+    assert (first.score, second.score) == (0.90, 1.00)  # shown scores stay the real ones
+    assert "highest score" not in first.rank_rationale
+    assert "must lead by 0.10" in first.rank_rationale
+    assert "above rank 1" in second.rank_rationale and "must lead by 0.10" in second.rank_rationale
+    assert "below rank 1" not in second.rank_rationale
+
+
+def test_the_rationale_is_unchanged_when_the_score_decides():
+    ranked = rank_candidates(
+        [_candidate("a", _line(0), score=0.9), _candidate("b", _line(1000), score=0.7)]
+    )
+    assert ranked[0].rank_rationale == "rank 1: highest score (0.90)"
+    assert "0.20 below rank 1" in ranked[1].rank_rationale
+    # an alternative that scores lower anyway keeps the plain wording too
+    main = _candidate("brouter", _line(0), score=0.9)
+    alt = _style_alternative("mtb", _line(1000), score=0.6)
+    first, second = rank_candidates([main, alt])
+    assert first.rank_rationale == "rank 1: highest score (0.90)"
+    assert "0.30 below rank 1" in second.rank_rationale

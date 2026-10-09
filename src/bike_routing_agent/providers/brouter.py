@@ -61,9 +61,11 @@ class BRouterAdapter:
         timeout_s: float = 10.0,
         max_retries: int = 0,
         alternatives: bool = False,
+        alternatives_timeout_s: float = 8.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._alternatives = alternatives
+        self._alternatives_timeout_s = alternatives_timeout_s
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._max_retries = max_retries
@@ -173,16 +175,27 @@ class BRouterAdapter:
             p for p in BROUTER_ALTERNATIVE_PROFILES.get(request.constraints.bike_type.value, ())
             if p != main
         ]  # fmt: skip
-        results = await asyncio.gather(
-            *(self._route_with_profile(request, p) for p in profiles), return_exceptions=True
-        )
+        if not profiles:
+            return []
+        # Best effort within a deadline: whatever has finished when it passes is kept,
+        # the rest is cancelled (with its retries), so one slow profile cannot hold up
+        # the plan.
+        tasks = {asyncio.ensure_future(self._route_with_profile(request, p)): p for p in profiles}
+        done, pending = await asyncio.wait(tasks, timeout=self._alternatives_timeout_s)
+        for task in pending:
+            task.cancel()
+            logger.info("brouter alternative profile %s timed out", tasks[task])
         found: list[RouteCandidate] = []
-        for profile, result in zip(profiles, results, strict=True):
-            if isinstance(result, RouteCandidate):
-                provenance = {**result.provenance, "alternative_of": main}
-                found.append(result.model_copy(update={"provenance": provenance}))
-            elif isinstance(result, BaseException):
-                logger.info("brouter alternative profile %s unavailable: %s", profile, result)
+        for task, profile in tasks.items():  # profile order, not completion order
+            if task not in done:
+                continue
+            try:
+                result = task.result()
+            except Exception as exc:
+                logger.info("brouter alternative profile %s unavailable: %s", profile, exc)
+                continue
+            provenance = {**result.provenance, "alternative_of": main}
+            found.append(result.model_copy(update={"provenance": provenance}))
         return found
 
     async def _route_with_profile(self, request: RoutingRequest, profile: str) -> RouteCandidate:

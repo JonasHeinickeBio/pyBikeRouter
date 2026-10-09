@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     brouter_base_url: str = "http://127.0.0.1:17777"
     # Also ask BRouter for the alternative profiles above (one extra request each).
     brouter_alternatives: bool = True
+    # How long the alternatives may take; whatever is done by then is used, the rest dropped.
+    brouter_alternatives_timeout_s: float = 8.0
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
 

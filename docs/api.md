@@ -84,7 +84,10 @@ alternative, and the better-scored one is kept.
   `BROUTER_ALTERNATIVE_PROFILES`). They carry `provenance.alternative_of` and are ranked
   like any candidate, except that they take rank 1 from the route made for the rider's own
   bike type only with a clear lead (+0.10 score, warning penalties equalised for this
-  comparison), so a gravel request is not answered with a mountain-bike route on a near-tie.
+  comparison), so a gravel request is not answered with a mountain-bike route on a near-tie;
+  `rank_rationale` then says so ("... an alternative profile must lead by 0.10 to rank above the
+  route for your bike type") instead of crediting the raw score. They are best effort within
+  `BROUTER_ALTERNATIVES_TIMEOUT_S`: alternatives still running at the deadline are dropped.
 - **`pros` / `cons`** (per distinct route, at most 3 each; empty with a single route) are
   facts with numbers relative to the other distinct routes: your own limits and target
   distance first, then shortest, fastest, least climbing, least on main roads without a
@@ -93,7 +96,9 @@ alternative, and the better-scored one is kept.
   route does not have is skipped (never read as zero), and nothing claims a route is safer
   or better for you. `metrics.main_road_share` is the length share on
   trunk/primary/secondary/tertiary roads without a mapped cycle lane/track or
-  `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement.
+  `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement. Segments
+  without way tags are not counted as quiet road: with fewer than 80 % of the length tagged
+  the share is `null`.
 - **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
   paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;
   never feeds the score). Paved counts as a pro for `road`, `city`, `commuter` and

@@ -481,3 +481,42 @@ async def test_without_tags_there_are_no_surface_shares(brouter_route_response: 
     respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
     candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
     assert candidate.metrics.engine_surface_shares == {}
+
+
+@respx.mock
+async def test_a_slow_alternative_is_dropped_at_the_deadline_and_the_fast_one_is_kept() -> None:
+    import asyncio
+    import time
+
+    ok = httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+
+    async def by_profile(request: httpx.Request) -> httpx.Response:
+        if request.url.params["profile"] == "mtb":
+            await asyncio.sleep(30)  # an alternative profile that hangs
+        return ok
+
+    respx.get(BROUTER_URL).mock(side_effect=by_profile)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, alternatives_timeout_s=0.3)
+    started = time.monotonic()
+    found = await adapter.alternatives(make_request())  # gravel: touring + mtb
+    assert time.monotonic() - started < 5  # not 30 s
+    assert [c.provider_profile for c in found] == ["custom_touring-v1"]
+
+
+def test_way_tags_missing_on_some_rows_do_not_pass_for_quiet_roads() -> None:
+    from bike_routing_agent.providers.brouter_tags import main_road_share, surface_shares
+
+    header = ["lon", "lat", "ele", "dist", "c", "e", "t", "n", "i", "WayTags"]
+
+    def rows(*items):
+        return [header] + [
+            ["0", "0", "0", str(length), "0", "0", "0", "0", "0", tags] for length, tags in items
+        ]
+
+    # no tags anywhere, or empty/null tag cells: unknown, not a 0 % share
+    assert main_road_share(rows((500, ""), (500, None))) is None
+    assert main_road_share(rows((100, "highway=primary"), (900, ""))) is None  # 10 % tagged
+    assert surface_shares(rows((500, ""), (500, None))) == {}
+    # enough coverage: the share is of the tagged length, untagged rows are not "quiet"
+    covered = rows((450, "highway=primary"), (450, "highway=residential"), (100, ""))
+    assert main_road_share(covered) == 0.5

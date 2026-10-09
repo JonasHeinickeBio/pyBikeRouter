@@ -30,6 +30,17 @@ from bike_routing_agent.state import RouteAgentState
 
 NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 
+# Hard cap on any provider's alternatives, whatever it does internally: they are a
+# bonus and must never hold back a route that already came back.
+ALTERNATIVES_DEADLINE_S = 12.0
+
+
+async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[Any]:
+    try:
+        return list(await asyncio.wait_for(provider.alternatives(request), ALTERNATIVES_DEADLINE_S))
+    except Exception:  # best effort: timeouts and failures just mean no extras
+        return []
+
 
 def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
     if not routing_providers:
@@ -74,11 +85,10 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
             ),
             asyncio.gather(
                 *(
-                    provider.alternatives(request)
+                    _bounded_alternatives(provider, request)
                     for provider in routing_providers
                     if hasattr(provider, "alternatives")
                 ),
-                return_exceptions=True,
             ),
         )
         candidates: list[dict[str, Any]] = []
@@ -105,8 +115,7 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
 
         if candidates:
             for extra in extras:
-                if isinstance(extra, list):
-                    candidates.extend(c.model_dump(mode="json") for c in extra)
+                candidates.extend(c.model_dump(mode="json") for c in extra)
             return {
                 "status": "in_progress",
                 "candidates": candidates,
