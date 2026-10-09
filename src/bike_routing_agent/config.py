@@ -393,6 +393,24 @@ BROUTER_ALTERNATIVE_PROFILES: dict[str, tuple[str, ...]] = {
     "recumbent": ("custom_touring-v1",),
 }
 
+# BRouter profile -> the profile variable that turns traffic avoidance on. BRouter
+# accepts a profile variable per request as ``profile:<name>=<number>`` (numbers
+# only: 1 = true, 0 = false), which is how ``avoid_high_traffic_roads`` is applied
+# per request instead of being baked into the profile file. Profiles not listed
+# have no such setting (mtb, the recumbent profile) and the adapter says so.
+# Measured over 14 routes (docs/profile-evaluation.md): on vs off, mean share on main
+# roads without a bike lane 13 vs 22 % (touring), 14 vs 21 % (trekking/city), 14 vs 24 %
+# (commuter), 56 vs 76 % (fastbike), at most +3 % time.
+BROUTER_TRAFFIC_SWITCHES: dict[str, str] = {
+    "custom_gravel-v1": "consider_traffic_estimate",
+    "custom_gravel-v2": "consider_traffic_estimate",
+    "custom_touring-v1": "consider_traffic",
+    "custom_commuter-v1": "consider_traffic",
+    "trekking": "consider_traffic",
+    "fastbike": "consider_traffic",
+    "fastbike-verylowtraffic": "consider_traffic",
+}
+
 # Internal bike type -> Valhalla costing model. Current Valhalla bicycle
 # costing has no per-bike-type option (unlike ORS/BRouter profiles), so all
 # types map to the single "bicycle" costing; bike-type differentiation comes

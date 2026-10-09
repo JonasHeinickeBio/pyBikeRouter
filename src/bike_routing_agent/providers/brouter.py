@@ -27,7 +27,11 @@ import logging
 
 import httpx
 
-from bike_routing_agent.config import BROUTER_ALTERNATIVE_PROFILES, BROUTER_PROFILE_MAP
+from bike_routing_agent.config import (
+    BROUTER_ALTERNATIVE_PROFILES,
+    BROUTER_PROFILE_MAP,
+    BROUTER_TRAFFIC_SWITCHES,
+)
 from bike_routing_agent.errors import (
     ProviderBadResponseError,
     ProviderNoRouteError,
@@ -105,15 +109,21 @@ class BRouterAdapter:
                 f"avoid_ferries=True is not enforced by {profile}: the profile "
                 "penalises ferry segments but may still route over them"
             )
-        if request.constraints.avoid_high_traffic_roads and (
-            profile in GRAVEL_PROFILES or profile == "custom_touring-v1"
-        ):
+        if request.constraints.avoid_high_traffic_roads and profile not in BROUTER_TRAFFIC_SWITCHES:
             warnings.append(
-                f"avoid_high_traffic_roads=True is not applied per request by {profile}: "
-                "its traffic-estimate switch is off by default, so traffic avoidance is "
-                "only approximated by the profile's static cost structure"
+                f"avoid_high_traffic_roads=True cannot be applied by {profile}: the profile "
+                "has no traffic setting, so its own cost structure decides"
             )
         return warnings
+
+    @staticmethod
+    def _profile_overrides(request: RoutingRequest, profile: str) -> dict[str, int]:
+        """Profile variables set for this request (``avoid_high_traffic_roads`` -> the
+        profile's traffic switch); empty for a profile without one."""
+        variable = BROUTER_TRAFFIC_SWITCHES.get(profile)
+        if variable is None:
+            return {}
+        return {variable: 1 if request.constraints.avoid_high_traffic_roads else 0}
 
     async def _get(self, params: dict[str, str]) -> httpx.Response:
         attempt = 0
@@ -199,12 +209,14 @@ class BRouterAdapter:
         return found
 
     async def _route_with_profile(self, request: RoutingRequest, profile: str) -> RouteCandidate:
+        overrides = self._profile_overrides(request, profile)
         response = await self._get(
             {
                 "lonlats": self._lonlats(request),
                 "profile": profile,
                 "alternativeidx": "0",
                 "format": "geojson",
+                **{f"profile:{name}": str(value) for name, value in overrides.items()},
             }
         )
 
@@ -229,7 +241,7 @@ class BRouterAdapter:
                 detail={"body": response.text[:_MAX_ERROR_BODY_CHARS]},
             ) from exc
 
-        candidate = self._normalize(payload, profile=profile)
+        candidate = self._normalize(payload, profile=profile, overrides=overrides)
         build_warnings = self._build_warnings(request, profile)
         if build_warnings:
             candidate = candidate.model_copy(
@@ -252,7 +264,9 @@ class BRouterAdapter:
             detail={"status_code": response.status_code, "body": body},
         )
 
-    def _normalize(self, payload: object, *, profile: str) -> RouteCandidate:
+    def _normalize(
+        self, payload: object, *, profile: str, overrides: dict[str, int] | None = None
+    ) -> RouteCandidate:
         if not isinstance(payload, dict):
             raise ProviderBadResponseError(
                 "BRouter returned a non-JSON payload", provider=self.name
@@ -304,7 +318,13 @@ class BRouterAdapter:
             provider_profile=profile,
             geometry_geojson=track["geometry"],
             metrics=metrics,
-            provenance={"provider": self.name, "profile": profile},
+            # What was set per request is part of the record: the same profile with a
+            # different switch is a different route.
+            provenance={
+                "provider": self.name,
+                "profile": profile,
+                **({"profile_overrides": overrides} if overrides else {}),
+            },
             raw_provider_response=payload,
         )
 

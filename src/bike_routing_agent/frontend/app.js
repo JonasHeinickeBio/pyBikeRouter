@@ -647,7 +647,7 @@ function renderRoute(data) {
   const provBits = [];
   if (route.provider) provBits.push(`provider: ${route.provider}`);
   const prov = route.provenance || {};
-  for (const key of ["requested_at", "profile", "profile_mapping"]) {
+  for (const key of ["requested_at", "profile", "profile_overrides", "profile_mapping"]) {
     if (prov[key] !== undefined) provBits.push(`${key}: ${JSON.stringify(prov[key])}`);
   }
   els.provenance.textContent = provBits.join(" · ");
