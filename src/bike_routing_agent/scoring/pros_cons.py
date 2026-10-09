@@ -16,7 +16,9 @@ absolute before it is worth a line.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Literal
 
+from bike_routing_agent.config import resolve_surface_tokens
 from bike_routing_agent.models import RouteCandidate, RouteConstraints
 
 MAX_LINES = 3
@@ -27,6 +29,38 @@ ASCENT_REL, ASCENT_ABS_M = 0.20, 15.0
 MAIN_ROAD_PP = 0.10  # percentage points, as a fraction
 HEADWIND_KMH = 5.0
 TARGET_REL = 0.10
+# Surface lines: a route is only judged when at most this share of it has no surface tag.
+SURFACE_UNKNOWN_MAX = 0.30
+SURFACE_PP = 0.10
+
+Stance = Literal["paved", "unpaved"]
+_UNPAVED_CATEGORIES = frozenset({"compacted", "loose", "natural_soft"})
+# Bike types that want smooth surfaces / want off-road by default. Everything else
+# (gravel, touring, ebike) is neutral: "easy gravel" does not mind either way.
+_PAVED_BIKES = frozenset({"road", "city", "commuter", "recumbent"})
+_UNPAVED_BIKES = frozenset({"mountain"})
+
+
+def surface_stance(constraints: RouteConstraints) -> Stance | None:
+    """Whether paved or unpaved surface counts as a pro for this rider, or neither.
+
+    The rider's own words win: preferring paved (or avoiding unpaved) means paved is a
+    pro, preferring compacted/loose ground (or avoiding paved) means unpaved is, and a
+    contradiction means neither. Without a stated preference the bike type decides:
+    road, city, commuter and recumbent want paved; mountain wants unpaved; gravel,
+    touring and e-bike are neutral (a gravel rider who wants off-road says so with
+    ``prefer_surfaces``).
+    """
+    preferred, _ = resolve_surface_tokens(constraints.prefer_surfaces)
+    avoided, _ = resolve_surface_tokens(constraints.avoid_surfaces)
+    wants_paved = "paved" in preferred or bool(avoided & _UNPAVED_CATEGORIES)
+    wants_unpaved = bool(preferred & _UNPAVED_CATEGORIES) or "paved" in avoided
+    if wants_paved or wants_unpaved:
+        return None if wants_paved and wants_unpaved else ("paved" if wants_paved else "unpaved")
+    bike = constraints.bike_type.value
+    if bike in _PAVED_BIKES:
+        return "paved"
+    return "unpaved" if bike in _UNPAVED_BIKES else None
 
 
 def _label(candidate: RouteCandidate) -> str:
@@ -107,23 +141,31 @@ def _compare(
         pro: Callable[[float], str],
         con: Callable[[float, float], str],
         scale: float = 1.0,
+        higher_is_better: bool = False,
+        only: Sequence[int] | None = None,
     ) -> None:
-        """Lower is better. The leader gets a pro only if every other route trails it
-        clearly; each route that trails clearly gets a con with its own gap."""
-        values = {i: v / scale for i in distinct if (v := get(candidates[i])) is not None}
+        """The leader gets a pro only if every other route trails it clearly; each route
+        that trails clearly gets a con with its own gap (and value)."""
+        sign = -1.0 if higher_is_better else 1.0
+        values = {
+            i: v / scale
+            for i in (distinct if only is None else only)
+            if (v := get(candidates[i])) is not None
+        }
         if len(values) < 2:
             return
-        low = min(values.values())
-        leaders = [i for i, v in values.items() if v == low]
+        ordered = {i: sign * v for i, v in values.items()}
+        low = min(ordered.values())
+        leaders = [i for i, v in ordered.items() if v == low]
         clear = {
             i: (v - low) >= absolute and (low == 0 or (v - low) / abs(low) >= rel)
-            for i, v in values.items()
+            for i, v in ordered.items()
         }
         if len(leaders) == 1 and all(clear[i] for i in values if i != leaders[0]):
-            pros[leaders[0]].append(pro(low))
-        for i, v in values.items():
+            pros[leaders[0]].append(pro(values[leaders[0]]))
+        for i, v in ordered.items():
             if i not in leaders and clear[i]:
-                cons[i].append(con(v - low, v))
+                cons[i].append(con(v - low, values[i]))
 
     numeric(
         lambda c: c.metrics.distance_m,
@@ -149,6 +191,35 @@ def _compare(
         pro=lambda v: f"Least on main roads without a bike lane ({v * 100:.0f}%)",
         con=lambda gap, v: f"{v * 100:.0f}% on main roads without a bike lane",
     )  # fmt: skip
+    stance = surface_stance(constraints)
+    if stance is not None:
+        # Judge only routes whose surface is mostly known: unknown never counts as paved
+        # or unpaved, and a route we know little about gets no line either way.
+        judged = [
+            i
+            for i in distinct
+            if (shares := candidates[i].metrics.engine_surface_shares)
+            and shares.get("unknown", 1.0) <= SURFACE_UNKNOWN_MAX
+        ]
+
+        def share(c: RouteCandidate) -> float | None:
+            return c.metrics.engine_surface_shares.get(stance)
+
+        if stance == "paved":
+            numeric(
+                share, rel=0.0, absolute=SURFACE_PP, only=judged, higher_is_better=True,
+                pro=lambda v: f"Most paved ({v * 100:.0f}%)",
+                con=lambda gap, v: f"Less paved ({v * 100:.0f}% vs {(v + gap) * 100:.0f}%)",
+            )  # fmt: skip
+        else:
+            numeric(
+                share, rel=0.0, absolute=SURFACE_PP, only=judged, higher_is_better=True,
+                pro=lambda v: f"Most off-road ({v * 100:.0f}% unpaved)",
+                con=lambda gap, v: (
+                    f"Less off-road ({v * 100:.0f}% unpaved vs {(v + gap) * 100:.0f}%)"
+                ),
+            )  # fmt: skip
+
     numeric(
         _headwind,
         rel=0.0, absolute=HEADWIND_KMH,

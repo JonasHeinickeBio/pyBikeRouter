@@ -450,3 +450,34 @@ async def test_alternatives_are_off_by_default_and_failures_are_dropped() -> Non
     respx.get(BROUTER_URL).mock(return_value=httpx.Response(500))
     adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, max_retries=0)
     assert await adapter.alternatives(make_request()) == []  # all failed: nothing, no raise
+
+
+@respx.mock
+async def test_surface_shares_come_from_the_surface_tags_and_unknown_stays_unknown() -> None:
+    payload = _payload_with_tags(
+        [
+            (500, "highway=cycleway surface=asphalt"),
+            (200, "highway=track surface=compacted"),
+            (100, "highway=path surface=dirt"),  # natural soft
+            (100, "highway=cycleway surface=paving_stones"),  # cobbles
+            (100, "highway=track"),  # no surface tag: unknown, not paved, not unpaved
+        ]
+    )
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=payload))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.engine_surface_shares == {
+        "paved": 0.5,
+        "unpaved": 0.3,
+        "cobbles": 0.1,
+        "unknown": 0.1,
+    }
+    # the Overpass-style enrichment fields are untouched: scoring never sees these
+    assert candidate.metrics.surface_coverage == {}
+    assert candidate.metrics.unknown_surface_fraction is None
+
+
+@respx.mock
+async def test_without_tags_there_are_no_surface_shares(brouter_route_response: dict) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.engine_surface_shares == {}

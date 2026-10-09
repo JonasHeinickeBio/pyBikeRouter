@@ -94,6 +94,17 @@ alternative, and the better-scored one is kept.
   or better for you. `metrics.main_road_share` is the length share on
   trunk/primary/secondary/tertiary roads without a mapped cycle lane/track or
   `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement.
+- **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
+  paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;
+  never feeds the score). Paved counts as a pro for `road`, `city`, `commuter` and
+  `recumbent`, unpaved for `mountain`; `gravel`, `touring` and `ebike` are neutral ("easy
+  gravel": no surface line either way). Your own `prefer_surfaces` / `avoid_surfaces` win over
+  the bike type, so a gravel request that prefers `compacted`/`loose` (off-road gravel) is
+  treated like a mountain bike, and contradictory wishes count as neutral. Lines:
+  `Most paved (90%)` / `Less paved (77% vs 90%)`, or `Most off-road (87% unpaved)` /
+  `Less off-road (2% unpaved vs 75%)`. Only differences of 10 points or more are stated, and
+  a route with more than 30 % of its length without a surface tag is not judged at all:
+  unknown is never read as paved or unpaved.
 - The web UI shows them as *Alternative route* cards under the result (click one to see it
   on the map); near-copies are left out of the cards.
 - The web UI exposes this as *Distinct alternatives (1-5)* in the constraints

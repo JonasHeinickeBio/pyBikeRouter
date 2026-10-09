@@ -113,6 +113,12 @@ class RouteMetrics(BaseModel):
     # the engine routed over (BRouter provides them). A proxy for exposure to
     # motor traffic, not a measurement of it; None when the engine gives no tags.
     main_road_share: float | None = Field(default=None, ge=0, le=1)
+    # Shares of the route by the OSM ``surface`` tags the engine routed over
+    # (BRouter): paved / unpaved (compacted, loose, natural soft) / cobbles
+    # (masonry) / unknown, summing to 1; empty when the engine gives no tags.
+    # Not the Overpass enrichment above: it never feeds the score, only the
+    # pros and cons (scoring/pros_cons.py), and "unknown" is never read as paved.
+    engine_surface_shares: dict[str, float] = Field(default_factory=dict)
 
 
 class RouteCandidate(BaseModel):
