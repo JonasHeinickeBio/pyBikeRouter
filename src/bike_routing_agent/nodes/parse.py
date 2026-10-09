@@ -105,6 +105,7 @@ def build_parse_node(*, llm_parser: LLMParser | None = None) -> ParseNodeFn:
             "constraints": raw.get("constraints", {}),
             # Caps come from the API request, never from what a parser produced.
             "max_alternatives": original.get("max_alternatives"),
+            "poi_stops_request": original.get("poi_stops"),
             "departure_time": raw.get("departure_time"),
             "status": "in_progress",
         }

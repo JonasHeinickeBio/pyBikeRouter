@@ -1,0 +1,274 @@
+{
+ "version": 0.6,
+ "generator": "Overpass API 0.7.62.11 87bfad18",
+ "elements": [
+  {
+   "type": "node",
+   "id": 59518475,
+   "lat": 52.2719679,
+   "lon": 10.5226352,
+   "tags": {
+    "historic": "memorial",
+    "name": "Gauß-Denkmal",
+    "wikidata": "Q118459905"
+   }
+  },
+  {
+   "type": "node",
+   "id": 91597511,
+   "lat": 52.3047384,
+   "lon": 10.5177807,
+   "tags": {
+    "historic": "memorial",
+    "wikidata": "Q130072672"
+   }
+  },
+  {
+   "type": "node",
+   "id": 96048602,
+   "lat": 52.2649723,
+   "lon": 10.5247672,
+   "tags": {
+    "historic": "memorial",
+    "name": "2000 Jahre Christentum",
+    "tourism": "artwork",
+    "wikidata": "Q211175",
+    "wikipedia": "de:2000 Jahre Christentum"
+   }
+  },
+  {
+   "type": "node",
+   "id": 259102280,
+   "lat": 52.2619949,
+   "lon": 10.588205,
+   "tags": {
+    "name": "Arboretum",
+    "tourism": "attraction",
+    "wikidata": "Q24026884"
+   }
+  },
+  {
+   "type": "node",
+   "id": 268044463,
+   "lat": 51.887545,
+   "lon": 10.4318605,
+   "tags": {
+    "name": "Rammelsberg",
+    "natural": "peak",
+    "wikidata": "Q30134175",
+    "wikipedia": "de:Rammelsberg (Harz)"
+   }
+  },
+  {
+   "type": "node",
+   "id": 272695581,
+   "lat": 52.1284989,
+   "lon": 10.5925981,
+   "tags": {
+    "name": "Ösel",
+    "natural": "peak",
+    "wikidata": "Q298092",
+    "wikipedia": "de:Ösel (Berg)"
+   }
+  },
+  {
+   "type": "node",
+   "id": 273497351,
+   "lat": 52.2705634,
+   "lon": 10.5556265,
+   "tags": {
+    "name": "Nußberg",
+    "natural": "peak",
+    "wikidata": "Q2005807"
+   }
+  },
+  {
+   "type": "node",
+   "id": 321373943,
+   "lat": 51.9574306,
+   "lon": 10.4320112,
+   "tags": {
+    "amenity": "place_of_worship",
+    "name": "St. Kilian",
+    "wikidata": "Q101827960"
+   }
+  },
+  {
+   "type": "node",
+   "id": 322890839,
+   "lat": 52.2316704,
+   "lon": 10.5401349,
+   "tags": {
+    "amenity": "place_of_worship",
+    "name": "Sankt Thomas",
+    "wikidata": "Q2323359",
+    "wikipedia": "de:St.-Thomas-Kirche (Braunschweig)"
+   }
+  },
+  {
+   "type": "node",
+   "id": 361248285,
+   "lat": 51.9045163,
+   "lon": 10.4296835,
+   "tags": {
+    "name": "Goslarer Museum",
+    "opening_hours": "Apr-Oct: Tu-Su 10:00-17:00; Nov-Mar Tu-Su 10:00-16:00",
+    "tourism": "museum",
+    "wikidata": "Q21285786"
+   }
+  },
+  {
+   "type": "node",
+   "id": 454403931,
+   "lat": 52.1546511,
+   "lon": 10.3778871,
+   "tags": {
+    "amenity": "place_of_worship",
+    "name": "Keilige Geist Kirche",
+    "wikidata": "Q26903889"
+   }
+  },
+  {
+   "type": "node",
+   "id": 748114686,
+   "lat": 51.8792897,
+   "lon": 10.5276695,
+   "tags": {
+    "name": "Elfenstein",
+    "tourism": "viewpoint",
+    "wikidata": "Q1328482",
+    "wikipedia": "de:Elfenstein"
+   }
+  },
+  {
+   "type": "node",
+   "id": 878611793,
+   "lat": 51.9044573,
+   "lon": 10.4289519,
+   "tags": {
+    "name": "Zinnfiguren Museum",
+    "opening_hours": "Tu-Su 10:00-17:00; Mo off",
+    "tourism": "museum",
+    "website": "https://www.zinnfigurenmuseum-goslar.de",
+    "wikidata": "Q49447251"
+   }
+  },
+  {
+   "type": "node",
+   "id": 899431733,
+   "lat": 51.9027862,
+   "lon": 10.4328682,
+   "tags": {
+    "name": "Museum im Zwinger",
+    "opening_hours": "Apr-Oct 10:00-17:00; Nov-Mar 11:00-15:00",
+    "tourism": "museum",
+    "website": "https://zwinger.de/",
+    "wikidata": "Q76636029"
+   }
+  },
+  {
+   "type": "node",
+   "id": 1886883525,
+   "lat": 52.2539106,
+   "lon": 10.5400848,
+   "tags": {
+    "historic": "locomotive",
+    "name": "Dampflok 01 1063",
+    "tourism": "attraction",
+    "wikidata": "Q108085861"
+   }
+  },
+  {
+   "type": "node",
+   "id": 2067026628,
+   "lat": 51.8524071,
+   "lon": 10.4840191,
+   "tags": {
+    "name": "Großer Steffenstalskopf",
+    "natural": "peak",
+    "tourism": "viewpoint",
+    "wikidata": "Q16744828"
+   }
+  },
+  {
+   "type": "way",
+   "id": 22978953,
+   "center": {
+    "lat": 52.2642419,
+    "lon": 10.5239388
+   },
+   "tags": {
+    "amenity": "place_of_worship",
+    "contact:website": "http://www.braunschweigerdom.de",
+    "historic": "cathedral",
+    "name": "Braunschweiger Dom",
+    "name:en": "Brunswick Cathedral",
+    "tourism": "attraction",
+    "wikidata": "Q279402",
+    "wikipedia": "de:Braunschweiger Dom"
+   }
+  },
+  {
+   "type": "way",
+   "id": 98942182,
+   "center": {
+    "lat": 51.88668,
+    "lon": 10.419904
+   },
+   "tags": {
+    "leisure": "swimming_area",
+    "name": "Herzberger Teich",
+    "natural": "water",
+    "wikidata": "Q96276777"
+   }
+  },
+  {
+   "type": "way",
+   "id": 176256375,
+   "center": {
+    "lat": 52.0617441,
+    "lon": 10.3578307
+   },
+   "tags": {
+    "historic": "yes",
+    "name": "Bismarckturm Salzgitter",
+    "tourism": "viewpoint",
+    "wikidata": "Q832836",
+    "wikipedia": "de:Bismarckturm (Salzgitter)"
+   }
+  },
+  {
+   "type": "way",
+   "id": 243689993,
+   "center": {
+    "lat": 52.2647826,
+    "lon": 10.5242005
+   },
+   "tags": {
+    "historic": "castle",
+    "name": "Burg Dankwarderode",
+    "name:en": "Dankwarderode Castle",
+    "opening_hours": "Tu-Su 10:00-17:00",
+    "tourism": "attraction",
+    "website": "https://3landesmuseen-braunschweig.de/herzog-anton-ulrich-museum/ausstellungen/dauerausstellungen/mittelalter",
+    "wikidata": "Q317959",
+    "wikipedia": "en:Dankwarderode Castle"
+   }
+  },
+  {
+   "type": "relation",
+   "id": 331104,
+   "center": {
+    "lat": 52.1627012,
+    "lon": 10.5298259
+   },
+   "tags": {
+    "historic": "castle",
+    "name": "Schloss Wolfenbüttel",
+    "tourism": "attraction",
+    "wikidata": "Q2244232",
+    "wikipedia": "de:Schloss Wolfenbüttel"
+   }
+  }
+ ]
+}

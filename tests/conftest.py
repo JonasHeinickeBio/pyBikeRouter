@@ -7,6 +7,8 @@ import pytest
 # Weather is on by default; the test suite must never call a real weather API
 # (the api module reads its settings at import time, i.e. right after this).
 os.environ.setdefault("WEATHER_PROVIDER", "none")
+# Same for POIs (Overpass, Wikidata, Wikipedia).
+os.environ.setdefault("POI_ENABLED", "false")
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

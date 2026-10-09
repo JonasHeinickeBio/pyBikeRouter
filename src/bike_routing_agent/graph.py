@@ -26,10 +26,12 @@ from bike_routing_agent.nodes.enrich import build_enrich_node
 from bike_routing_agent.nodes.export import build_export_node
 from bike_routing_agent.nodes.geocode import build_geocode_node
 from bike_routing_agent.nodes.parse import LLMParser, build_parse_node
+from bike_routing_agent.nodes.poi_stops import build_poi_stops_node
 from bike_routing_agent.nodes.route import build_route_node
 from bike_routing_agent.nodes.score import build_score_node
 from bike_routing_agent.nodes.validate import validate_request
 from bike_routing_agent.nodes.weather import build_weather_node
+from bike_routing_agent.poi.service import PoiService
 from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
 from bike_routing_agent.scoring.alternatives import DEFAULT_DEDUP_THRESHOLD_M
 from bike_routing_agent.state import RouteAgentState
@@ -52,7 +54,7 @@ def _after_validate(state: RouteAgentState) -> str:
 
 
 def _after_geocode(state: RouteAgentState) -> str:
-    return END if state.get("status") in _TERMINAL_AFTER_GEOCODE else "route_with_provider"
+    return END if state.get("status") in _TERMINAL_AFTER_GEOCODE else "select_poi_stops"
 
 
 def _after_route(state: RouteAgentState) -> str:
@@ -79,6 +81,7 @@ def build_graph(
     weather_max_samples: int = 5,
     weather_spacing_km: float = 10.0,
     weather_option_hours: tuple[int, int] = (0, 0),
+    poi_service: PoiService | None = None,
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
@@ -92,6 +95,8 @@ def build_graph(
             min_confidence=min_confidence,
         ),
     )
+    # Only acts when the request asked for famous-POI stops (issue #55); best effort.
+    graph.add_node("select_poi_stops", build_poi_stops_node(service=poi_service))
     graph.add_node("route_with_provider", build_route_node(routing_providers=routing_providers))
     # Always present so routing never talks to scoring's surface assumptions
     # directly; a no-op pass-through when no enricher is configured (issue #3).
@@ -121,7 +126,8 @@ def build_graph(
     graph.add_edge(START, "parse_request")
     graph.add_conditional_edges("parse_request", _after_parse, ["validate_request", END])
     graph.add_conditional_edges("validate_request", _after_validate, ["geocode_locations", END])
-    graph.add_conditional_edges("geocode_locations", _after_geocode, ["route_with_provider", END])
+    graph.add_conditional_edges("geocode_locations", _after_geocode, ["select_poi_stops", END])
+    graph.add_edge("select_poi_stops", "route_with_provider")
     graph.add_conditional_edges("route_with_provider", _after_route, ["enrich_candidates", END])
     graph.add_edge("enrich_candidates", "score_candidates")
     graph.add_conditional_edges("score_candidates", _after_score, ["weather_candidates", END])

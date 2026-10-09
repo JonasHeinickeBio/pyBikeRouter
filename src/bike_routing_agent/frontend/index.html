@@ -138,6 +138,28 @@
         </details>
       </section>
 
+      <section class="panel" id="poi-panel" hidden>
+        <details open>
+          <summary><h2>Points of interest</h2></summary>
+          <label class="check"><input id="poi-enabled" type="checkbox" checked /> Show them on the map</label>
+          <div id="poi-categories" class="check-grid poi-cats" role="group" aria-label="Kinds of points of interest"></div>
+          <p class="hint" id="poi-status" aria-live="polite"></p>
+          <label class="check"><input id="poi-stops-enabled" type="checkbox" /> Route past the most famous sights</label>
+          <div class="field" id="poi-stops-field" hidden>
+            <label for="poi-stops-count">How many sights</label>
+            <select id="poi-stops-count">
+              <option value="1">1</option>
+              <option value="2" selected>2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+          <p class="hint" id="poi-stops-hint">Picks the best-known sights between origin and destination (by how many languages describe them) and adds them as stops. Uses the sight kinds ticked above. Not available for loops.</p>
+          <p class="hint">Open data: OpenStreetMap, Wikipedia, Wikidata, Wikivoyage. Click a marker to read more.</p>
+        </details>
+      </section>
+
       <div class="actions">
         <button id="plan-btn" class="primary" type="button">Plan route</button>
         <button id="reset-btn" class="ghost" type="button">Reset</button>
@@ -152,6 +174,7 @@
       <section class="panel" id="results-panel" hidden>
         <h2>Result</h2>
         <p id="viewing-note" class="viewing-note" hidden></p>
+        <p id="poi-stops-note" class="poi-stops-note" hidden></p>
         <p id="explanation" class="explanation"></p>
         <div class="metrics" id="metrics"></div>
         <section id="alternatives" class="alternatives" hidden>
@@ -210,6 +233,7 @@
   <script src="weather.js"></script>
   <script src="alternatives.js"></script>
   <script src="export.js"></script>
+  <script src="pois.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>

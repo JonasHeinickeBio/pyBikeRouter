@@ -39,6 +39,7 @@ FastAPI with `422` and never reaches the workflow.
 | `via` | list, max 10 | no | Same shape as `origin`. |
 | `constraints` | `RouteConstraints` | no | Defaults apply when omitted. |
 | `departure_time` | ISO-8601 datetime | no | When the ride starts, for the weather forecast ([weather.md](weather.md)). Omitted: now. No UTC offset = UTC; more than 14 days ahead is rejected (`422`). |
+| `poi_stops` | object | no | Route past the best-known sights: `{"count": 1..5 (2), "categories": [sight kinds], "corridor_km": 0.5..15 (5), "min_fame": 1..200 (5)}` (`min_fame`: described in at least this many languages). Not with `return_to_origin`; `via` + `count` may not exceed 10. See [pois.md](pois.md). |
 | `max_alternatives` | integer `1..5` | no | Return at most this many *distinct* routes; see [Alternatives](#alternatives). Omitted: every scored candidate is returned. |
 
 `Coordinate` is `{"lon": -180..180, "lat": -90..90}`. Constraint fields and
@@ -319,8 +320,59 @@ and a `llm_parser_*` error code.
 
 ## GET /v1/capabilities
 
-`{"text_planning": bool, "weather": bool, "history": bool}` -- which optional
+`{"text_planning": bool, "weather": bool, "history": bool, "pois": bool}` -- which optional
 features this instance has, used by the web form to show or hide controls.
+
+## Points of interest
+
+Details and sources: [pois.md](pois.md). All three answer `503` when `POI_ENABLED`
+is off and `502` when the map-data service could not be reached.
+
+### `GET /v1/pois/categories`
+
+`[{"key": "viewpoint", "label": "Viewpoints", "kind": "sight"}, ...]`
+
+### `POST /v1/pois/along-route`
+
+```json
+{"coordinates": [[10.70, 47.56], [10.73, 47.56]], "categories": ["viewpoint", "historic"],
+ "buffer_m": 1500, "limit_per_category": 40}
+```
+
+`coordinates` are `[lon, lat]` pairs (2..20000; a candidate's `geometry_geojson.coordinates`);
+`categories` defaults to all; `buffer_m` to `POI_DEFAULT_BUFFER_M`, capped at
+`POI_MAX_BUFFER_M` (services: 500 m regardless). Response:
+
+```json
+{"pois": [{"id": "way/123", "name": "Schloss Neuschwanstein", "category": "historic",
+           "kind": "sight", "lon": 10.749, "lat": 47.557, "wikidata": "Q4152",
+           "wikipedia": "de:Schloss Neuschwanstein", "website": null, "opening_hours": null,
+           "fame": 93, "distance_from_route_m": 410.2, "along_route_km": 12.7}],
+ "truncated": false, "fame_status": "ok"}
+```
+
+Best-known first (`fame` = Wikidata sitelinks; `null` = not measured, never "obscure"),
+then the rest by distance. `fame_status`: `ok`, `partial`, `unavailable` (Wikidata
+unreachable: unranked), `skipped` (nothing to look up).
+
+### `GET /v1/pois/in-bbox`
+
+`?bbox=min_lon,min_lat,max_lon,max_lat[&categories=a,b][&limit_per_category=n]` -- the
+same, for a map view; at most 0.5 degrees wide (`422` otherwise).
+
+### `GET /v1/pois/info`
+
+`?wikidata=Q4152&wikipedia=de:Title&osm_id=way/123&website=https://...&lang=de` (all
+optional, validated) -- `title`, `description`, `extract` (Wikipedia opening),
+`language`, `thumbnail_url`, `sitelinks` and `links` (`wikipedia`, `wikivoyage`,
+`commons`, `wikidata`, `osm`, `website`) plus `attribution`. Best effort: parts the
+open services cannot deliver right now are left out.
+
+### Plan responses with `poi_stops`
+
+`poi_stops` (the POIs the route was sent past, same shape as above) and
+`poi_stops_status` (`ok`, `none_found`, `unavailable`, `unsupported`, `dropped`);
+both `null` when no stops were requested.
 
 ## GET /healthz
 

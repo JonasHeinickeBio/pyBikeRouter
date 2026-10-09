@@ -58,6 +58,15 @@ const els = {
   textPanel: $("text-panel"),
   textInput: $("text-input"),
   textBtn: $("text-btn"),
+  poiPanel: $("poi-panel"),
+  poiEnabled: $("poi-enabled"),
+  poiCategories: $("poi-categories"),
+  poiStatus: $("poi-status"),
+  poiStopsEnabled: $("poi-stops-enabled"),
+  poiStopsField: $("poi-stops-field"),
+  poiStopsCount: $("poi-stops-count"),
+  poiStopsHint: $("poi-stops-hint"),
+  poiStopsNote: $("poi-stops-note"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -75,6 +84,12 @@ const state = {
   activeIndex: 0, // index into candidateLayers currently being inspected
   placeMarkers: L.layerGroup(),
   weatherMarkers: L.layerGroup(), // forecast points along the active candidate
+  poiLayer: L.layerGroup(), // points of interest (along the active route, or in the map view)
+  poiStopLayer: L.layerGroup(), // the famous sights the plan was routed past
+  poiCategories: [], // [{key, label, kind}] from the server
+  poiPrefs: { enabled: true, keys: [] },
+  poiRequest: 0, // bumped by every refresh and clear, so a slow answer cannot redraw stale POIs
+  poiTimer: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
   aborted: null,
@@ -93,7 +108,12 @@ function initMap() {
   }).addTo(state.map);
   state.placeMarkers.addTo(state.map);
   state.weatherMarkers.addTo(state.map);
+  state.poiLayer.addTo(state.map);
+  state.poiStopLayer.addTo(state.map);
   state.map.on("click", onMapClick);
+  state.map.on("moveend", () => {
+    if (!state.candidateLayers.length) schedulePoiRefresh();
+  });
 }
 
 function onMapClick(ev) {
@@ -345,6 +365,8 @@ function buildRequest() {
   if (alternatives !== null) request.max_alternatives = alternatives;
   const departure = departureTime();
   if (departure !== null) request.departure_time = departure.toISOString();
+  const stops = poiStopsRequest();
+  if (stops !== null) request.poi_stops = stops;
   return request;
 }
 
@@ -522,6 +544,11 @@ function clearResults() {
   state.selectedRoute = null;
   state.activeIndex = 0;
   state.weatherMarkers.clearLayers();
+  state.poiLayer.clearLayers();
+  state.poiStopLayer.clearLayers();
+  state.poiRequest++;
+  els.poiStopsNote.hidden = true;
+  els.poiStopsNote.innerHTML = "";
   els.weatherCard.hidden = true;
   els.weatherCard.innerHTML = "";
   els.alternatives.hidden = true;
@@ -555,6 +582,7 @@ function renderResponse(data, secs) {
     default:
       setStatus("error", `The routing provider failed (status: ${escapeHtml(data.status)}).`);
   }
+  if (data.status !== "ready") schedulePoiRefresh();
 }
 
 function renderErrors(errors) {
@@ -645,6 +673,7 @@ function renderRoute(data) {
   renderAlternatives();
   updateActiveView();
   renderArtifacts(data.artifacts);
+  renderPoiStops(data);
 
   const provBits = [];
   if (route.provider) provBits.push(`provider: ${route.provider}`);
@@ -831,6 +860,7 @@ function updateActiveView() {
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
   renderWeather(cand);
+  schedulePoiRefresh();
   renderScoreBreakdown(cand.score_breakdown);
   renderSurfaces(m.surface_coverage, m.unknown_surface_fraction);
 
@@ -989,6 +1019,8 @@ function wireEvents() {
   for (const id of ["origin-input", "destination-input"]) {
     $(id).addEventListener("input", () => markCoordInput($(id)));
   }
+  els.returnOrigin.addEventListener("change", updatePoiStopsAvailability);
+  els.poiStopsEnabled.addEventListener("change", updatePoiStopsAvailability);
 
   document.querySelectorAll(".icon-btn[data-map-target]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1071,12 +1103,232 @@ function resetAll() {
   els.avoidTraffic.checked = true;
   els.avoidFerries.checked = true;
   els.returnOrigin.checked = false;
+  els.poiStopsEnabled.checked = false;
+  updatePoiStopsAvailability();
   els.textInput.value = "";
   for (const id of ["origin-input", "destination-input"]) markCoordInput($(id));
   clearResults();
   setStatus("info", "Reset. Enter two places and press <strong>Plan route</strong>.") ;
   setTimeout(() => setStatus(null, ""), 2500);
   state.map.setView([51.75, -1.25], 12);
+  schedulePoiRefresh();
+}
+
+/* ------------------------- points of interest ---------------------------- */
+
+const POI_MIN_ZOOM = 11; // below this a map view is too large to list POIs for
+const POI_ROUTE_POINTS = 1500; // route shape sent to the server is thinned to this
+
+/** Show the POI controls only when the server has POIs, and build the kind filter. */
+async function initPois() {
+  try {
+    const caps = await (await fetch(`${API_BASE}/v1/capabilities`)).json();
+    if (!caps.pois) return;
+    const resp = await fetch(`${API_BASE}/v1/pois/categories`);
+    if (!resp.ok) return;
+    state.poiCategories = await resp.json();
+  } catch {
+    return; // older server or offline: the form works exactly as before
+  }
+  state.poiPrefs = BikePois.loadPrefs(window.localStorage, state.poiCategories);
+  els.poiEnabled.checked = state.poiPrefs.enabled;
+  els.poiCategories.innerHTML = state.poiCategories
+    .map(
+      (c) =>
+        `<label class="check"><input type="checkbox" data-key="${escapeHtml(c.key)}"${
+          state.poiPrefs.keys.includes(c.key) ? " checked" : ""
+        } /> ${BikePois.icon(c.key)} ${escapeHtml(c.label)}</label>`,
+    )
+    .join("");
+  const onChange = () => {
+    state.poiPrefs = {
+      enabled: els.poiEnabled.checked,
+      keys: [...els.poiCategories.querySelectorAll("input:checked")].map((i) => i.dataset.key),
+    };
+    BikePois.savePrefs(window.localStorage, state.poiPrefs);
+    schedulePoiRefresh();
+  };
+  els.poiEnabled.addEventListener("change", onChange);
+  els.poiCategories.addEventListener("change", onChange);
+  els.poiPanel.hidden = false;
+  updatePoiStopsAvailability();
+  schedulePoiRefresh();
+}
+
+function updatePoiStopsAvailability() {
+  const loop = els.returnOrigin.checked;
+  els.poiStopsEnabled.disabled = loop;
+  if (loop) els.poiStopsEnabled.checked = false;
+  els.poiStopsField.hidden = !els.poiStopsEnabled.checked;
+  els.poiStopsHint.textContent = loop
+    ? "Not available for loops: a loop has no origin-to-destination corridor to look in."
+    : "Picks the best-known sights between origin and destination (by how many languages describe them) and adds them as stops. Uses the sight kinds ticked above.";
+}
+
+/** The `poi_stops` part of a plan request, or null when not asked for. */
+function poiStopsRequest() {
+  if (!state.poiCategories.length || !els.poiStopsEnabled.checked || els.returnOrigin.checked) return null;
+  const sights = state.poiCategories.filter((c) => c.kind === "sight").map((c) => c.key);
+  const chosen = state.poiPrefs.keys.filter((k) => sights.includes(k));
+  return { count: Number(els.poiStopsCount.value), categories: chosen.length ? chosen : sights };
+}
+
+function schedulePoiRefresh() {
+  clearTimeout(state.poiTimer);
+  state.poiTimer = setTimeout(refreshPois, 350);
+}
+
+function setPoiStatus(text) {
+  els.poiStatus.textContent = text;
+}
+
+async function refreshPois() {
+  if (!state.poiCategories.length) return;
+  const request = ++state.poiRequest;
+  state.poiLayer.clearLayers();
+  if (!state.poiPrefs.enabled || !state.poiPrefs.keys.length) {
+    setPoiStatus(state.poiPrefs.enabled ? "Tick at least one kind to see it on the map." : "");
+    return;
+  }
+  const entry = state.candidateLayers[state.activeIndex];
+  let resp;
+  try {
+    if (entry) {
+      const coords = BikePois.thin(entry.candidate.geometry_geojson.coordinates, POI_ROUTE_POINTS);
+      setPoiStatus("Looking for points of interest along the route\u2026");
+      resp = await fetch(`${API_BASE}/v1/pois/along-route`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coordinates: coords, categories: state.poiPrefs.keys }),
+      });
+    } else {
+      const b = state.map.getBounds();
+      if (state.map.getZoom() < POI_MIN_ZOOM) {
+        setPoiStatus("Zoom in to see points of interest in the map view.");
+        return;
+      }
+      setPoiStatus("Looking for points of interest in the map view\u2026");
+      const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((v) => v.toFixed(5)).join(",");
+      resp = await fetch(
+        `${API_BASE}/v1/pois/in-bbox?bbox=${bbox}&categories=${encodeURIComponent(state.poiPrefs.keys.join(","))}`,
+      );
+    }
+    if (request !== state.poiRequest) return;
+    if (!resp.ok) {
+      setPoiStatus(
+        resp.status === 502
+          ? "The map data service (Overpass) is busy right now; points of interest could not be loaded."
+          : "Points of interest could not be loaded.",
+      );
+      return;
+    }
+    const data = await resp.json();
+    if (request !== state.poiRequest) return;
+    drawPois(data);
+  } catch {
+    if (request === state.poiRequest) setPoiStatus("Points of interest could not be loaded.");
+  }
+}
+
+function drawPois(data) {
+  for (const poi of data.pois) addPoiMarker(poi, state.poiLayer, false);
+  const where = state.candidateLayers.length ? "along the route" : "in the view";
+  const ranked = data.fame_status === "unavailable" ? " (the fame lookup was unavailable)" : "";
+  setPoiStatus(
+    data.pois.length
+      ? `${data.pois.length} points of interest ${where}${data.truncated ? ", the best-known shown" : ""}${ranked}.`
+      : `No points of interest of these kinds ${where}.`,
+  );
+}
+
+function addPoiMarker(poi, layer, isStop) {
+  const famous = BikePois.isFamous(poi);
+  const size = isStop ? 32 : famous ? 30 : poi.kind === "service" ? 20 : 24;
+  const cls = ["poi-marker", poi.kind, famous ? "famous" : "", isStop ? "stop" : ""].join(" ");
+  const icon = L.divIcon({
+    className: "",
+    html: `<span class="${cls}" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.6)}px">${BikePois.icon(poi.category)}</span>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+  const marker = L.marker([poi.lat, poi.lon], {
+    icon,
+    zIndexOffset: isStop ? 1000 : famous ? 500 : 0,
+    title: poi.name || poi.category,
+    keyboard: true,
+  }).addTo(layer);
+  marker.bindPopup(() => poiPopup(poi), { maxWidth: 280 });
+}
+
+function poiPopup(poi) {
+  const el = document.createElement("div");
+  el.innerHTML = BikePois.popupHtml(poi, state.poiCategories);
+  const infoBox = el.querySelector(".poi-info");
+  const infoBtn = el.querySelector('[data-act="info"]');
+  if (infoBtn) {
+    infoBtn.addEventListener("click", async () => {
+      infoBtn.disabled = true;
+      infoBox.textContent = "Loading\u2026";
+      try {
+        const lang = (navigator.language || "en").toLowerCase();
+        const resp = await fetch(`${API_BASE}/v1/pois/info?${BikePois.infoQuery(poi, lang)}`);
+        infoBox.innerHTML = resp.ok ? BikePois.infoHtml(await resp.json()) : "No description available right now.";
+        infoBtn.remove();
+      } catch {
+        infoBox.textContent = "No description available right now.";
+        infoBtn.disabled = false;
+      }
+    });
+  }
+  el.querySelector('[data-act="add"]').addEventListener("click", () => {
+    state.map.closePopup();
+    addPoiToRoute(poi);
+  });
+  return el;
+}
+
+/** Put a POI into the form: an empty origin / destination first, else a via point in travel order. */
+function addPoiToRoute(poi) {
+  const value = `${poi.lat.toFixed(5)}, ${poi.lon.toFixed(5)}`;
+  const label = poi.name || poi.category;
+  if (els.origin.value.trim() === "") {
+    els.origin.value = value;
+    markCoordInput(els.origin);
+    els.origin.title = label;
+  } else if (els.destination.value.trim() === "" && !els.returnOrigin.checked) {
+    els.destination.value = value;
+    markCoordInput(els.destination);
+    els.destination.title = label;
+  } else {
+    if (viaInputs().length >= BikePois.MAX_VIAS) {
+      setStatus("error", `At most ${BikePois.MAX_VIAS} via points; remove one first.`);
+      return;
+    }
+    const entry = state.candidateLayers[state.activeIndex];
+    const routeCoords = entry ? entry.candidate.geometry_geojson.coordinates : null;
+    const vias = viaInputs().map((input) => parseInputCoordinate(input.value));
+    const index = BikePois.insertionIndex(routeCoords, vias, poi);
+    addViaRow(value);
+    const rows = els.viaList.children;
+    const row = rows[rows.length - 1];
+    row.querySelector("input").title = label;
+    els.viaList.insertBefore(row, rows[index]);
+  }
+  redrawPlaceMarkers();
+  if (state.candidateLayers.length && els.origin.value.trim() && els.destination.value.trim()) {
+    setStatus("info", `Added <strong>${escapeHtml(label)}</strong> to the route &mdash; planning again&hellip;`);
+    planRoute();
+  } else {
+    setStatus("info", `Added <strong>${escapeHtml(label)}</strong>. Press <strong>Plan route</strong> when ready.`);
+  }
+}
+
+/** Mark the famous sights the plan was routed past and say what happened. */
+function renderPoiStops(data) {
+  const note = BikePois.stopsNote(data.poi_stops_status, data.poi_stops);
+  els.poiStopsNote.hidden = note === "";
+  els.poiStopsNote.innerHTML = note;
+  for (const poi of data.poi_stops || []) addPoiMarker(poi, state.poiStopLayer, true);
 }
 
 /* --------------------------------- boot ---------------------------------- */
@@ -1086,4 +1338,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initDeparture();
   wireEvents();
   initTextPlanning();
+  initPois();
 });

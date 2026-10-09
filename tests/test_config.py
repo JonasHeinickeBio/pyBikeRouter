@@ -605,3 +605,37 @@ def test_weather_departure_option_window_is_validated(monkeypatch):
         for bad in (-1, 13):
             with pytest.raises(ValueError, match=name):
                 Settings(_env_file=None, **{name: bad})
+
+
+def test_poi_settings_have_safe_defaults_and_are_validated(monkeypatch):
+    monkeypatch.delenv("POI_ENABLED", raising=False)  # the suite switches POIs off globally
+    s = Settings(_env_file=None)
+    assert s.poi_enabled is True and s.poi_max_retries == 1
+    assert s.poi_overpass_urls == "https://overpass-api.de/api/interpreter"
+    assert "{lang}" in s.poi_wikipedia_url
+    for bad in (
+        {"poi_timeout_s": 0},
+        {"poi_cache_ttl_s": -1},
+        {"poi_max_retries": -1},
+        {"poi_default_buffer_m": 0},
+        {"poi_default_buffer_m": 6000, "poi_max_buffer_m": 5000},
+        {"poi_per_category_limit": 0},
+        {"poi_wikipedia_url": "https://en.wikipedia.org"},
+        {"poi_overpass_urls": " , "},
+    ):
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, **bad)
+    several = Settings(_env_file=None, poi_overpass_urls="https://a.example/x, https://b.example/y")
+    assert several.poi_overpass_urls.count(",") == 1
+
+
+def test_build_poi_service_respects_the_switch_and_splits_the_instances(monkeypatch):
+    monkeypatch.delenv("POI_ENABLED", raising=False)
+    from bike_routing_agent.api import build_poi_service
+
+    assert build_poi_service(Settings(_env_file=None, poi_enabled=False)) is None
+    service = build_poi_service(
+        Settings(_env_file=None, poi_overpass_urls="https://a.example/x, https://b.example/y")
+    )
+    assert service is not None
+    assert service._fetcher._base_urls == ["https://a.example/x", "https://b.example/y"]

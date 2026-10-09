@@ -17,9 +17,14 @@ from pydantic import (
 )
 
 from bike_routing_agent.config import resolve_surface_tokens
+from bike_routing_agent.poi.categories import ALL_KEYS, SIGHT_KEYS
+from bike_routing_agent.poi.models import Poi
 from bike_routing_agent.weather.models import RouteWeather
 
 MAX_VIA_POINTS = 10
+# Famous-POI route stops (issue #55): how many, and how wide a corridor to look in.
+MAX_POI_STOPS = 5
+MAX_POI_CORRIDOR_KM = 15.0
 # Upper bound for the request's max_alternatives (issue #24).
 MAX_ALTERNATIVES = 5
 # How far ahead a departure time may be (Open-Meteo forecasts reach 16 days;
@@ -171,6 +176,37 @@ class PlaceInput(BaseModel):
         return self
 
 
+class PoiStopsRequest(BaseModel):
+    """Ask for a route that passes the best-known sights between origin and destination."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # How many stops to add (they become via points, in travel order).
+    count: int = Field(default=2, ge=1, le=MAX_POI_STOPS)
+    # Which kinds of sight may be stops; services (water, cafes, ...) never are.
+    categories: list[str] = Field(default_factory=lambda: list(SIGHT_KEYS))
+    # How far from the straight line origin -> destination a stop may lie.
+    corridor_km: float = Field(default=5.0, ge=0.5, le=MAX_POI_CORRIDOR_KM)
+    # A sight must be described in at least this many languages (Wikidata sitelinks) to count
+    # as "famous": below it a local chapel would be picked just for being the best on offer.
+    min_fame: int = Field(default=5, ge=1, le=200)
+
+    @field_validator("categories")
+    @classmethod
+    def _sight_categories(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(ALL_KEYS))
+        if unknown:
+            raise ValueError(f"unknown POI categories {unknown}; known: {list(ALL_KEYS)}")
+        services = sorted(set(value) - set(SIGHT_KEYS))
+        if services:
+            raise ValueError(
+                f"{services} are services, not sights: route stops can only be {list(SIGHT_KEYS)}"
+            )
+        if not value:
+            raise ValueError("categories must not be empty")
+        return value
+
+
 class RoutePlanAPIRequest(BaseModel):
     """Top-level request body for POST /v1/route/plan."""
 
@@ -187,6 +223,8 @@ class RoutePlanAPIRequest(BaseModel):
     # a UTC offset is read as UTC. Forecasts beyond MAX_FORECAST_DAYS ahead are
     # too uncertain to be useful and are rejected.
     departure_time: datetime | None = None
+    # Route past the best-known sights between origin and destination (issue #55).
+    poi_stops: PoiStopsRequest | None = None
 
     @field_validator("departure_time")
     @classmethod
@@ -212,6 +250,17 @@ class RoutePlanAPIRequest(BaseModel):
                 )
         elif self.destination is None:
             raise ValueError("destination is required unless return_to_origin is set")
+        if self.poi_stops is not None:
+            if self.constraints.return_to_origin:
+                raise ValueError(
+                    "poi_stops is not supported with return_to_origin: a loop has no "
+                    "origin-destination corridor to look in"
+                )
+            if len(self.via) + self.poi_stops.count > MAX_VIA_POINTS:
+                raise ValueError(
+                    f"via ({len(self.via)}) plus poi_stops.count ({self.poi_stops.count}) "
+                    f"exceeds the {MAX_VIA_POINTS} via points an engine accepts"
+                )
         return self
 
 
@@ -296,5 +345,11 @@ class RoutePlanResponse(BaseModel):
     # "ok", "unavailable" (all providers failed), "not_covered" (the forecast
     # does not reach the ride) or "skipped" (nothing to forecast).
     weather_status: str | None = None
+    # The famous-POI stops added to the route (null when none were asked for), and how it
+    # went: "ok", "none_found" (nothing well-known in the corridor), "unavailable" (a lookup
+    # failed or POIs are switched off), "unsupported" or "dropped" (the engines could not
+    # route through them, so the plan was made without).
+    poi_stops: list[Poi] | None = None
+    poi_stops_status: str | None = None
     # Set by POST /v1/route/plan-text: the structured request the text was read as.
     interpretation: Interpretation | None = None
