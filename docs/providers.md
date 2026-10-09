@@ -189,3 +189,27 @@ lets the scorer pick the best candidate across engines.
 4. Add adapter tests with `respx`-mocked HTTP mirroring
    `tests/providers/test_ors_adapter.py`, including the malformed-payload and
    no-route paths.
+
+
+## BRouter per-request settings
+
+BRouter has no request fields for constraints, but it accepts a **profile variable per
+request** as `profile:<name>=<number>` (numbers only: `1` is true, `0` is false; `true`
+makes BRouter answer 500). The adapter uses this for `avoid_high_traffic_roads`:
+
+| Profile | Variable set |
+| --- | --- |
+| `custom_gravel-v1`, `custom_gravel-v2` | `consider_traffic_estimate` |
+| `custom_touring-v1`, `custom_commuter-v1`, `trekking`, `fastbike`, `fastbike-verylowtraffic` | `consider_traffic` |
+| `mtb`, `vm-forum-liegerad-schnell` | none: no traffic setting, declared in `warnings` |
+
+`avoid_high_traffic_roads=true` (the default) sends `1`, `false` sends `0`; the value
+actually sent is recorded in the candidate's `provenance.profile_overrides` (same
+profile with a different switch is a different route, so the record matters). The
+effect is real but moderate, measured over 14 routes (mean share of the route on main
+roads without a bike lane, on vs off): touring 13 vs 22 %, trekking/city 14 vs 21 %,
+commuter 14 vs 24 %, fastbike (road, e-bike) 56 vs 76 %, gravel 0.7 vs 2.3 %, at most
++3 % time ([profile-evaluation.md](profile-evaluation.md)). Before this, touring and city
+were routed with the traffic estimate off whatever the request said; they now follow it
+(on by default), so their default routes are calmer. Ferries are not covered yet: the
+same mechanism would work for the profiles that have `allow_ferries`.

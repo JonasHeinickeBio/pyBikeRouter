@@ -155,6 +155,16 @@ judge a profile by (the same geometry reports 91 to 125 m of ascent under differ
 ORS profiles, and `cycling-mountain` reports 3.5 km of ascent on the Harz route), so
 this evaluation is BRouter-only.
 
+## The traffic switch, per request
+
+`avoid_high_traffic_roads` is now applied per request through BRouter's profile
+variables (`profile:consider_traffic=1|0`, see [providers.md](providers.md#brouter-per-request-settings)).
+Same 14 routes, switch off vs on, mean unprotected main-road share and mean time:
+gravel 2.3 -> 0.7 % (50.1 -> 50.3 min), touring 21.9 -> 13.1 % (59.0 -> 59.5), trekking
+20.8 -> 14.3 % (60.6 -> 60.1), commuter 23.5 -> 14.3 % (60.8 -> 60.1), fastbike 76.4 ->
+56.4 % (58.6 -> 60.5). Largest single effects through the real adapter: road
+Gifhorn -> Braunschweig 93 -> 45 %, touring Helmstedt -> Königslutter 51 -> 6 %.
+
 ## Limits
 
 One region (Lower Saxony and the Harz, one `.rd5` tile), nine routes, no riders.

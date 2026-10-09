@@ -51,7 +51,7 @@ defaults:
 | `max_distance_km` | `null` | `0 < x <= 1000`; must be >= `target_distance_km` |
 | `max_ascent_m` | `null` | `0 <= x <= 10000` |
 | `prefer_surfaces` / `avoid_surfaces` | `[]` | surface categories (`paved`, `masonry`, `compacted`, `loose`, `natural_soft`) or OSM `surface` values; the two lists may not resolve to the same category. Unrecognised words are accepted but unscored. Scored from OSM enrichment only when enabled and calibrated (see [scoring](scoring-and-exports.md#surface-preferences-issue-23)) |
-| `avoid_high_traffic_roads` | `true` | |
+| `avoid_high_traffic_roads` | `true` | BRouter applies it per request by setting the profile's traffic switch (`profile:consider_traffic=1`/`0`, `consider_traffic_estimate` for gravel; see [providers.md](providers.md#brouter-per-request-settings)); the setting used is recorded in `provenance.profile_overrides`. ORS and Valhalla cannot apply it (declared in `warnings`) |
 | `avoid_ferries` | `true` | |
 | `return_to_origin` | `false` | loop request: `destination` must be omitted and `target_distance_km` is required. |
 | `loop_direction` | `"clockwise"` | one of `clockwise`, `counterclockwise`; only meaningful with `return_to_origin`. |
