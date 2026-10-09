@@ -10,6 +10,10 @@ from typing import IO, Any
 
 GROUP_MODULES: tuple[str, ...] = (
     "route",
+    "poi",
+    "brouter",
+    "history",
+    "status",
     "serve",
     "docker",
     "config",
@@ -22,7 +26,7 @@ GROUP_MODULES: tuple[str, ...] = (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bike-router",
-        description="OSM bike routing agent: plan routes, serve the API, manage Docker.",
+        description="OSM bike routing agent: routes, sights, map data, history, the API.",
         epilog="Run 'bike-router <group> --help' for the commands in each group.",
     )
     parser.add_argument("--version", action="version", version=_version_string())
