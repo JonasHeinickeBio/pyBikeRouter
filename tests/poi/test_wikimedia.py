@@ -20,6 +20,16 @@ def fixture(name: str):
     return json.loads((FIXTURES / name).read_text())
 
 
+def extract_payload(**page_changes):
+    """The real Action API answer for the Neuschwanstein article, with changes to its page."""
+    payload = fixture("wikipedia_extract_neuschwanstein.json")
+    payload["query"]["pages"][0].update(page_changes)
+    return payload
+
+
+DE_API = "https://de.wikipedia.example/w/api.php"
+
+
 def resolver(**kw) -> WikimediaResolver:
     return WikimediaResolver(wikidata_url=WIKIDATA, wikipedia_url=WIKIPEDIA, **kw)
 
@@ -113,9 +123,7 @@ async def test_info_combines_wikidata_wikipedia_and_the_sister_projects():
     respx.get(WIKIDATA).mock(
         return_value=httpx.Response(200, json=fixture("wikidata_entity_raw.json"))
     )
-    summary = respx.get(
-        "https://de.wikipedia.example/api/rest_v1/page/summary/Schloss_Neuschwanstein"
-    ).mock(return_value=httpx.Response(200, json=fixture("wikipedia_summary_neuschwanstein.json")))
+    summary = respx.get(DE_API).mock(return_value=httpx.Response(200, json=extract_payload()))
 
     info = await resolver().info(
         wikidata="Q4152",
@@ -142,9 +150,7 @@ async def test_info_combines_wikidata_wikipedia_and_the_sister_projects():
 
 @respx.mock
 async def test_info_falls_back_to_the_osm_wikipedia_tag_without_wikidata():
-    respx.get("https://de.wikipedia.example/api/rest_v1/page/summary/Schloss_Neuschwanstein").mock(
-        return_value=httpx.Response(200, json=fixture("wikipedia_summary_neuschwanstein.json"))
-    )
+    route = respx.get(DE_API).mock(return_value=httpx.Response(200, json=extract_payload()))
     info = await resolver().info(
         wikidata=None,
         wikipedia="de:Schloss Neuschwanstein",
@@ -154,6 +160,10 @@ async def test_info_falls_back_to_the_osm_wikipedia_tag_without_wikidata():
     )
     assert info.extract and info.language == "de"
     assert [link.kind for link in info.links] == ["wikipedia"]
+    # The title travels as a query parameter, never as part of the URL path.
+    request = route.calls.last.request
+    assert request.url.path == "/w/api.php"
+    assert request.url.params["titles"] == "Schloss Neuschwanstein"
 
 
 @respx.mock
@@ -168,7 +178,11 @@ async def test_info_is_partial_when_a_service_is_down_and_does_not_cache_that():
     respx.get(WIKIDATA).mock(
         return_value=httpx.Response(200, json=fixture("wikidata_entity_raw.json"))
     )
-    respx.get(host="de.wikipedia.example").mock(return_value=httpx.Response(404))
+    respx.get(host="de.wikipedia.example").mock(
+        return_value=httpx.Response(
+            200, json={"query": {"pages": [{"title": "x", "missing": True}]}}
+        )
+    )
     again = await r.info(wikidata="Q4152", wikipedia=None, osm_id=None, website=None, lang="de")
     assert again.title == "Schloss Neuschwanstein"
 
@@ -179,7 +193,9 @@ async def test_a_disambiguation_page_is_not_used_as_the_description():
         return_value=httpx.Response(200, json=fixture("wikidata_entity_raw.json"))
     )
     respx.get(host="de.wikipedia.example").mock(
-        return_value=httpx.Response(200, json={"type": "disambiguation", "extract": "x"})
+        return_value=httpx.Response(
+            200, json=extract_payload(pageprops={"disambiguation": ""}, extract="x")
+        )
     )
     info = await resolver().info(
         wikidata="Q4152", wikipedia=None, osm_id=None, website=None, lang="de"
@@ -191,11 +207,10 @@ async def test_a_disambiguation_page_is_not_used_as_the_description():
 
 @respx.mock
 async def test_thumbnails_outside_wikimedia_are_dropped():
-    summary = {
-        **fixture("wikipedia_summary_neuschwanstein.json"),
-        "thumbnail": {"source": "https://evil.example/x.png", "width": 1, "height": 1},
-    }
-    respx.get(host="de.wikipedia.example").mock(return_value=httpx.Response(200, json=summary))
+    evil = extract_payload(
+        thumbnail={"source": "https://evil.example/x.png", "width": 1, "height": 1}
+    )
+    respx.get(host="de.wikipedia.example").mock(return_value=httpx.Response(200, json=evil))
     info = await resolver().info(
         wikidata=None, wikipedia="de:Schloss Neuschwanstein", osm_id=None, website=None, lang="de"
     )
@@ -267,7 +282,7 @@ async def test_an_odd_summary_shape_costs_the_description_not_the_poi():
     respx.get(WIKIDATA).mock(
         return_value=httpx.Response(200, json=fixture("wikidata_entity_raw.json"))
     )
-    odd = {"extract": "Text", "content_urls": ["not", "a", "dict"], "thumbnail": "x"}
+    odd = extract_payload(fullurl=["not", "a", "string"], thumbnail="x", description=["x"])
     respx.get(host="de.wikipedia.example").mock(return_value=httpx.Response(200, json=odd))
     info = await resolver().info(
         wikidata="Q4152", wikipedia=None, osm_id="way/5", website=None, lang="de"
@@ -319,7 +334,7 @@ async def test_only_known_wikipedia_editions_are_ever_asked():
 async def test_the_info_cache_key_holds_no_client_supplied_text():
     cache = InMemoryTTLCache()
     respx.get(host="de.wikipedia.example").mock(
-        return_value=httpx.Response(200, json=fixture("wikipedia_summary_neuschwanstein.json"))
+        return_value=httpx.Response(200, json=extract_payload())
     )
     await resolver(cache=cache).info(
         wikidata=None, wikipedia="de:Schloss Neuschwanstein", osm_id=None, website=None, lang="de"

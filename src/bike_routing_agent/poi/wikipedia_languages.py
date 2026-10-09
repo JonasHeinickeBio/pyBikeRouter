@@ -360,3 +360,15 @@ WIKIPEDIA_LANGUAGES: frozenset[str] = frozenset(
         "zu",
     )
 )
+
+# A lookup returns one of the constants above, never the caller's string: what builds a host
+# name from a language is then a value this module chose, not text that came in.
+_CANONICAL: dict[str, str] = {code: code for code in WIKIPEDIA_LANGUAGES}
+
+
+def canonical_language(lang: str) -> str:
+    """``lang`` if it is a known Wikipedia edition; ``ValueError`` otherwise."""
+    try:
+        return _CANONICAL[lang]
+    except KeyError:
+        raise ValueError(f"unknown Wikipedia language {lang!r}") from None

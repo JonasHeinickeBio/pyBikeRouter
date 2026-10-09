@@ -16,7 +16,7 @@ they say nothing about safety or opening times beyond what a mapper wrote down.
 | find | OpenStreetMap through **Overpass** | the places, their tags, `wikidata=*` / `wikipedia=*` links | one request for all wanted kinds, as bounding boxes along the route (see below); results cached 24 h |
 | rank | **Wikidata** `wbgetentities` | how many language editions describe the item (its *sitelinks*) = `fame` | 50 items per request, keyless, cached 7 d |
 | link | **Wikipedia** page properties | the Wikidata item for a bare `wikipedia=de:Title` tag | only for sights that lack `wikidata` |
-| read | **Wikipedia REST** summary, Wikidata labels, sitelinks | text, thumbnail, links to Wikipedia, Wikivoyage, Commons | on demand, when a marker is opened; cached 24 h |
+| read | **Wikipedia Action API** (article intro, thumbnail, description), Wikidata labels, sitelinks | text, thumbnail, links to Wikipedia, Wikivoyage, Commons | on demand, when a marker is opened; cached 24 h; the title is a query parameter, never part of a URL path |
 
 All of it is open data (ODbL, CC0, CC BY-SA); the UI and `PoiInfo.attribution`
 carry the attribution. Wikimedia requires an identifying `User-Agent`
@@ -163,7 +163,7 @@ The default suite (`tests/poi/`, `tests/nodes/test_poi_stops.py`,
 `POI_ENABLED=false`). Its fixtures are **real responses**, not invented ones:
 `overpass_poi_corridor.json` (Braunschweig -> Goslar, ways and relations with
 `center`), `wikidata_sitelinks_raw.json`, `wikidata_entity_raw.json`,
-`wikipedia_summary_neuschwanstein.json`, `wikipedia_pageprops_raw.json` (including a
+`wikipedia_extract_neuschwanstein.json`, `wikipedia_pageprops_raw.json` (including a
 page that does not exist). The front-end helpers in `frontend/pois.js` run under node.
 
 ### Checked live

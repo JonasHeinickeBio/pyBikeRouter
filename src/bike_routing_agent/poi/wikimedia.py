@@ -40,7 +40,7 @@ from bike_routing_agent.poi.models import (
     PoiInfo,
     PoiLink,
 )
-from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
+from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES, canonical_language
 from bike_routing_agent.providers.base import CacheBackend
 
 logger = logging.getLogger(__name__)
@@ -344,20 +344,48 @@ class WikimediaResolver:
         )
 
     async def _summary(self, lang: str, title: str) -> dict[str, Any] | None:
-        url = (
-            self._wikipedia_base(lang)
-            + "/api/rest_v1/page/summary/"
-            + quote(title.replace(" ", "_"), safe="")
-        )
+        """The opening of an article: text, one-line description, thumbnail, URL.
+
+        Asked through the Action API with the title as a *parameter* -- never as part of the
+        URL path -- so no client-influenced text is ever spliced into a URL.
+        """
         try:
-            payload = await self._get_json(url, None)
+            payload = await self._get_json(
+                self._wikipedia_base(lang) + "/w/api.php",
+                {
+                    "action": "query",
+                    "format": "json",
+                    "formatversion": "2",
+                    "redirects": "1",
+                    "titles": title,
+                    "prop": "extracts|pageimages|description|info|pageprops",
+                    "exintro": "1",
+                    "explaintext": "1",
+                    "piprop": "thumbnail",
+                    "pithumbsize": "330",
+                    "inprop": "url",
+                    "ppprop": "disambiguation",
+                },
+            )
         except ProviderError as exc:
             logger.warning("wikipedia summary lookup failed: %s", exc.message)
             return None
-        # A disambiguation page is not a description of the place.
-        if not isinstance(payload, dict) or payload.get("type") == "disambiguation":
+        query = (payload or {}).get("query")
+        pages = _as_list(query.get("pages")) if isinstance(query, dict) else []
+        page = pages[0] if pages and isinstance(pages[0], dict) else None
+        if page is None or page.get("missing"):
             return None
-        return payload
+        # A disambiguation page is not a description of the place.
+        props = page.get("pageprops")
+        if isinstance(props, dict) and "disambiguation" in props:
+            return None
+        return {
+            "title": page.get("title"),
+            "extract": page.get("extract"),
+            "description": page.get("description"),
+            "thumbnail": page.get("thumbnail"),
+            "content_urls": {"desktop": {"page": page.get("fullurl")}},
+        }
 
     # ------------------------------------------------------------------ http
 
@@ -365,9 +393,7 @@ class WikimediaResolver:
         """``https://{lang}.wikipedia.org`` -- the only place a language enters a host name, so
         it must be one of the known Wikipedia editions (``WIKIPEDIA_LANGUAGES``): nothing a
         client or an OSM tag says can change the host or add a path."""
-        if lang not in WIKIPEDIA_LANGUAGES:
-            raise ValueError(f"unknown Wikipedia language {lang!r}")
-        return self._wikipedia_url.format(lang=lang)
+        return self._wikipedia_url.format(lang=canonical_language(lang))
 
     async def _get_json(self, url: str, params: dict[str, str] | None) -> Any:
         """GET and decode; ``None`` for a 404; one retry on timeouts and 5xx."""
