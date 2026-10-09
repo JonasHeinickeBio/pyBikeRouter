@@ -518,10 +518,10 @@ async def test_a_parser_that_is_not_configured_or_refuses_is_explained():
     service, planner = chat(text_enabled=True)
     planner.text_response = TextUnavailableError()
     r = await Talk(service).say("a relaxing weekend ride around Goslar")
-    assert "not configured" in r.reply and "Help" in r.suggestions
+    assert "not configured" in r.reply and "Help" in r.suggestions and r.failed is True
     planner.text_response = PlanError("the language model could not read that")
     r = await Talk(service).say("something very strange here")
-    assert "could not read that" in r.reply
+    assert "could not read that" in r.reply and r.failed is True
 
 
 # ---------------------------------------------------------------------------- failures

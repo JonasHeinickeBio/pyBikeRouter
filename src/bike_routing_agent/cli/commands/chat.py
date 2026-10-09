@@ -147,7 +147,8 @@ def run(
             try:
                 text = reader(prompt)
             except (EOFError, KeyboardInterrupt):
-                print("", file=stdout)
+                if args.format == "text":  # the shell prompt starts on a new line; JSON stays JSON
+                    print("", file=stdout)
                 return EXIT_OK
             if not text.strip():
                 continue

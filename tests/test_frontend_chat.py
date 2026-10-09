@@ -90,4 +90,8 @@ def test_the_page_ships_the_chat_panel_hidden_until_the_server_has_a_chat():
     # One generation counter for form, text and chat plans: an older response never replaces a
     # newer route on the map.
     assert app.count("++state.planGeneration") == 2  # form and text plans
-    assert app.count("generation !== state.planGeneration") == 3  # form, text, chat
+    # A stale form/text response is dropped (2); a chat plan is held back only while a newer form
+    # request runs and shown after all if that request fails.
+    assert app.count("if (generation !== state.planGeneration) return;") == 3  # form, text, settle
+    assert "generation !== state.planGeneration; // the form asked" in app
+    assert "state.deferredChat = { plan: data.plan" in app and "drawChatPlan(held.plan" in app

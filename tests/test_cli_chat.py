@@ -156,6 +156,13 @@ def test_json_mode_prints_no_prompt_so_every_line_is_json():
     assert [json.loads(line)["intent"] for line in out.getvalue().strip().splitlines()] == ["plan"]
 
 
+def test_json_mode_prints_nothing_but_json_even_at_end_of_input():
+    _, text_out, _ = run([], lines=["A to B"])
+    assert text_out.endswith("\n\n")  # text mode: a newline so the shell prompt starts fresh
+    _, json_out, _ = run(["--format", "json"], lines=["A to B"])
+    assert all(json.loads(line) for line in json_out.splitlines()) and "\n\n" not in json_out
+
+
 def test_the_whole_conversation_runs_in_one_event_loop():
     loops: list[Any] = []
 

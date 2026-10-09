@@ -107,6 +107,9 @@ const state = {
   chatSession: null, // the server-side conversation (kept in memory there)
   chatBusy: false,
   planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
+  planPending: null, // generation of the form/text request in flight, if any
+  renderedGeneration: 0, // generation of the plan on the map
+  deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
@@ -424,6 +427,8 @@ async function planRoute() {
   const controller = new AbortController();
   state.aborted = controller;
   const generation = ++state.planGeneration;
+  state.planPending = generation;
+  let drawn = false;
   const startedAt = performance.now();
 
   try {
@@ -443,11 +448,29 @@ async function planRoute() {
     state.lastResponse = data;
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
+    drawn = true;
   } catch (err) {
     if (err.name === "AbortError") return;
     setStatus("error", `Network error: ${escapeHtml(String(err))}`);
   } finally {
     els.planBtn.disabled = false;
+    settlePlan(generation, drawn);
+  }
+}
+
+/** A form/text request is over: remember what is on the map; if it failed, the chat's route
+ * that arrived meanwhile (and was held back) is shown after all. */
+function settlePlan(generation, drawn) {
+  if (state.planPending === generation) state.planPending = null;
+  if (generation !== state.planGeneration) return; // a newer plan took over
+  if (drawn) {
+    state.renderedGeneration = generation;
+    state.deferredChat = null;
+  } else if (state.deferredChat) {
+    const held = state.deferredChat;
+    state.deferredChat = null;
+    chatSay("bot", "(The form request did not give a route, so here is the one from our chat.)");
+    drawChatPlan(held.plan, held.focusRank, held.secs);
   }
 }
 
@@ -514,6 +537,8 @@ async function planFromText() {
   const controller = new AbortController();
   state.aborted = controller;
   const generation = ++state.planGeneration;
+  state.planPending = generation;
+  let drawn = false;
   const startedAt = performance.now();
 
   try {
@@ -534,6 +559,7 @@ async function planFromText() {
     if (data.interpretation) applyInterpretation(data.interpretation);
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
+    drawn = true;
     if (data.interpretation && data.status !== "invalid") {
       const summary = BikeText.summaryHtml(data.interpretation);
       if (summary) els.status.insertAdjacentHTML("beforeend", `<div class="interpretation">${summary}</div>`);
@@ -544,6 +570,7 @@ async function planFromText() {
   } finally {
     els.textBtn.disabled = false;
     els.planBtn.disabled = false;
+    settlePlan(generation, drawn);
   }
 }
 
@@ -1528,16 +1555,19 @@ async function sendChat(text) {
     state.chatSession = data.session_id;
     chatSay("bot", data.reply);
     setChatChips(data.suggestions);
-    // A plan the form requested after this message was sent is newer: keep it on the map.
-    if (data.plan && generation !== state.planGeneration) {
-      chatSay("bot", "(The map shows the route you asked for in the form meanwhile.)");
-    } else if (data.plan) {
-      state.planGeneration += 1;
-      if (state.aborted) state.aborted.abort(); // an older form request must not replace it
-      state.lastResponse = data.plan;
-      renderResponse(data.plan, ((performance.now() - startedAt) / 1000).toFixed(1));
-      const index = BikeChat.candidateIndex(data.plan, data.focus_rank);
-      if (index >= 0) activateCandidate(index);
+    if (data.plan) {
+      const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+      const stale = generation !== state.planGeneration; // the form asked for a route meanwhile
+      if (!stale || (state.planPending === null && state.renderedGeneration !== state.planGeneration)) {
+        // Current -- or the newer form request failed and left nothing on the map.
+        drawChatPlan(data.plan, data.focus_rank, secs);
+      } else {
+        chatSay("bot", "(The map shows the route you asked for in the form meanwhile.)");
+        // If that form request is still running and then fails, this route is shown after all.
+        if (state.planPending !== null) {
+          state.deferredChat = { plan: data.plan, focusRank: data.focus_rank, secs };
+        }
+      }
     }
   } catch {
     waiting.remove();
@@ -1547,6 +1577,18 @@ async function sendChat(text) {
     els.chatSend.disabled = false;
     els.chatInput.focus();
   }
+}
+
+/** Draw the plan a chat turn produced; it is now the newest plan on the map. */
+function drawChatPlan(plan, focusRank, secs) {
+  state.planGeneration += 1;
+  state.renderedGeneration = state.planGeneration;
+  state.deferredChat = null;
+  if (state.aborted) state.aborted.abort(); // an older form request must not replace it
+  state.lastResponse = plan;
+  renderResponse(plan, secs);
+  const index = BikeChat.candidateIndex(plan, focusRank);
+  if (index >= 0) activateCandidate(index);
 }
 
 /** Show the chat only when the server has one. */

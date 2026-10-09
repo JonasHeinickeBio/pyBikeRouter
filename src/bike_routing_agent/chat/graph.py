@@ -170,9 +170,10 @@ def build_chat_graph(
             return {
                 "reply": "Free-text planning is not configured here. " + HELP_TEXT,
                 "suggestions": ["Plan a route", "Help"],
+                "failed": True,
             }
         except PlanError as exc:
-            return {"reply": str(exc), "suggestions": ["Help", "Plan a route"]}
+            return {"reply": str(exc), "suggestions": ["Help", "Plan a route"], "failed": True}
         interpretation = plan.get("interpretation") or {}
         request = interpretation.get("request") or {}
         if interpretation.get("departure_time"):
