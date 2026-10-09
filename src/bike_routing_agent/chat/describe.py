@@ -7,6 +7,7 @@ pros/cons the scoring already produced (docs/scoring-and-exports.md): no safety 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 STYLE_NAMES = {
@@ -58,7 +59,8 @@ def weather_line(candidate: dict[str, Any]) -> str | None:
     parts: list[str] = []
     low, high = summary.get("temperature_min_c"), summary.get("temperature_max_c")
     if low is not None and high is not None:
-        parts.append(f"{low:.0f} to {high:.0f} °C")
+        same = round(low) == round(high)
+        parts.append(f"{low:.0f} °C" if same else f"{low:.0f} to {high:.0f} °C")
     if summary.get("wind_speed_mean_kmh") is not None:
         parts.append(f"wind about {summary['wind_speed_mean_kmh']:.0f} km/h")
     head = summary.get("headwind_mean_kmh")
@@ -73,6 +75,76 @@ def weather_line(candidate: dict[str, Any]) -> str | None:
     if summary.get("after_dark"):
         parts.append("part of the ride is after dark")
     return ", ".join(parts) if parts else None
+
+
+def place_text(value: Any) -> str:
+    if isinstance(value, dict) and value.get("lat") is not None:
+        return f"{value['lat']:.4f}, {value['lon']:.4f}"
+    return str(value)
+
+
+def reading(
+    request: dict[str, Any],
+    *,
+    ignored: Sequence[str] = (),
+    assumed: Sequence[str] = (),
+) -> str:
+    """How the request was understood, in a sentence -- so a misreading is visible at once."""
+    c = request.get("constraints") or {}
+    origin = place_text(request.get("origin"))
+    if c.get("return_to_origin"):
+        head = f"Planning a {c.get('target_distance_km'):g} km loop from {origin}"
+    elif request.get("via") and place_text(request.get("destination")) == origin:
+        head = f"Planning a round trip from {origin} to " + ", ".join(
+            place_text(v) for v in request["via"]
+        )
+    else:
+        head = f"Planning {origin} to {place_text(request.get('destination'))}"
+    if request.get("via") and "round trip" not in head:
+        head += " via " + ", ".join(place_text(v) for v in request["via"])
+    details: list[str] = []
+    if c.get("bike_type"):
+        details.append(f"{STYLE_NAMES.get(c['bike_type'], c['bike_type'])} bike")
+    if c.get("max_distance_km"):
+        details.append(f"at most {c['max_distance_km']:g} km")
+    if c.get("max_ascent_m") is not None:
+        details.append(f"at most {c['max_ascent_m']:g} m of climbing")
+    if c.get("avoid_ferries") is True:
+        details.append("no ferries")
+    elif c.get("avoid_ferries") is False:
+        details.append("ferries allowed")
+    if c.get("avoid_high_traffic_roads") is True:
+        details.append("quiet roads")
+    elif c.get("avoid_high_traffic_roads") is False:
+        details.append("busy roads allowed")
+    if c.get("prefer_surfaces"):
+        details.append("prefer " + "/".join(c["prefer_surfaces"]))
+    if c.get("avoid_surfaces"):
+        details.append("avoid " + "/".join(c["avoid_surfaces"]))
+    if c.get("return_to_origin") and c.get("loop_direction") == "counterclockwise":
+        details.append("counter-clockwise")
+    stops = (request.get("poi_stops") or {}).get("count")
+    if stops:
+        details.append(f"past {stops} well-known sight{'s' if stops != 1 else ''}")
+    if request.get("routing_engines"):
+        details.append("engine " + ", ".join(request["routing_engines"]))
+    if request.get("departure_time"):
+        details.append("leaving " + _when(str(request["departure_time"])))
+    text = head + (f" ({', '.join(details)})" if details else "") + "."
+    if assumed:
+        text += " Assumed: " + "; ".join(assumed) + "."
+    if ignored:
+        text += " Not applied: " + "; ".join(ignored) + "."
+    return text + " "
+
+
+def _when(iso: str) -> str:
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(iso).strftime("%a %d %b, %H:%M")
+    except ValueError:
+        return iso
 
 
 def describe_plan(plan: dict[str, Any]) -> str:
@@ -106,6 +178,30 @@ def describe_plan(plan: dict[str, Any]) -> str:
                 "engine."
             )
     return " ".join(lines)
+
+
+def limit_notes(request: dict[str, Any], plan: dict[str, Any]) -> str:
+    """Where the route is outside what was asked for -- said, not hidden.
+
+    The limits are goals the engines are steered towards, not guarantees: a route that climbs more
+    than "max 300 m" or is longer than "at most 70 km" is reported as such.
+    """
+    c = request.get("constraints") or {}
+    m = (plan.get("route") or {}).get("metrics") or {}
+    notes: list[str] = []
+    ascent, limit = m.get("ascent_m"), c.get("max_ascent_m")
+    if ascent is not None and limit is not None and ascent > limit + 1:
+        notes.append(f"it still climbs {round(ascent)} m, more than the {limit:g} m asked for")
+    distance, cap = m.get("distance_m"), c.get("max_distance_km")
+    if distance is not None and cap is not None and distance / 1000 > cap + 0.1:
+        notes.append(f"it is {distance / 1000:.1f} km, longer than the {cap:g} km asked for")
+    target = c.get("target_distance_km")
+    if distance is not None and target and c.get("return_to_origin"):
+        if abs(distance / 1000 - target) / target > 0.2:
+            notes.append(f"the loop is {distance / 1000:.1f} km, not the {target:g} km asked for")
+    if not notes:
+        return ""
+    return " Note: " + "; ".join(notes) + " -- the engines found nothing closer."
 
 
 def describe_alternatives(plan: dict[str, Any]) -> str:

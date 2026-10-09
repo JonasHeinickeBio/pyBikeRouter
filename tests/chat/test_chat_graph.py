@@ -580,6 +580,29 @@ async def test_help_and_reset():
     assert "loop back" in r.reply
 
 
+async def test_a_follow_up_gets_through_an_open_dialogue_question_when_a_route_exists():
+    service, planner = chat()
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    await t.say("plan a route")  # a new dialogue starts ... and asks for the start
+    r = await t.say("alternatives")  # ... but the person is still looking at the first route
+    assert r.intent == "alternatives" and r.awaiting is None and "Alternatives" in r.reply
+    r = await t.say("the fastest")
+    assert r.intent == "alternatives" and r.focus_rank is not None and r.plan is not None
+    assert (await t.say("how steep is it?")).intent == "explain"  # the question is gone
+
+
+@pytest.mark.parametrize(
+    "text", ["the fastest", "fastest", "show me the shortest", "the flattest one"]
+)
+async def test_a_superlative_picks_an_alternative(text):
+    service, planner = chat()
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say(text)
+    assert r.intent == "alternatives" and r.focus_rank in (1, 2) and len(planner.requests) == 1
+
+
 async def test_follow_ups_without_a_route_point_at_the_help():
     service, _ = chat()
     for text in ("make it shorter", "what's the weather?"):
@@ -730,3 +753,166 @@ async def test_naming_an_engine_without_any_request_starts_the_dialogue():
     service, planner = chat()
     r = await Talk(service).say("use openrouteservice")
     assert r.intent == "guided" and planner.requests == []
+
+
+# ------------------------------------------------- reading, limits, retries, departures
+
+
+async def test_the_reply_says_how_the_line_was_read_so_a_misreading_is_visible():
+    service, planner = chat()
+    r = await Talk(service, "Europe/Berlin").say(
+        "Goslar to Hannover by road bike via Hildesheim, max 80 km, no ferries, past 2 castles, "
+        "along the Rhine"
+    )
+    head = r.reply.split(" Here is your route")[0]
+    assert head.startswith("Planning Goslar to Hannover via Hildesheim (road bike, at most 80 km")
+    assert "no ferries" in head and "past 2 well-known sights" in head
+    assert "Not applied: 'the Rhine' -- I cannot route along a feature" in head or (
+        "Rhine" in head and "Not applied" in head
+    )
+
+
+async def test_a_departure_in_the_line_reaches_the_request_in_the_users_zone():
+    service, planner = chat()
+    await Talk(service, "Europe/Berlin").say("Goslar to Hannover tomorrow at 8")
+    sent = planner.requests[0]["departure_time"]
+    assert sent.endswith(("+01:00", "+02:00")) and "T08:00:00" in sent
+
+
+async def test_the_limits_that_were_missed_are_said():
+    def respond(request):
+        plan = ready_plan()
+        plan["route"]["metrics"].update(ascent_m=335.0, distance_m=50_100.0)
+        return plan
+
+    service, _ = chat(FakePlanner(respond))
+    t = Talk(service)
+    r = await t.say("Goslar to Hannover max 200 m climb, max 40 km")
+    assert "still climbs 335 m, more than the 200 m" in r.reply
+    assert "50.1 km, longer than the 40 km" in r.reply
+    ok, _ = chat()
+    assert "Note:" not in (await Talk(ok).say("Goslar to Hannover max 400 m climb")).reply
+
+
+async def test_a_loop_far_from_the_asked_length_is_said():
+    service, _ = chat()  # the fake route is about 30 km
+    r = await Talk(service).say("60 km loop from Goslar")
+    assert "not the 60 km asked for" in r.reply
+    assert "Note" not in (await Talk(service).say("30 km loop from Goslar")).reply
+
+
+async def test_a_service_that_timed_out_is_retried_with_try_again():
+    busy = {
+        "status": "provider_failure",
+        "errors": [{"code": "provider_timeout", "message": "geocoder request timed out"}],
+    }
+    answers = iter([busy])
+    service, planner = chat(FakePlanner(lambda request: next(answers, None) or ready_plan()))
+    t = Talk(service)
+    r = await t.say("Goslar to Hannover by gravel")
+    assert "did not answer in time" in r.reply and "Try again" in r.suggestions and r.failed
+    r = await t.say("Try again")
+    assert r.plan is not None and r.reply.startswith("Trying again. ")
+    assert planner.requests[0] == planner.requests[1]  # exactly the request that failed
+
+
+async def test_try_again_without_a_failure_is_not_a_command():
+    service, planner = chat()
+    r = await Talk(service).say("try again")
+    assert r.plan is None and planner.requests == []
+
+
+async def test_a_duration_loop_says_which_speed_it_assumed():
+    service, planner = chat()
+    r = await Talk(service).say("2 hour loop from Goslar on my road bike")
+    assert planner.requests[0]["constraints"]["target_distance_km"] == 50.0
+    assert "2 h taken as 50 km at 25 km/h (my assumption)" in r.reply
+
+
+async def test_a_partial_line_keeps_what_it_said_in_the_dialogue():
+    service, planner = chat()
+    t = Talk(service, "Europe/Berlin")
+    r = await t.say("gravel loop tomorrow at 9, no ferries, past 2 sights")
+    assert "Where do you want to start?" in r.reply  # no start yet; the rest is remembered
+    r = await t.say("Goslar")
+    assert "How long should the loop be?" in r.reply
+    done = await t.say("35")
+    assert done.reply.startswith("Planning a 35 km loop from Goslar (gravel bike, no ferries")
+    assert "past 2 well-known sights" in done.reply and "leaving" in done.reply
+    sent = planner.requests[0]
+    assert sent["origin"] == "Goslar" and sent["constraints"]["target_distance_km"] == 35.0
+    assert sent["constraints"]["bike_type"] == "gravel" and sent["constraints"]["avoid_ferries"]
+    assert sent["poi_stops"] == {"count": 2} and "T09:00:00" in sent["departure_time"]
+
+
+def _candidates(*offsets_km: float) -> dict[str, Any]:
+    """An ambiguous Ilsenburg: candidates this far (km, east) from the first."""
+    items = [
+        {"label": f"Ilsenburg {i}", "coordinate": {"lon": 10.67 + km / 68.0, "lat": 51.87}}
+        for i, km in enumerate(offsets_km, start=1)
+    ]
+    return {
+        "status": "awaiting_clarification",
+        "clarification": [{"field": "Ilsenburg", "candidates": items}],
+        "errors": [],
+    }
+
+
+async def test_one_town_listed_several_times_is_not_asked_about():
+    def respond(request):
+        return _candidates(0, 0.3, 1.1) if request.get("origin") == "Ilsenburg" else ready_plan()
+
+    service, planner = chat(FakePlanner(respond))
+    r = await Talk(service).say("Ilsenburg to Goslar")
+    assert r.awaiting is None and r.plan is not None  # no question
+    first = _candidates(0)["clarification"][0]["candidates"][0]["coordinate"]
+    assert planner.requests[1]["origin"] == {"lon": first["lon"], "lat": first["lat"]}
+
+
+async def test_a_county_named_after_the_town_is_not_a_second_town():
+    two = {
+        "status": "awaiting_clarification",
+        "clarification": [
+            {
+                "field": "Wolfenbüttel",
+                "candidates": [
+                    {
+                        "label": "Wolfenbüttel, Niedersachsen",
+                        "coordinate": {"lon": 10.53, "lat": 52.16},
+                    },
+                    {
+                        "label": "Landkreis Wolfenbüttel, Niedersachsen",
+                        "coordinate": {"lon": 10.6, "lat": 52.1},
+                    },
+                ],
+            }
+        ],
+        "errors": [],
+    }
+    service, planner = chat(
+        FakePlanner(lambda r: two if r["origin"] == "Wolfenbüttel" else ready_plan())
+    )
+    r = await Talk(service).say("Wolfenbüttel to Goslar")
+    assert r.awaiting is None and planner.requests[1]["origin"] == {"lon": 10.53, "lat": 52.16}
+
+
+async def test_places_far_apart_are_still_asked_about():
+    def respond(request):
+        return _candidates(0, 40) if request.get("origin") == "Ilsenburg" else ready_plan()
+
+    service, _ = chat(FakePlanner(respond))
+    r = await Talk(service).say("Ilsenburg to Goslar")
+    assert r.awaiting == "place_choice" and "Which" in r.reply
+
+
+@pytest.mark.parametrize(
+    "text", ["leave tomorrow at 8", "tomorrow at 8 instead", "start at 7pm", "on Saturday morning"]
+)
+async def test_the_departure_can_be_changed_after_the_route(text):
+    service, planner = chat()
+    t = Talk(service, "Europe/Berlin")
+    await t.say("Braunschweig to Goslar")
+    r = await t.say(text)
+    assert r.intent == "refine" and r.plan is not None and r.reply.startswith("Okay: leaving ")
+    assert "departure_time" in planner.requests[1]
+    assert planner.requests[1]["origin"] == "Braunschweig"  # the rest of the request is kept

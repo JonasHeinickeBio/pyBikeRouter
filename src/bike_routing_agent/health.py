@@ -35,9 +35,7 @@ logger = logging.getLogger(__name__)
 
 ComponentStatusName = Literal["ok", "degraded", "unavailable", "unknown"]
 OverallStatus = Literal["ok", "degraded", "unavailable"]
-ComponentKind = Literal[
-    "routing", "geocoder", "database", "artifact_store", "cache", "weather"
-]
+ComponentKind = Literal["routing", "geocoder", "database", "artifact_store", "cache", "weather"]
 
 _VALID_STATUSES = ("ok", "degraded", "unavailable", "unknown")
 # "unknown" is what the public ORS reports (it has no health endpoint): no

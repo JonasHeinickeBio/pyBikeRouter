@@ -72,7 +72,10 @@ def test_scripted_messages_are_one_conversation_and_print_each_turn():
         ["-m", "from Braunschweig to Goslar", "-m", "make it shorter"], service=service
     )
     assert code == 0
-    assert "you> from Braunschweig to Goslar" in out and "bot> Here is your route: 30.0 km" in out
+    assert (
+        "you> from Braunschweig to Goslar" in out
+        and "Planning Braunschweig to Goslar. Here is your route: 30.0 km" in out
+    )
     assert "you> make it shorter" in out and "Okay: at most 22.5 km" in out
     assert [r["origin"] for r in planner.requests] == [
         "Braunschweig",

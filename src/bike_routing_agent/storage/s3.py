@@ -38,8 +38,8 @@ class S3ArtifactStore:
     ) -> None:
         self._bucket = bucket
         self._prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
-        self._client = client if client is not None else self._build_client(
-            endpoint_url, region, path_style
+        self._client = (
+            client if client is not None else self._build_client(endpoint_url, region, path_style)
         )
 
     @staticmethod

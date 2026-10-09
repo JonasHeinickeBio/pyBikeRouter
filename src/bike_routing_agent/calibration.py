@@ -63,9 +63,7 @@ DEFAULT_WEIGHT_GRID: tuple[tuple[float, float], ...] = (
 # decide whether (and how heavily) the component should be switched on.
 SURFACE_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.10, 0.20, 0.30)
 
-DEFAULT_BENCHMARK_PATH = (
-    Path(__file__).resolve().parents[2] / "benchmarks" / "core-v1.json"
-)
+DEFAULT_BENCHMARK_PATH = Path(__file__).resolve().parents[2] / "benchmarks" / "core-v1.json"
 
 
 class MetricRange(BaseModel):
@@ -203,8 +201,7 @@ def _validated_categories(categories: list[str]) -> list[str]:
     unknown = sorted(set(categories) - SURFACE_CATEGORIES)
     if unknown:
         raise ValueError(
-            f"unknown surface categories {unknown}; "
-            f"valid: {sorted(SURFACE_CATEGORIES)}"
+            f"unknown surface categories {unknown}; valid: {sorted(SURFACE_CATEGORIES)}"
         )
     return categories
 
@@ -266,9 +263,7 @@ def evaluate_candidate(case: BenchmarkCase, candidate: RouteCandidate) -> CaseEv
     exp = case.expectations
 
     if exp.distance_m:
-        checks.append(
-            _range_check("distance_m", metrics.distance_m, exp.distance_m, "m")
-        )
+        checks.append(_range_check("distance_m", metrics.distance_m, exp.distance_m, "m"))
     if exp.ascent_m:
         checks.append(_range_check("ascent_m", metrics.ascent_m, exp.ascent_m, "m"))
     if exp.max_unknown_surface_fraction is not None:
@@ -279,13 +274,9 @@ def evaluate_candidate(case: BenchmarkCase, candidate: RouteCandidate) -> CaseEv
     return CaseEvaluation(case_id=case.case_id, provider=candidate.provider, checks=checks)
 
 
-def _range_check(
-    name: str, value: float | None, envelope: MetricRange, unit: str
-) -> CaseCheck:
+def _range_check(name: str, value: float | None, envelope: MetricRange, unit: str) -> CaseCheck:
     if value is None:
-        return CaseCheck(
-            name=name, status="skipped", detail=f"no {name} data to judge"
-        )
+        return CaseCheck(name=name, status="skipped", detail=f"no {name} data to judge")
     ok = envelope.minimum <= value <= envelope.maximum
     return CaseCheck(
         name=name,
@@ -312,9 +303,7 @@ def _unknown_fraction_check(metrics: RouteMetrics, exp: Expectations) -> CaseChe
     )
 
 
-def _surface_checks(
-    metrics: RouteMetrics, exp: SurfaceExpectation
-) -> list[CaseCheck]:
+def _surface_checks(metrics: RouteMetrics, exp: SurfaceExpectation) -> list[CaseCheck]:
     coverage = metrics.surface_coverage
     if not coverage:
         # Without enrichment the shares are simply unknown; recording the
@@ -330,18 +319,10 @@ def _surface_checks(
     checks: list[CaseCheck] = []
     for category, limit in sorted(exp.min_by_category.items()):
         observed = coverage.get(category, 0.0)
-        checks.append(
-            _share_check(
-                f"surface.{category}.min", observed, "greater-or-equal", limit
-            )
-        )
+        checks.append(_share_check(f"surface.{category}.min", observed, "greater-or-equal", limit))
     for category, limit in sorted(exp.max_by_category.items()):
         observed = coverage.get(category, 0.0)
-        checks.append(
-            _share_check(
-                f"surface.{category}.max", observed, "less-or-equal", limit
-            )
-        )
+        checks.append(_share_check(f"surface.{category}.max", observed, "less-or-equal", limit))
     for label, combined in (
         ("min_combined", exp.min_combined),
         ("max_combined", exp.max_combined),
@@ -373,14 +354,11 @@ def _surface_checks(
 def _share_check(
     name: str, observed: float, relation: str, limit: float, subject: str = ""
 ) -> CaseCheck:
-    ok = observed >= limit - 1e-9 if relation == "greater-or-equal" else (
-        observed <= limit + 1e-9
-    )
+    ok = observed >= limit - 1e-9 if relation == "greater-or-equal" else (observed <= limit + 1e-9)
     return CaseCheck(
         name=name,
         status="passed" if ok else "failed",
-        detail=f"{subject or 'share'}={observed:.2f} expected {relation} "
-        f"{limit:.2f}",
+        detail=f"{subject or 'share'}={observed:.2f} expected {relation} {limit:.2f}",
     )
 
 
@@ -413,11 +391,7 @@ def ranked_candidates(
             surface_weight=weight,
             use_surface=use_surface,
         )
-        scored.append(
-            candidate.model_copy(
-                update={"score": score, "score_breakdown": breakdown}
-            )
-        )
+        scored.append(candidate.model_copy(update={"score": score, "score_breakdown": breakdown}))
     scored.sort(key=lambda c: (-float(c.score or 0.0), c.provider))
     return scored
 
@@ -462,9 +436,7 @@ def surface_weight_sensitivity(
     }
 
 
-def evaluation_rows(
-    case: BenchmarkCase, candidates: list[RouteCandidate]
-) -> list[dict[str, Any]]:
+def evaluation_rows(case: BenchmarkCase, candidates: list[RouteCandidate]) -> list[dict[str, Any]]:
     """Flat per-candidate verdict rows, convenient for report writing."""
     rows: list[dict[str, Any]] = []
     for candidate in candidates:

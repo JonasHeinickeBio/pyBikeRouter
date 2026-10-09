@@ -17,8 +17,11 @@ is also how a conversation continues over many requests (docs/chat.md).
 
 from __future__ import annotations
 
+import math
 import re
+from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -39,6 +42,9 @@ MAX_KEPT_MESSAGES = 40
 MAX_CLARIFICATION_ROUNDS = 3
 ENGINE_REQUEST = re.compile(
     r"\b(?:use|try|with|using)\s+(?:ors|openrouteservice|brouter|valhalla)\b", re.I
+)
+RETRY = re.compile(
+    r"^\s*(?:please\s+)?(?:try\s+again|retry|again|once more|run it again)\s*[.!]?\s*$", re.I
 )
 GREETINGS = re.compile(
     r"^\s*(?:hi|hello|hey|hallo|moin|good (?:morning|evening)|yo)\b[\s!.]*$", re.I
@@ -70,12 +76,15 @@ def decide_intent(text: str, state: ChatState, *, text_enabled: bool) -> str:
     followup = rules.classify(text, has_plan=has_plan)
     if followup in ("reset", "help"):
         return followup
-    line = rules.parse_one_line(text)
+    line = rules.parse_one_line(text, now=_local_now(state.get("timezone")))
     if line.complete() and not _reads_as_followup(line, has_plan):
         return "plan"
-    if state.get("asking"):
-        return "guided"
+    if state.get("asking") and not (has_plan and followup):
+        return "guided"  # an open question: this message answers it (unless it is a follow-up
+        # about the route on screen -- the person did not mean to answer)
     if ENGINE_REQUEST.search(text) and (has_plan or state.get("failed_request")):
+        return "refine"
+    if RETRY.search(text) and state.get("failed_request"):
         return "refine"
     if followup:
         return followup
@@ -95,7 +104,7 @@ def _reads_as_followup(line: rules.OneLine, has_plan: bool) -> bool:
 
 
 def request_from_line(line: rules.OneLine) -> dict[str, Any]:
-    constraints: dict[str, Any] = {}
+    constraints: dict[str, Any] = dict(line.constraints)
     if line.bike_type:
         constraints["bike_type"] = line.bike_type
     request: dict[str, Any] = {
@@ -110,7 +119,19 @@ def request_from_line(line: rules.OneLine) -> dict[str, Any]:
         request["destination"] = rules.place_value(line.destination or "")
     if line.sight_stops:
         request["poi_stops"] = {"count": line.sight_stops}
+    if line.departure:
+        request["departure_time"] = line.departure.isoformat()
+    if line.engines:
+        request["routing_engines"] = list(line.engines)
     return request
+
+
+def _local_now(timezone: str | None) -> datetime:
+    """Now in the person's time zone (UTC when unknown), for "tomorrow at 8"."""
+    try:
+        return datetime.now(ZoneInfo(timezone)) if timezone else datetime.now(UTC)
+    except (ZoneInfoNotFoundError, ValueError):
+        return datetime.now(UTC)
 
 
 def _clean_slot(value: str) -> str:
@@ -130,9 +151,12 @@ def build_chat_graph(
 
     async def ingest(state: ChatState) -> dict[str, Any]:
         text = (state.get("user_text") or "").strip()
+        intent = decide_intent(text, state, text_enabled=text_enabled)
+        left_dialogue: dict[str, Any] = {"asking": None, "draft": {}} if intent != "guided" else {}
         return {
+            **left_dialogue,
             "messages": [HumanMessage(content=text)],
-            "intent": decide_intent(text, state, text_enabled=text_enabled),
+            "intent": intent,
             "reply": "",
             "failed": False,
             "suggestions": [],
@@ -160,8 +184,14 @@ def build_chat_graph(
     # --------------------------------------------------------- ways of getting a request
 
     async def plan_one_line(state: ChatState) -> dict[str, Any]:
-        line = rules.parse_one_line(state["user_text"])
-        return {"pending_request": request_from_line(line), "asking": None, "draft": {}}
+        line = rules.parse_one_line(state["user_text"], now=_local_now(state.get("timezone")))
+        request = request_from_line(line)
+        return {
+            "pending_request": request,
+            "change_note": describe.reading(request, ignored=line.ignored, assumed=line.assumed),
+            "asking": None,
+            "draft": {},
+        }
 
     async def plan_text(state: ChatState) -> dict[str, Any]:
         try:
@@ -189,20 +219,33 @@ def build_chat_graph(
         raw = state["user_text"]
         text = _clean_slot(raw)
         asking = state.get("asking")
-        if asking is None and text and not GREETINGS.match(text) and len(text.split()) <= 5:
-            # Short bare text is taken as the start place -- unless it is a question or a
-            # follow-up ("how steep is it?") that only makes sense with a route.
-            if not re.search(r"\b(?:plan|route|ride|trip|cycle|bike)\b|\?", raw, re.I) and not (
-                rules.classify(raw, has_plan=True)
+        if asking is None and "?" not in raw:
+            line = rules.parse_one_line(raw, now=_local_now(state.get("timezone")))
+            seed = _seed_draft(line)
+            draft.update(seed)
+            # Short bare words are the start place -- unless they are a question, a follow-up
+            # ("make it shorter") or no place at all ("ride", "40km").
+            if (
+                not seed
+                and line.origin
+                and not GREETINGS.match(text)
+                and len(text.split()) <= 5
+                and not rules.classify(raw, has_plan=True)
             ):
-                draft["origin"], asking = rules.place_value(text), "origin_done"
+                draft["origin"], asking = rules.place_value(line.origin), "origin_done"
         if asking and asking != "origin_done":
             problem = _fill_slot(draft, asking, text)
             if problem:
                 return {"draft": draft, "asking": asking, **_question(asking, problem)}
         slot = _next_slot(draft)
         if slot is None:
-            return {"pending_request": _request_from_draft(draft), "asking": None, "draft": {}}
+            request = _request_from_draft(draft)
+            return {
+                "pending_request": request,
+                "change_note": describe.reading(request),
+                "asking": None,
+                "draft": {},
+            }
         return {"draft": draft, "asking": slot, **_question(slot)}
 
     async def refine(state: ChatState) -> dict[str, Any]:
@@ -210,6 +253,8 @@ def build_chat_graph(
         previous = state.get("failed_request") or state.get("last_request")
         if not previous:
             return {"reply": "There is no route to change yet. " + HELP_TEXT}
+        if RETRY.search(state["user_text"]) and state.get("failed_request"):
+            return {"pending_request": previous, "change_note": "Trying again. "}
         route = (state.get("last_plan") or {}).get("route") or {}
         metrics = route.get("metrics") or {}
         change = rules.refine(
@@ -217,6 +262,7 @@ def build_chat_graph(
             previous,
             last_ascent_m=metrics.get("ascent_m"),
             last_distance_m=metrics.get("distance_m"),
+            now=_local_now(state.get("timezone")),
         )
         if change.unknown or change.empty():
             said = " ".join(change.notes) or "I did not catch what to change."
@@ -270,7 +316,9 @@ def build_chat_graph(
                 "failed_request": None,
                 "plan": plan,
                 "clarification": [],
-                "reply": prefix + describe.describe_plan(plan),
+                "reply": prefix
+                + describe.describe_plan(plan)
+                + describe.limit_notes(request, plan),
                 "suggestions": describe.suggestions_after_plan(plan, sights=can_sights),
             }
         if status == "awaiting_clarification":
@@ -298,12 +346,21 @@ def build_chat_graph(
         detail = "; ".join(
             str(e.get("message")) for e in errors[:2] if e.get("message") and not gap
         )
+        busy = status == "provider_failure" and any(
+            re.search(r"timed out|timeout|unavailable|busy|geocoder", str(e.get("message")), re.I)
+            for e in errors
+        )
+        if busy:  # nothing wrong with the request: a service did not answer in time
+            text = "A service did not answer in time. Asking again usually works."
+        suggestions = ["Use openrouteservice", "New route"] if gap else ["New route", "Help"]
+        if busy:
+            suggestions = ["Try again", "New route"]
         return {
             **base,
             "failed": True,
             "failed_request": request,
             "reply": prefix + text + (f" ({detail})" if detail else ""),
-            "suggestions": ["Use openrouteservice", "New route"] if gap else ["New route", "Help"],
+            "suggestions": suggestions,
         }
 
     def after_plan(state: ChatState) -> str:
@@ -323,6 +380,21 @@ def build_chat_graph(
                 "suggestions": ["New route", "Help"],
             }
         candidates = group["candidates"][:5]
+        typed = str(group.get("field") or "").strip().lower()
+        named = [c for c in candidates if str(c.get("label", "")).lower().startswith(typed)]
+        if typed and named:  # "Landkreis Wolfenbüttel" is a county that contains the name, not it
+            candidates = named
+        if _same_place(candidates):  # one town listed several times: nothing to choose between
+            request = _replace_place(
+                state.get("awaiting_request") or state.get("last_request") or {},
+                str(group.get("field")),
+                candidates[0],
+            )
+            return {
+                "pending_request": request,
+                "clarification": [g for g in groups if g is not group],
+                "clarify_result": "resolved",
+            }
         lines = [f'Which "{group.get("field")}" do you mean?']
         lines += [f"{i}. {c.get('label')}" for i, c in enumerate(candidates, start=1)]
         answer = interrupt(
@@ -598,17 +670,78 @@ def _next_slot(draft: dict[str, Any]) -> str | None:
     return None
 
 
+def _seed_draft(line: rules.OneLine) -> dict[str, Any]:
+    """What a one-line request that was not complete already told the step-by-step dialogue."""
+    seed: dict[str, Any] = {}
+    structured = (
+        line.loop
+        or line.distance_km is not None
+        or line.explicit_separator
+        or line.via
+        or line.bike_type
+        or line.departure
+        or line.sight_stops
+        or line.constraints
+        or line.engines
+    )
+    if not structured:
+        return seed  # just words: "ride", "Goslar" -- the dialogue's own rules read those
+    if line.origin:
+        seed["origin"] = rules.place_value(line.origin)
+    if line.loop:
+        seed["loop"] = True
+        if line.distance_km is not None:
+            seed["distance_km"] = line.distance_km
+    elif line.destination:
+        seed["loop"] = False
+        seed["destination"] = rules.place_value(line.destination)
+    if line.bike_type:
+        seed["bike_type"] = line.bike_type
+    carry = request_from_line(line)
+    for key in ("origin", "destination"):
+        carry.pop(key, None)
+    seed["carry"] = carry
+    return seed
+
+
 def _request_from_draft(draft: dict[str, Any]) -> dict[str, Any]:
-    constraints: dict[str, Any] = {}
+    carry = draft.get("carry") or {}
+    constraints: dict[str, Any] = dict(carry.get("constraints") or {})
+    constraints.pop("return_to_origin", None)
+    constraints.pop("target_distance_km", None)
     if draft.get("bike_type") not in (None, "skip"):
         constraints["bike_type"] = draft["bike_type"]
-    request: dict[str, Any] = {"origin": draft["origin"], "via": [], "constraints": constraints}
+    request: dict[str, Any] = {
+        **{k: v for k, v in carry.items() if k not in ("constraints", "via")},
+        "origin": draft["origin"],
+        "via": list(carry.get("via") or []),
+        "constraints": constraints,
+    }
     if draft.get("loop"):
         constraints["return_to_origin"] = True
         constraints["target_distance_km"] = draft["distance_km"]
     else:
         request["destination"] = draft["destination"]
     return request
+
+
+SAME_PLACE_KM = 5.0
+
+
+def _same_place(candidates: list[dict[str, Any]]) -> bool:
+    """All candidates within a few km of the first: the same town, listed more than once (a
+    district, a street, the county) -- not "Springfield" in two states."""
+    try:
+        first = candidates[0]["coordinate"]
+        for other in candidates[1:]:
+            c = other["coordinate"]
+            dlat = math.radians(c["lat"] - first["lat"])
+            dlon = math.radians(c["lon"] - first["lon"]) * math.cos(math.radians(first["lat"]))
+            if 6371.0 * math.hypot(dlat, dlon) > SAME_PLACE_KM:
+                return False
+    except (KeyError, TypeError):
+        return False
+    return bool(candidates)
 
 
 def _choose(text: str, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:

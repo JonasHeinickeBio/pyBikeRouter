@@ -141,6 +141,4 @@ def synthesize_loop_vias(
         y = center_y + radius_m * math.sin(angle)
         vias.append(_plane_to_coordinate(origin, x, y))
 
-    return LoopPlan(
-        vias=tuple(vias), radius_m=round(radius_m, 1), direction=direction, sides=sides
-    )
+    return LoopPlan(vias=tuple(vias), radius_m=round(radius_m, 1), direction=direction, sides=sides)

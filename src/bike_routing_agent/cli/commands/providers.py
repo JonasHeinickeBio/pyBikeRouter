@@ -52,9 +52,7 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
             "configured": cfg.geocoder_provider,
             "available": ["nominatim", "pelias"],
             "base_url": (
-                cfg.geocoder_base_url
-                if cfg.geocoder_provider == "nominatim"
-                else cfg.ors_base_url
+                cfg.geocoder_base_url if cfg.geocoder_provider == "nominatim" else cfg.ors_base_url
             ),
             "note": "pelias requires a self-hosted ORS (public API: "
             + ", ".join(sorted(PUBLIC_ORS_BASE_URLS))
