@@ -626,3 +626,20 @@ textarea {
 
 .alt-download { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0.2rem; font-size: 0.82rem; }
 .alt-download span { color: var(--muted); margin-right: 0.2rem; }
+
+/* ---------------------------- points of interest ---------------------------- */
+.poi-cats { margin: 0.4rem 0; }
+.poi-stops-note { margin: 0.3rem 0; padding: 0.4rem 0.6rem; border-left: 3px solid var(--accent); background: rgba(127,127,127,0.08); font-size: 0.85rem; }
+.poi-marker { display: flex; align-items: center; justify-content: center; border-radius: 50%; background: #fff; border: 2px solid #b45309; box-shadow: 0 1px 3px rgba(0,0,0,0.4); line-height: 1; }
+.poi-marker.service { border-color: #64748b; }
+.poi-marker.famous { border-color: #dc2626; box-shadow: 0 0 0 2px rgba(220,38,38,0.25), 0 1px 3px rgba(0,0,0,0.4); }
+.poi-marker.stop { border-color: var(--accent); background: #fffbeb; box-shadow: 0 0 0 3px rgba(14,122,74,0.35), 0 1px 3px rgba(0,0,0,0.4); }
+.poi-popup { max-width: 260px; font-size: 0.85rem; }
+.poi-popup .poi-title { display: block; font-size: 0.95rem; }
+.poi-popup .poi-meta, .poi-popup .poi-hours, .poi-popup .poi-attr { color: #555; font-size: 0.75rem; margin-top: 0.15rem; }
+.poi-popup .poi-thumb { display: block; width: 100%; max-height: 140px; object-fit: cover; border-radius: 4px; margin: 0.35rem 0; }
+.poi-popup .poi-desc { font-style: italic; margin-top: 0.3rem; }
+.poi-popup .poi-extract { margin: 0.3rem 0; max-height: 9em; overflow-y: auto; }
+.poi-popup .poi-links { margin: 0.2rem 0; }
+.poi-popup .poi-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
+.poi-popup .poi-actions button { padding: 0.25rem 0.55rem; font-size: 0.8rem; cursor: pointer; }

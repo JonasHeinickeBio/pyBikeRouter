@@ -28,9 +28,10 @@ so the default run never touches the network and always reports coverage.
 | `tests/graph/test_graph.py` | Full compiled graph through every branch/terminal status | fake providers |
 | `tests/providers/` | ORS client, ORS adapter, Nominatim and Pelias geocoders | `respx`-mocked HTTP |
 | `tests/exporters/` | GeoJSON/GPX output shapes | none |
-| `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous) | -- |
+| `tests/fixtures/` | Recorded sample responses (ORS directions, ORS no-route, Nominatim single/ambiguous, and real Overpass / Wikidata / Wikipedia captures for the POI feature) | -- |
 | `tests/storage/` | Artifact stores, the route-history contract, retention and schema migrations. `test_history.py` runs the same behavioral tests against the in-memory and PostGIS backends; `test_migrate.py` covers the migration rules offline and `test_postgres_migrations.py` runs them against PostGIS (atomicity, adoption, concurrent starts, lock waiting) | none (PostGIS params are `live`) |
 | `tests/llm/` | The LLM request parser against a fake client (schema, injection handling, coordinate rule, repair retry, error codes) and the benchmark harness | none |
+| `tests/poi/`, `tests/test_api_pois.py`, `tests/nodes/test_poi_stops.py`, `tests/test_frontend_pois.py` | Points of interest: categories and geometry, the Overpass fetcher (failover, runtime-error remarks, cache), the Wikimedia resolver, ranking and stop selection, the API, the front-end helpers under node. What was and was not checked live: [pois.md](pois.md#evidence-what-was-tested-and-how) | no (the suite switches POIs off) |
 | `tests/live/` | Real ORS/Nominatim calls through the API | **real** |
 
 `tests/conftest.py` exposes the fixtures as `ors_directions_response`,

@@ -50,6 +50,7 @@ cp .env.example .env
 | `WEATHER_MERGE` | fill what the first weather provider lacks (UV, feels-like, gusts, rain probability) from the next one that has it; `false` asks only the first that answers ([weather.md](weather.md#merging-sources)) | `true` |
 | `WEATHER_OPTION_HOURS_BEFORE` / `WEATHER_OPTION_HOURS_AFTER` | compare departures this many hours before/after the requested one (0-12 each; both `0` = off) -- [weather.md](weather.md#other-departure-times) | `3` / `6` |
 | `WEATHER_MAX_SAMPLES` / `WEATHER_SAMPLE_SPACING_KM` | forecast points per route (2-10) and their spacing | `5` / `10` |
+| `POI_ENABLED` / `POI_OVERPASS_URLS` / `POI_USER_AGENT` | points of interest on/off, Overpass instances (comma separated, tried in order), identifying User-Agent -- all `POI_*` settings in [pois.md](pois.md#configuration) | `true` / public Overpass / project URL |
 | `WEATHER_DWD_URL` / `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Bright Sky/Open-Meteo or a proxy) | public URLs |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
 | `DATABASE_URL` | PostgreSQL + PostGIS URL; enables the route history and `/v1/history/*` ([persistence.md](persistence.md)). Needs the `db` extra | unset (stateless) |

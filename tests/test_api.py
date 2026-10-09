@@ -54,6 +54,10 @@ async def test_frontend_static_assets_are_served(client):
         ("/text-planning.js", "BikeText"),
         ("/alternatives.js", "BikeAlternatives"),
         ("/export.js", "BikeExport"),
+        ("/pois.js", "BikePois"),
+        ("/app.js", "v1/pois/along-route"),
+        ("/index.html", 'id="poi-categories"'),
+        ("/index.html", 'src="pois.js"'),
         ("/index.html", 'id="alt-download"'),
         ("/index.html", 'id="alternatives-list"'),
         ("/app.js", "route/plan-text"),
@@ -1165,6 +1169,11 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
 
     monkeypatch.setattr(api_module, "_llm_parser", None)
     off = (await client.get("/v1/capabilities")).json()
-    assert off["text_planning"] is False and set(off) == {"text_planning", "weather", "history"}
+    assert off["text_planning"] is False and set(off) == {
+        "text_planning",
+        "weather",
+        "history",
+        "pois",
+    }
     monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())
     assert (await client.get("/v1/capabilities")).json()["text_planning"] is True

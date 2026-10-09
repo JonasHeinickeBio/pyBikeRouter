@@ -118,6 +118,27 @@ class Settings(BaseSettings):
     weather_max_samples: int = 5
     weather_sample_spacing_km: float = 10.0
 
+    # Points of interest (issue #55): found with Overpass, ranked and described with
+    # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).
+    # Searched areas and route shapes are sent to those services; false switches it off.
+    poi_enabled: bool = True
+    # Comma separated, tried in order: public Overpass instances are often overloaded.
+    poi_overpass_urls: str = "https://overpass-api.de/api/interpreter"
+    poi_wikidata_url: str = "https://www.wikidata.org/w/api.php"
+    # `{lang}` is replaced by the article language ("en", "de", ...).
+    poi_wikipedia_url: str = "https://{lang}.wikipedia.org"
+    poi_user_agent: str = (
+        "bike-routing-agent/0.1 (+https://github.com/JonasHeinickeBio/pyBikeRouter)"
+    )
+    poi_timeout_s: float = 25.0
+    # Extra rounds over the instances after a failure (public Overpass often answers 504 once).
+    poi_max_retries: int = 1
+    poi_cache_ttl_s: float = 86_400.0
+    # How far from the route a sight may be (services are capped at 500 m regardless).
+    poi_default_buffer_m: float = 1500.0
+    poi_max_buffer_m: float = 5000.0
+    poi_per_category_limit: int = 40
+
     # Readiness endpoint (issue #25): each component is probed at most once
     # per TTL, with a hard per-probe timeout. The geocoder gets a longer TTL
     # because the default one is the public Nominatim (usage policy).
@@ -278,6 +299,27 @@ class Settings(BaseSettings):
                 "llm_max_output_tokens must be between 256 and 64000 "
                 f"(got {self.llm_max_output_tokens})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_poi_settings(self) -> Settings:
+        if self.poi_timeout_s <= 0:
+            raise ValueError(f"poi_timeout_s must be > 0 (got {self.poi_timeout_s})")
+        if self.poi_cache_ttl_s < 0:
+            raise ValueError("poi_cache_ttl_s must be >= 0")
+        if self.poi_max_retries < 0:
+            raise ValueError("poi_max_retries must be >= 0")
+        if not 0 < self.poi_default_buffer_m <= self.poi_max_buffer_m:
+            raise ValueError(
+                "poi_default_buffer_m must be > 0 and no larger than poi_max_buffer_m "
+                f"(got {self.poi_default_buffer_m} / {self.poi_max_buffer_m})"
+            )
+        if self.poi_per_category_limit < 1:
+            raise ValueError("poi_per_category_limit must be >= 1")
+        if not [u for u in self.poi_overpass_urls.split(",") if u.strip()]:
+            raise ValueError("poi_overpass_urls must list at least one URL")
+        if "{lang}" not in self.poi_wikipedia_url:
+            raise ValueError("poi_wikipedia_url must contain the {lang} placeholder")
         return self
 
     @model_validator(mode="after")

@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from bike_routing_agent.config import Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
+from bike_routing_agent.errors import ProviderError
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.health import build_health_monitor
 from bike_routing_agent.llm.backends import OpenAICompatBackend
@@ -33,6 +34,20 @@ from bike_routing_agent.models import (
     RoutePlanAPIRequest,
     RoutePlanResponse,
 )
+from bike_routing_agent.poi.categories import CATEGORIES, resolve_categories
+from bike_routing_agent.poi.fetcher import OverpassPoiFetcher
+from bike_routing_agent.poi.models import (
+    LANG_RE,
+    QID_RE,
+    WIKIPEDIA_TAG_RE,
+    Poi,
+    PoiAlongRouteRequest,
+    PoiInfo,
+    PoiSearchResponse,
+)
+from bike_routing_agent.poi.service import PoiService
+from bike_routing_agent.poi.wikimedia import WikimediaResolver
+from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
 from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
@@ -152,6 +167,31 @@ def build_weather_service(
         cache=NamespacedCache(cache, "weather") if cache is not None else None,
         cache_ttl_s=cfg.weather_cache_ttl_s,
         merge=cfg.weather_merge,
+    )
+
+
+def build_poi_service(cfg: Settings, *, cache: CacheBackend | None = None) -> PoiService | None:
+    """The POI search/resolve service, or ``None`` when ``POI_ENABLED`` is false (issue #55)."""
+    if not cfg.poi_enabled:
+        return None
+    poi_cache = NamespacedCache(cache, "poi") if cache is not None else None
+    return PoiService(
+        OverpassPoiFetcher(
+            base_urls=[u.strip() for u in cfg.poi_overpass_urls.split(",") if u.strip()],
+            timeout_s=cfg.poi_timeout_s,
+            max_retries=cfg.poi_max_retries,
+            user_agent=cfg.poi_user_agent,
+            cache=poi_cache,
+            cache_ttl_s=cfg.poi_cache_ttl_s,
+        ),
+        WikimediaResolver(
+            wikidata_url=cfg.poi_wikidata_url,
+            wikipedia_url=cfg.poi_wikipedia_url,
+            user_agent=cfg.poi_user_agent,
+            timeout_s=min(cfg.poi_timeout_s, 10.0),
+            cache=poi_cache,
+        ),
+        per_category_limit=cfg.poi_per_category_limit,
     )
 
 
@@ -336,6 +376,7 @@ _artifact_store, _history = build_storage(settings)
 
 _weather_service = build_weather_service(settings, cache=_cache)
 _llm_parser = build_llm_parser(settings)
+_poi_service = build_poi_service(settings, cache=_cache)
 
 _health_monitor = build_health_monitor(
     geocoder=_geocode_provider,
@@ -368,6 +409,7 @@ _graph = build_graph(
         settings.weather_option_hours_before,
         settings.weather_option_hours_after,
     ),
+    poi_service=_poi_service,
 )
 
 
@@ -389,6 +431,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         weather_max_samples=cfg.weather_max_samples,
         weather_spacing_km=cfg.weather_sample_spacing_km,
         weather_option_hours=(cfg.weather_option_hours_before, cfg.weather_option_hours_after),
+        poi_service=build_poi_service(cfg, cache=cache),
     )
 
 
@@ -411,10 +454,39 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "departure_time": (
             request.departure_time.isoformat() if request.departure_time is not None else None
         ),
+        "poi_stops": (
+            request.poi_stops.model_dump(mode="json") if request.poi_stops is not None else None
+        ),
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
+    if raw_input["poi_stops"] and final_state.get("poi_stops"):
+        final_state = await _without_stops_if_unroutable(raw_input, final_state)
     return await _plan_response(final_state)
+
+
+async def _without_stops_if_unroutable(
+    raw_input: dict[str, Any], final_state: dict[str, Any]
+) -> dict[str, Any]:
+    """Plan again without the famous-POI stops when the engines could not route through them.
+
+    A POI is a point on the map, not on a road: an engine may refuse to snap it (a summit, a
+    pedestrian-only old town) or find no way to it. The ride is still wanted, so it is
+    planned without the stops and the response says so (``poi_stops_status: "dropped"``).
+    """
+    if final_state.get("status") not in ("provider_failure", "no_route"):
+        return final_state
+    logger.info(
+        "routing through the POI stops %s failed (%s); planning without them",
+        [p.get("name") or p.get("id") for p in final_state.get("poi_stops", [])],
+        final_state.get("errors"),
+    )
+    retry = await _graph.ainvoke({"raw_input": {**raw_input, "poi_stops": None}})
+    if retry.get("status") == "ready":
+        retry["poi_stops"] = []
+        retry["poi_stops_status"] = "dropped"
+        return retry
+    return final_state
 
 
 @app.post("/v1/route/plan-text", response_model=RoutePlanResponse)
@@ -449,6 +521,7 @@ async def capabilities() -> dict[str, bool]:
     return {
         "text_planning": _llm_parser is not None,
         "weather": _weather_service is not None,
+        "pois": _poi_service is not None,
         "history": _history is not None,
     }
 
@@ -499,6 +572,12 @@ async def _plan_response(final_state: dict[str, Any]) -> RoutePlanResponse:
         errors=final_state.get("errors", []),
         plan_id=await _record_plan(final_state),
         weather_status=final_state.get("weather_status"),
+        poi_stops=(
+            [Poi.model_validate(p) for p in final_state["poi_stops"]]
+            if final_state.get("poi_stops") is not None
+            else None
+        ),
+        poi_stops_status=final_state.get("poi_stops_status"),
         interpretation=(
             Interpretation.model_validate(final_state["interpretation"])
             if final_state.get("interpretation")
@@ -616,6 +695,120 @@ async def get_history_plan(plan_id: str) -> PlanRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="plan not found")
     return record
+
+
+def _require_pois() -> PoiService:
+    if _poi_service is None:
+        raise HTTPException(
+            status_code=503, detail="points of interest are switched off (POI_ENABLED)"
+        )
+    return _poi_service
+
+
+def _poi_categories(raw: list[str] | None) -> list[str] | None:
+    try:
+        resolve_categories(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return raw
+
+
+def _provider_unavailable(exc: ProviderError) -> HTTPException:
+    return HTTPException(status_code=502, detail=exc.message)
+
+
+@app.get("/v1/pois/categories")
+async def poi_categories() -> list[dict[str, str]]:
+    """The categories the POI endpoints accept, for building a filter."""
+    return [{"key": c.key, "label": c.label, "kind": c.kind} for c in CATEGORIES]
+
+
+@app.post("/v1/pois/along-route", response_model=PoiSearchResponse)
+async def pois_along_route(request: PoiAlongRouteRequest) -> PoiSearchResponse:
+    """POIs near a route, the best-known first, each with its distance from the route and
+    its position along it. Informational: nothing here changes a route or its score."""
+    service = _require_pois()
+    categories = _poi_categories(request.categories)
+    buffer_m = min(request.buffer_m or settings.poi_default_buffer_m, settings.poi_max_buffer_m)
+    line = [(p[0], p[1]) for p in request.coordinates]
+    try:
+        result = await service.along_route(
+            line,
+            categories,
+            buffer_m=buffer_m,
+            per_category_limit=request.limit_per_category,
+        )
+    except ProviderError as exc:
+        raise _provider_unavailable(exc) from exc
+    return PoiSearchResponse(
+        pois=result.pois, truncated=result.truncated, fame_status=result.fame_status
+    )
+
+
+# A map view larger than this is too much for one Overpass request.
+_MAX_BBOX_DEGREES = 0.5
+
+
+@app.get("/v1/pois/in-bbox", response_model=PoiSearchResponse)
+async def pois_in_bbox(
+    bbox: Annotated[str, Query(description="min_lon,min_lat,max_lon,max_lat")],
+    categories: Annotated[str | None, Query(description="comma separated keys")] = None,
+    limit_per_category: Annotated[int | None, Query(ge=1, le=100)] = None,
+) -> PoiSearchResponse:
+    """POIs inside a map view (for browsing without a route)."""
+    service = _require_pois()
+    try:
+        min_lon, min_lat, max_lon, max_lat = (float(part) for part in bbox.split(","))
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="bbox must be min_lon,min_lat,max_lon,max_lat"
+        ) from None
+    if not (-180 <= min_lon < max_lon <= 180 and -90 <= min_lat < max_lat <= 90):
+        raise HTTPException(status_code=422, detail="bbox is out of range or empty")
+    if max_lon - min_lon > _MAX_BBOX_DEGREES or max_lat - min_lat > _MAX_BBOX_DEGREES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"bbox is too large (at most {_MAX_BBOX_DEGREES} degrees wide); zoom in",
+        )
+    keys = _poi_categories([c for c in categories.split(",") if c] if categories else None)
+    try:
+        result = await service.in_bbox(
+            (min_lon, min_lat, max_lon, max_lat), keys, per_category_limit=limit_per_category
+        )
+    except ProviderError as exc:
+        raise _provider_unavailable(exc) from exc
+    return PoiSearchResponse(
+        pois=result.pois, truncated=result.truncated, fame_status=result.fame_status
+    )
+
+
+@app.get("/v1/pois/info", response_model=PoiInfo)
+async def poi_info(
+    wikidata: Annotated[str | None, Query()] = None,
+    wikipedia: Annotated[str | None, Query(description="OSM style, e.g. de:Title")] = None,
+    osm_id: Annotated[str | None, Query(description="node/123")] = None,
+    website: Annotated[str | None, Query()] = None,
+    lang: Annotated[str, Query(description="language of the text, e.g. en")] = "en",
+) -> PoiInfo:
+    """What Wikipedia, Wikidata and Wikivoyage say about a POI, with links to read more.
+    Best effort: parts the open services cannot deliver right now are left out."""
+    service = _require_pois()
+    lang = lang.lower()
+    if not LANG_RE.fullmatch(lang):
+        raise HTTPException(status_code=422, detail="lang must be a language code like en or de")
+    if lang not in WIKIPEDIA_LANGUAGES:
+        lang = "en"  # a well-formed code Wikipedia does not have: read it in English
+    if wikidata is not None and not QID_RE.match(wikidata):
+        raise HTTPException(status_code=422, detail="wikidata must look like Q42")
+    if wikipedia is not None and not WIKIPEDIA_TAG_RE.match(wikipedia):
+        raise HTTPException(status_code=422, detail="wikipedia must look like de:Title")
+    if osm_id is not None and not re.match(r"^(node|way|relation)/\d+$", osm_id):
+        raise HTTPException(status_code=422, detail="osm_id must look like node/123")
+    if website is not None and not website.startswith(("http://", "https://")):
+        website = None
+    return await service.info(
+        wikidata=wikidata, wikipedia=wikipedia, osm_id=osm_id, website=website, lang=lang
+    )
 
 
 @app.get("/healthz")

@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 
 
+def _loggable(key: str) -> str:
+    """A cache key safe to write to a log line: keys can carry text a client supplied, and a
+    line break in it would let that client forge log entries."""
+    return key.replace("\r", "").replace("\n", "")[:200]
+
+
 class RedisCacheBackend:
     def __init__(
         self,
@@ -94,7 +100,9 @@ class RedisCacheBackend:
             return json.loads(raw)
         except (TypeError, ValueError):
             # Someone else's data under our key: a miss, and not worth tripping.
-            logger.warning("redis cache entry for %r is not valid JSON; ignoring it", key)
+            logger.warning(
+                "redis cache entry for %r is not valid JSON; ignoring it", _loggable(key)
+            )
             return None
 
     async def set(self, key: str, value: object, *, ttl_s: float) -> None:
@@ -103,7 +111,9 @@ class RedisCacheBackend:
         try:
             payload = json.dumps(value)
         except (TypeError, ValueError):
-            logger.warning("value for cache key %r is not JSON-serialisable; not cached", key)
+            logger.warning(
+                "value for cache key %r is not JSON-serialisable; not cached", _loggable(key)
+            )
             return
         try:
             await self._client.set(self._key(key), payload, px=max(1, int(ttl_s * 1000)))

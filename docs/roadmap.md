@@ -114,6 +114,13 @@ decisions still open.
   requested one. Open follow-ups: letting weather influence ranking
   (needs calibration evidence), wind-adjusted travel times, and exporting the
   forecast in the GPX/GeoJSON files.
+- **Points of interest** -- done (issue #55): Overpass search along a route or in
+  a map view, fame from Wikidata sitelinks, Wikipedia/Wikivoyage/Commons details,
+  a map filter, *add to route*, and routing past the most famous sights
+  ([pois.md](pois.md)). Open follow-ups: stops for loops, POI-aware scoring
+  (needs calibration evidence), opening-hours awareness against the arrival time,
+  a self-hosted Overpass in the compose stack, and pageview counts as a second
+  fame signal.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
   profile runs a pinned openrouteservice (bicycle profiles) and a local
   Nominatim from one regional extract, with a bootstrap script

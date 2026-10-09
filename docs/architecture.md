@@ -43,6 +43,7 @@ and the adapter, never in nodes or scoring.
 START -> parse_request
       -> validate_request      -> (invalid) -> END
       -> geocode_locations     -> (awaiting_clarification | provider_failure) -> END
+      -> select_poi_stops      (only with poi_stops; best effort: adds famous sights as via points)
       -> route_with_provider   -> (no_route | provider_failure) -> END
       -> score_candidates      -> (no_route) -> END
       -> weather_candidates    (best effort: never changes the outcome)
@@ -62,6 +63,7 @@ provider unless validation **and** geocoding have both succeeded.
 | `parse_request` | `nodes/parse.py` | Reshape the already-validated API payload into state. Free-text input goes through an injectable `llm_parser` (see below). |
 | `validate_request` | `nodes/validate.py` | Re-validate constraints with Pydantic (defense in depth for direct graph calls). Malformed constraints -> `invalid`; a missing origin/destination -> `awaiting_clarification`. |
 | `geocode_locations` | `nodes/geocode.py` | Resolve free-text places to coordinates via a `GeocodeProvider`. Direct coordinates bypass it. Ambiguity/emptiness -> clarification, never a guess. |
+| `select_poi_stops` | `nodes/poi_stops.py` | With `poi_stops` in the request: the best-known sights in a corridor around origin -> destination become via points, in travel order (best effort; [pois.md](pois.md)). Otherwise a no-op. |
 | `route_with_provider` | `nodes/route.py` | Build an engine-neutral `RoutingRequest`, call the `RoutingProvider`. `no_route` vs `provider_failure` distinguished here. |
 | `score_candidates` | `nodes/score.py` | Score and rank candidates deterministically; select the best. |
 | `weather_candidates` | `nodes/weather.py` | Forecast along each ranked route at the departure time, via a free keyless provider (best effort, informational; [weather.md](weather.md)). |
