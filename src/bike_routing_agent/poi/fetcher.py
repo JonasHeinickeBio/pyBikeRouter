@@ -186,6 +186,14 @@ class OverpassPoiFetcher:
                 detail={"body": response.text[:_MAX_ERROR_BODY_CHARS]},
             ) from exc
         _raise_for_runtime_error(payload, self.name)
+        # Checked here, inside the failover loop: a 200 that is not an element list is a
+        # failure of *this* instance, and the next one may well answer properly.
+        if not isinstance(payload, dict) or not isinstance(payload.get("elements"), list):
+            raise ProviderBadResponseError(
+                "malformed Overpass response",
+                provider=self.name,
+                detail={"body": response.text[:_MAX_ERROR_BODY_CHARS]},
+            )
         return payload
 
 

@@ -11,10 +11,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-QID_RE = re.compile(r"^Q[1-9]\d{0,12}$")
+QID_RE = re.compile(r"^Q[1-9]\d{0,12}\Z")
 # "de:Schloss Neuschwanstein" -- the OSM `wikipedia` tag format.
-WIKIPEDIA_TAG_RE = re.compile(r"^([a-z]{2,3}(?:-[a-z]{2,8})?):(.{1,300})$")
-LANG_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z]{2,8})?$")
+WIKIPEDIA_TAG_RE = re.compile(r"^([a-z]{2,3}(?:-[a-z]{2,8})?):(.{1,300})\Z")
+LANG_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z]{2,8})?\Z")
 
 
 class Poi(BaseModel):

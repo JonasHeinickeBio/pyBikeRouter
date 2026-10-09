@@ -111,14 +111,19 @@ class WikimediaResolver:
                 except ProviderError as exc:
                     logger.warning("wikidata fame lookup failed: %s", exc.message)
                     return
-            entities = (payload or {}).get("entities", {})
+            entities = (payload or {}).get("entities")
+            if not isinstance(entities, dict):
+                logger.warning("wikidata fame lookup: unexpected response shape")
+                return
             for qid in batch:
                 entity = entities.get(qid)
                 if not isinstance(entity, dict) or "missing" in entity:
                     continue
-                count = len(entity.get("sitelinks", {}))
-                result[qid] = count
-                await self._cache_set(f"poi:fame:{qid}", count, self._fame_ttl_s)
+                sitelinks = entity.get("sitelinks")
+                if not isinstance(sitelinks, dict):
+                    continue  # not what was asked for: unknown, not zero
+                result[qid] = len(sitelinks)
+                await self._cache_set(f"poi:fame:{qid}", len(sitelinks), self._fame_ttl_s)
 
         await asyncio.gather(
             *(
@@ -143,7 +148,7 @@ class WikimediaResolver:
         async def fetch(lang: str, titles: list[str]) -> None:
             try:
                 payload = await self._get_json(
-                    self._wikipedia_url.format(lang=lang) + "/w/api.php",
+                    self._wikipedia_base(lang) + "/w/api.php",
                     {
                         "action": "query",
                         "prop": "pageprops",
@@ -157,14 +162,24 @@ class WikimediaResolver:
             except ProviderError as exc:
                 logger.warning("wikipedia title lookup failed: %s", exc.message)
                 return
-            query = (payload or {}).get("query", {})
+            query = (payload or {}).get("query")
+            if not isinstance(query, dict):
+                return
             # Titles come back normalised ("a_b" -> "a b") and redirected; walk them back.
-            moved = {n["from"]: n["to"] for n in query.get("normalized", [])}
-            moved.update({r["from"]: r["to"] for r in query.get("redirects", [])})
+            # Entries of another shape are skipped: a Wikimedia oddity never fails a search.
+            moves = [*_as_list(query.get("normalized")), *_as_list(query.get("redirects"))]
+            moved = {
+                m["from"]: m["to"]
+                for m in moves
+                if isinstance(m, dict) and isinstance(m.get("from"), str) and "to" in m
+            }
             items = {
                 p["title"]: p["pageprops"]["wikibase_item"]
-                for p in query.get("pages", [])
-                if isinstance(p, dict) and "wikibase_item" in p.get("pageprops", {})
+                for p in _as_list(query.get("pages"))
+                if isinstance(p, dict)
+                and "title" in p
+                and isinstance(p.get("pageprops"), dict)
+                and "wikibase_item" in p["pageprops"]
             }
             for title in titles:
                 seen = title
@@ -195,7 +210,7 @@ class WikimediaResolver:
         lang: str,
     ) -> PoiInfo:
         """Text, thumbnail and links for one POI. Whatever could not be fetched is left out."""
-        if not LANG_RE.match(lang):
+        if not LANG_RE.fullmatch(lang):
             raise ValueError(f"invalid language code {lang!r}")
         cache_key = f"poi:info:{wikidata or ''}:{wikipedia or ''}:{lang}"
         cached = await self._cache_get(cache_key)
@@ -207,7 +222,12 @@ class WikimediaResolver:
                 base = None
 
         if base is None:
-            base = await self._fetch_info(wikidata, wikipedia, lang)
+            try:
+                base = await self._fetch_info(wikidata, wikipedia, lang)
+            except (KeyError, TypeError, AttributeError, ValueError) as exc:
+                # A response of an unexpected shape leaves the POI without extra information.
+                logger.warning("wikimedia info lookup: unexpected response (%s)", exc)
+                base = PoiInfo()
             # A thin result (a lookup failed) is not worth keeping for a day.
             if base.extract or base.links:
                 await self._cache_set(cache_key, base.model_dump(mode="json"), self._info_ttl_s)
@@ -322,7 +342,7 @@ class WikimediaResolver:
 
     async def _summary(self, lang: str, title: str) -> dict[str, Any] | None:
         url = (
-            self._wikipedia_url.format(lang=lang)
+            self._wikipedia_base(lang)
             + "/api/rest_v1/page/summary/"
             + quote(title.replace(" ", "_"), safe="")
         )
@@ -337,6 +357,14 @@ class WikimediaResolver:
         return payload
 
     # ------------------------------------------------------------------ http
+
+    def _wikipedia_base(self, lang: str) -> str:
+        """``https://{lang}.wikipedia.org`` -- the only place a language enters a host name, so
+        it is checked here: a bare two/three letter code (optionally ``-xx``), never anything
+        that could change the host or add a path."""
+        if not LANG_RE.fullmatch(lang):
+            raise ValueError(f"invalid language code {lang!r}")
+        return self._wikipedia_url.format(lang=lang)
 
     async def _get_json(self, url: str, params: dict[str, str] | None) -> Any:
         """GET and decode; ``None`` for a 404; one retry on timeouts and 5xx."""
@@ -380,11 +408,16 @@ class WikimediaResolver:
                     f"Wikimedia returned HTTP {response.status_code}", provider=self.name
                 )
             try:
-                return response.json()
+                decoded = response.json()
             except ValueError as exc:
                 raise ProviderBadResponseError(
                     "Wikimedia returned invalid JSON", provider=self.name
                 ) from exc
+            if not isinstance(decoded, dict):
+                raise ProviderBadResponseError(
+                    "Wikimedia returned an unexpected response", provider=self.name
+                )
+            return decoded
 
     def _headers(self) -> dict[str, str]:
         return {"User-Agent": self._user_agent, "Accept": "application/json"}
@@ -395,6 +428,10 @@ class WikimediaResolver:
     async def _cache_set(self, key: str, value: object, ttl_s: float) -> None:
         if self._cache is not None:
             await self._cache.set(key, value, ttl_s=ttl_s)
+
+
+def _as_list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _localised(values: object, lang: str) -> str | None:

@@ -316,3 +316,25 @@ def test_a_real_corridor_response_parses_into_ranked_ready_pois():
     assert by_id["way/243689993"].wikipedia == "en:Dankwarderode Castle"
     assert {p.category for p in pois} >= {"historic", "museum", "religious", "nature", "viewpoint"}
     assert all(p.fame is None for p in pois)
+
+
+@pytest.mark.parametrize(
+    "bad_answer",
+    [{"version": 0.6}, {"elements": "nope"}, ["a", "list"], {"elements": None}],
+)
+@respx.mock
+async def test_a_200_that_is_not_an_element_list_hands_over_to_the_next_instance(bad_answer):
+    other = "https://overpass2.example/api/interpreter"
+    first = respx.post(URL).mock(return_value=httpx.Response(200, json=bad_answer))
+    second = respx.post(other).mock(return_value=httpx.Response(200, json=PAYLOAD))
+    cache = InMemoryTTLCache()
+    f = OverpassPoiFetcher(base_urls=[URL, other], cache=cache)
+    pois = await f.in_bbox((10.0, 47.0, 10.2, 47.1), resolve_categories(None))
+    assert len(pois) == 5 and first.call_count == 1 and second.call_count == 1
+
+
+@respx.mock
+async def test_when_every_instance_answers_garbage_the_error_is_a_bad_response():
+    respx.post(URL).mock(return_value=httpx.Response(200, json={"version": 0.6}))
+    with pytest.raises(ProviderBadResponseError):
+        await fetcher().in_bbox((10.0, 47.0, 10.2, 47.1), resolve_categories(None))

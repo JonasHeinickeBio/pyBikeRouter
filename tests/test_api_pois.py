@@ -164,6 +164,8 @@ async def test_info_validates_every_identifier_before_looking_anything_up(client
         "osm_id=../etc",
         "lang=evil.com",
         "lang=x/y",
+        "lang=en%0A",
+        "wikidata=Q42%0A",
     ):
         assert (await client.get(f"/v1/pois/info?{query}")).status_code == 422
     assert len(stub.calls) == 1

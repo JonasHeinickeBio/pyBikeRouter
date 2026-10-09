@@ -793,7 +793,7 @@ async def poi_info(
     Best effort: parts the open services cannot deliver right now are left out."""
     service = _require_pois()
     lang = lang.lower()
-    if not LANG_RE.match(lang):
+    if not LANG_RE.fullmatch(lang):
         raise HTTPException(status_code=422, detail="lang must be a language code like en or de")
     if wikidata is not None and not QID_RE.match(wikidata):
         raise HTTPException(status_code=422, detail="wikidata must look like Q42")

@@ -220,3 +220,69 @@ async def test_rate_limits_and_timeouts_are_reported_as_provider_errors():
 
     with pytest.raises(ProviderTimeoutError):
         await r._get_json(WIKIDATA, {})
+
+
+@respx.mock
+async def test_malformed_wikidata_answers_leave_fame_unknown_instead_of_raising():
+    r = resolver()
+    for payload in (
+        {"entities": []},
+        {"entities": {"Q1": {"sitelinks": ["not", "a", "dict"]}}},
+        {"entities": {"Q1": "oops"}},
+        {},
+    ):
+        respx.get(WIKIDATA).mock(return_value=httpx.Response(200, json=payload))
+        assert await r.fame(["Q1"]) == {}
+    respx.get(WIKIDATA).mock(return_value=httpx.Response(200, json=["a", "list"]))
+    assert await r.fame(["Q1"]) == {}  # not an object at all
+
+
+@respx.mock
+async def test_malformed_wikipedia_page_properties_are_skipped_not_fatal():
+    payload = {
+        "query": {
+            "normalized": [{"to": "no from"}, "garbage", {"from": "a", "to": "b"}],
+            "redirects": None,
+            "pages": [
+                "garbage",
+                {"no": "title"},
+                {"title": "Burg", "pageprops": "not a dict"},
+                {"title": "Schloss", "pageprops": {"wikibase_item": "Q7"}},
+            ],
+        }
+    }
+    respx.get("https://de.wikipedia.example/w/api.php").mock(
+        return_value=httpx.Response(200, json=payload)
+    )
+    found = await resolver().wikidata_for_titles(["de:Burg", "de:Schloss"])
+    assert found == {"de:Schloss": "Q7"}
+    respx.get("https://de.wikipedia.example/w/api.php").mock(
+        return_value=httpx.Response(200, json={"query": []})
+    )
+    assert await resolver().wikidata_for_titles(["de:Burg"]) == {}
+
+
+@respx.mock
+async def test_an_odd_summary_shape_costs_the_description_not_the_poi():
+    respx.get(WIKIDATA).mock(
+        return_value=httpx.Response(200, json=fixture("wikidata_entity_raw.json"))
+    )
+    odd = {"extract": "Text", "content_urls": ["not", "a", "dict"], "thumbnail": "x"}
+    respx.get(host="de.wikipedia.example").mock(return_value=httpx.Response(200, json=odd))
+    info = await resolver().info(
+        wikidata="Q4152", wikipedia=None, osm_id="way/5", website=None, lang="de"
+    )
+    assert {link.kind for link in info.links} >= {"wikidata", "osm"}  # still useful
+
+
+async def test_a_language_can_only_ever_be_a_language_code_in_a_host_name():
+    r = resolver()
+    for bad in ("evil.com/x", "en\n", "EN", "e", "en-", "a@b", "en.evil", "../x", ""):
+        with pytest.raises(ValueError):
+            r._wikipedia_base(bad)
+        with pytest.raises(ValueError):
+            await r.info(wikidata=None, wikipedia=None, osm_id=None, website=None, lang=bad)
+    assert r._wikipedia_base("de") == "https://de.wikipedia.example"
+    assert r._wikipedia_base("zh-yue") == "https://zh-yue.wikipedia.example"
+    # A title never ends up in the host: bad tags are dropped before any request.
+    assert await r.wikidata_for_titles(["evil.com/x:Title", "de\n:Title"]) == {}
