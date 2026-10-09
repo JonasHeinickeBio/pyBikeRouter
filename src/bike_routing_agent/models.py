@@ -225,6 +225,19 @@ class RoutePlanAPIRequest(BaseModel):
     departure_time: datetime | None = None
     # Route past the best-known sights between origin and destination (issue #55).
     poi_stops: PoiStopsRequest | None = None
+    # Plan with these engines for this request instead of the configured ones (the web form's
+    # "use openrouteservice for this trip" after BRouter lacked map data). Only engines the
+    # server offers (``capabilities.engines``) are used; unknown or unavailable names are ignored.
+    routing_engines: list[Literal["ors", "brouter", "valhalla"]] | None = Field(
+        default=None, min_length=1, max_length=3
+    )
+
+    @field_validator("routing_engines")
+    @classmethod
+    def _unique_engines(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("routing_engines must not repeat an engine")
+        return value
 
     @field_validator("departure_time")
     @classmethod

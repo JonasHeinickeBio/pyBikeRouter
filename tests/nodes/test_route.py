@@ -437,3 +437,64 @@ async def test_a_provider_whose_alternatives_hang_cannot_hold_back_the_main_rout
     assert time.monotonic() - started < 5
     assert update["status"] == "in_progress" and len(update["candidates"]) == 1
     assert update["errors"] == []
+
+
+def coverage_error():
+    from bike_routing_agent.errors import ProviderCoverageError
+
+    return ProviderCoverageError(
+        "BRouter has no map data for this area (segment E10_N45)",
+        provider="brouter",
+        detail={"segments": ["E10_N45"]},
+    )
+
+
+async def test_a_coverage_failure_tells_the_client_what_is_missing_and_what_is_configured():
+    brouter = CapturingRouter(name="brouter", error=coverage_error())
+    state = base_state()
+    state["resolved_destination"] = {"lon": 10.6, "lat": 49.9}  # south of 50 N
+    update = await build_route_node(routing_providers=[brouter])(state)
+    assert update["status"] == "provider_failure"  # not "no route": the operator can fix it
+    [error] = update["errors"]
+    assert error["code"] == "routing_area_not_covered"
+    detail = error["detail"]
+    assert detail["reported_missing"] == ["E10_N45"]
+    assert detail["segments"] == ["E10_N45", "E10_N50"]  # reported first, then what else is touched
+    assert detail["download_base"].startswith("https://brouter.de/")
+    assert detail["configured_engines"] == ["brouter"]
+
+
+async def test_with_another_engine_the_plan_goes_on_and_still_reports_the_gap():
+    brouter = CapturingRouter(name="brouter", error=coverage_error())
+    ors = CapturingRouter(name="ors")
+    update = await build_route_node(routing_providers=[brouter, ors])(base_state())
+    assert update["status"] == "in_progress"
+    assert [c["provider"] for c in update["candidates"]] == ["ors"]
+    [error] = update["errors"]
+    assert error["code"] == "routing_area_not_covered"
+    assert error["detail"]["configured_engines"] == ["brouter", "ors"]
+
+
+async def test_a_request_can_name_the_engines_to_use_instead_of_the_configured_ones():
+    brouter = CapturingRouter(name="brouter")
+    ors = CapturingRouter(name="ors")
+    node = build_route_node(routing_providers=[brouter], optional_providers=[ors])
+
+    update = await node({**base_state(), "routing_engines": ["ors"]})
+    assert [c["provider"] for c in update["candidates"]] == ["ors"]
+    assert ors.last_request is not None and brouter.last_request is None
+
+    both = await node({**base_state(), "routing_engines": ["brouter", "ors"]})
+    assert sorted(c["provider"] for c in both["candidates"]) == ["brouter", "ors"]
+
+
+async def test_without_a_choice_or_with_an_unknown_one_the_configured_engines_run():
+    brouter = CapturingRouter(name="brouter")
+    ors = CapturingRouter(name="ors")
+    node = build_route_node(routing_providers=[brouter], optional_providers=[ors])
+    for state in (base_state(), {**base_state(), "routing_engines": None}):
+        update = await node(state)
+        assert [c["provider"] for c in update["candidates"]] == ["brouter"]
+    odd = await node({**base_state(), "routing_engines": ["valhalla"]})  # not offered
+    assert [c["provider"] for c in odd["candidates"]] == ["brouter"]
+    assert ors.last_request is None

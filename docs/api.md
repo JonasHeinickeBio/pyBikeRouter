@@ -40,6 +40,7 @@ FastAPI with `422` and never reaches the workflow.
 | `constraints` | `RouteConstraints` | no | Defaults apply when omitted. |
 | `departure_time` | ISO-8601 datetime | no | When the ride starts, for the weather forecast ([weather.md](weather.md)). Omitted: now. No UTC offset = UTC; more than 14 days ahead is rejected (`422`). |
 | `poi_stops` | object | no | Route past the best-known sights: `{"count": 1..5 (2), "categories": [sight kinds], "corridor_km": 0.5..15 (5), "min_fame": 1..200 (5)}` (`min_fame`: described in at least this many languages). Not with `return_to_origin`; `via` + `count` may not exceed 10. See [pois.md](pois.md). |
+| `routing_engines` | list of `ors` / `brouter` / `valhalla` | no | Plan with these engines for this request instead of the configured ones (only names in `capabilities.engines` are used; none usable = the configured ones). The web form's *Plan this trip with openrouteservice* after BRouter lacked map data. |
 | `max_alternatives` | integer `1..5` | no | Return at most this many *distinct* routes; see [Alternatives](#alternatives). Omitted: every scored candidate is returned. |
 
 `Coordinate` is `{"lon": -180..180, "lat": -90..90}`. Constraint fields and
@@ -142,6 +143,11 @@ plan fails. The failure modes are structured, not exceptions:
 | `invalid` | `null` | `[]` | optional (e.g. missing places) | validation detail |
 | `provider_failure` | `null` | `[]` | `[]` | structured provider errors |
 | `no_route` | `null` | `[]` | `[]` | why nothing was produced |
+
+An `errors` entry with `code: "routing_area_not_covered"` means a routing engine has no map data
+for the trip (BRouter: a missing tile). It also appears next to a `ready` result when another
+engine answered. `detail` names the tiles and the official download location --
+[providers.md](providers.md#brouter-map-coverage).
 
 `ready` example (trimmed):
 
@@ -320,8 +326,24 @@ and a `llm_parser_*` error code.
 
 ## GET /v1/capabilities
 
-`{"text_planning": bool, "weather": bool, "history": bool, "pois": bool}` -- which optional
-features this instance has, used by the web form to show or hide controls.
+`{"text_planning": bool, "weather": bool, "history": bool, "pois": bool, "segment_downloads":
+bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
+web form to show or hide controls; `engines` are the names a plan request may give in
+`routing_engines` (the configured engines plus optional ones the server can use).
+
+## BRouter map tiles
+
+For the *Map data missing* card ([providers.md](providers.md#brouter-map-coverage)). All three
+answer `503` unless `BROUTER_SEGMENTS_DIR` names a writable tile folder.
+
+- `GET /v1/routing/segments?names=W5_N50,E10_N50` -- `{"segments": [{"name", "present",
+  "size_bytes"}], "free_bytes"}`; the size is the source's `Content-Length` (null if it could not
+  be asked). Nothing is downloaded.
+- `POST /v1/routing/segments/download` `{"segments": ["W5_N50"]}` (1-4 well-formed tile names,
+  else `422`) -> `202` with a job `{"id", "state": "running|done|failed", "segments": [{"name",
+  "state": "pending|downloading|done|present|failed", "bytes", "total_bytes", "error"}], "error"}`;
+  `409` while another download runs.
+- `GET /v1/routing/segments/download/{id}` -- the job (`404` if unknown).
 
 ## Points of interest
 

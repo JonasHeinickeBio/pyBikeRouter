@@ -22,10 +22,11 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from bike_routing_agent.errors import ProviderError, ProviderNoRouteError
+from bike_routing_agent.errors import ProviderCoverageError, ProviderError, ProviderNoRouteError
 from bike_routing_agent.loops import synthesize_loop_vias
 from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
 from bike_routing_agent.providers.base import RoutingProvider
+from bike_routing_agent.providers.brouter_segments import SEGMENTS_BASE_URL, segments_for_points
 from bike_routing_agent.state import RouteAgentState
 
 NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
@@ -42,11 +43,53 @@ async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[
         return []
 
 
-def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
+def _coverage_error(
+    error: ProviderCoverageError, request: RoutingRequest, providers: Sequence[RoutingProvider]
+) -> dict[str, Any]:
+    """The coverage error with what a client needs to put the choice to the user: which map
+    tiles the trip touches (the engine reports only the first one it lacks), where the official
+    files are, and which engines are already configured."""
+    points = [request.origin, *request.via, request.destination]
+    reported = list(error.detail.get("segments", []))
+    touched = segments_for_points((p.lon, p.lat) for p in points)
+    as_dict = error.to_dict()
+    as_dict["detail"] = {
+        **error.detail,
+        "segments": [*reported, *(s for s in touched if s not in reported)],
+        "reported_missing": reported,
+        "download_base": SEGMENTS_BASE_URL,
+        "configured_engines": [p.name for p in providers],
+    }
+    return as_dict
+
+
+def _engines_for(
+    requested: Sequence[str] | None,
+    configured: Sequence[RoutingProvider],
+    optional: Sequence[RoutingProvider],
+) -> Sequence[RoutingProvider]:
+    """The engines for one request: the ones it names (among the configured and the optional
+    ones the server offers), or the configured ones when it names none that exist."""
+    if not requested:
+        return configured
+    by_name = {p.name: p for p in [*optional, *configured]}  # configured wins a name clash
+    chosen = [by_name[name] for name in dict.fromkeys(requested) if name in by_name]
+    return chosen or configured
+
+
+def build_route_node(
+    *,
+    routing_providers: Sequence[RoutingProvider],
+    optional_providers: Sequence[RoutingProvider] = (),
+) -> NodeFn:
     if not routing_providers:
         raise ValueError("build_route_node requires at least one routing provider")
+    configured_providers = routing_providers
 
     async def route_with_provider(state: RouteAgentState) -> dict[str, Any]:
+        routing_providers = _engines_for(
+            state.get("routing_engines"), configured_providers, optional_providers
+        )
         constraints = RouteConstraints.model_validate(state.get("constraints", {}))
         origin = Coordinate.model_validate(state["resolved_origin"])
         via = [Coordinate.model_validate(v) for v in state.get("resolved_via", [])]
@@ -97,7 +140,10 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
         for provider, result in zip(routing_providers, results, strict=True):
             if isinstance(result, BaseException) and not isinstance(result, Exception):
                 raise result
-            if isinstance(result, ProviderNoRouteError):
+            if isinstance(result, ProviderCoverageError):
+                no_route_only = False
+                errors.append(_coverage_error(result, request, routing_providers))
+            elif isinstance(result, ProviderNoRouteError):
                 errors.append(result.to_dict())
             elif isinstance(result, ProviderError):
                 no_route_only = False

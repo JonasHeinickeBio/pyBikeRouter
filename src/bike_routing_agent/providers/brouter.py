@@ -34,11 +34,13 @@ from bike_routing_agent.config import (
 )
 from bike_routing_agent.errors import (
     ProviderBadResponseError,
+    ProviderCoverageError,
     ProviderNoRouteError,
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
 from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingRequest
+from bike_routing_agent.providers.brouter_segments import missing_segment
 from bike_routing_agent.providers.brouter_tags import main_road_share, surface_shares
 
 # Fragments BRouter puts in its plain-text 400 body when the request was
@@ -252,6 +254,13 @@ class BRouterAdapter:
     @staticmethod
     def _raise_for_routing_error(response: httpx.Response) -> None:
         body = response.text[:_MAX_ERROR_BODY_CHARS]
+        missing = missing_segment(body)
+        if missing is not None:
+            raise ProviderCoverageError(
+                f"BRouter has no map data for this area (segment {missing})",
+                provider="brouter",
+                detail={"status_code": response.status_code, "body": body, "segments": [missing]},
+            )
         if any(marker in body.lower() for marker in _NO_ROUTE_MARKERS):
             raise ProviderNoRouteError(
                 "BRouter could not find a route between the given points",

@@ -82,6 +82,7 @@ def build_graph(
     weather_spacing_km: float = 10.0,
     weather_option_hours: tuple[int, int] = (0, 0),
     poi_service: PoiService | None = None,
+    optional_routing_providers: Sequence[RoutingProvider] = (),
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
@@ -97,7 +98,12 @@ def build_graph(
     )
     # Only acts when the request asked for famous-POI stops (issue #55); best effort.
     graph.add_node("select_poi_stops", build_poi_stops_node(service=poi_service))
-    graph.add_node("route_with_provider", build_route_node(routing_providers=routing_providers))
+    graph.add_node(
+        "route_with_provider",
+        build_route_node(
+            routing_providers=routing_providers, optional_providers=optional_routing_providers
+        ),
+    )
     # Always present so routing never talks to scoring's surface assumptions
     # directly; a no-op pass-through when no enricher is configured (issue #3).
     graph.add_node("enrich_candidates", build_enrich_node(surface_enricher=surface_enricher))

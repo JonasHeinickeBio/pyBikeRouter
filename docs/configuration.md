@@ -19,7 +19,7 @@ cp .env.example .env
 | `ORS_BASE_URL` | openrouteservice base URL | `https://api.openrouteservice.org` |
 | `ORS_TIMEOUT_S` | per-request ORS timeout (seconds) | `10.0` |
 | `ORS_MAX_RETRIES` | retries for timeouts/5xx (not 429) | `2` |
-| `ROUTING_PROVIDER` | `ors`, `brouter`, `valhalla` or `all` -- `all` queries the three engines in parallel and scoring picks the best candidate; otherwise no automatic fallback | `ors` |
+| `ROUTING_PROVIDER` | `ors`, `brouter`, `valhalla` or `all` -- `all` queries the three engines in parallel and scoring picks the best candidate; an engine that fails is reported in `errors` and the others still answer (verified with Valhalla not running); with a single engine there is no fallback | `ors` |
 | `BROUTER_BASE_URL` | base URL of a local/self-hosted BRouter RouteServer | `http://127.0.0.1:17777` |
 | `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
 | `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |
@@ -50,6 +50,7 @@ cp .env.example .env
 | `WEATHER_MERGE` | fill what the first weather provider lacks (UV, feels-like, gusts, rain probability) from the next one that has it; `false` asks only the first that answers ([weather.md](weather.md#merging-sources)) | `true` |
 | `WEATHER_OPTION_HOURS_BEFORE` / `WEATHER_OPTION_HOURS_AFTER` | compare departures this many hours before/after the requested one (0-12 each; both `0` = off) -- [weather.md](weather.md#other-departure-times) | `3` / `6` |
 | `WEATHER_MAX_SAMPLES` / `WEATHER_SAMPLE_SPACING_KM` | forecast points per route (2-10) and their spacing | `5` / `10` |
+| `BROUTER_SEGMENTS_DIR` / `BROUTER_SEGMENTS_URL` / `BROUTER_SEGMENTS_MAX_MB` | the folder BRouter reads its `.rd5` tiles from (writable for the API; unset = no download button, the form shows the command instead), where tiles come from, and the size limit -- [providers.md](providers.md#brouter-map-coverage) | unset / `https://brouter.de/brouter/segments4/` / `600` |
 | `POI_ENABLED` / `POI_OVERPASS_URLS` / `POI_USER_AGENT` | points of interest on/off, Overpass instances (comma separated, tried in order), identifying User-Agent -- all `POI_*` settings in [pois.md](pois.md#configuration) | `true` / public Overpass / project URL |
 | `WEATHER_DWD_URL` / `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Bright Sky/Open-Meteo or a proxy) | public URLs |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |
