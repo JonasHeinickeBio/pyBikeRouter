@@ -10,7 +10,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
-from bike_routing_agent.models import MAX_FORECAST_DAYS
+from pydantic import ValidationError
+
+from bike_routing_agent.cli.render import plan_text
+from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate, RoutePlanAPIRequest
 from bike_routing_agent.storage.history import record_from_state
 
 EXIT_OK = 0
@@ -91,6 +94,53 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="sweep direction for a loop whose shape is not drawn with --via (default: clockwise)",
     )
     plan.add_argument(
+        "--max-alternatives",
+        type=int,
+        default=None,
+        metavar="N",
+        help="keep at most N distinct alternatives (1-5; default: every scored candidate)",
+    )
+    plan.add_argument(
+        "--engine",
+        action="append",
+        default=[],
+        choices=("ors", "brouter", "valhalla"),
+        metavar="ENGINE",
+        help="route with this engine for this plan instead of the configured ones "
+        "(ors|brouter|valhalla; repeatable)",
+    )
+    plan.add_argument(
+        "--poi-stops",
+        type=int,
+        default=None,
+        metavar="N",
+        help="route past the N best-known sights between origin and destination (1-5)",
+    )
+    plan.add_argument(
+        "--poi-categories",
+        default="",
+        help="comma-separated sight kinds the stops may be (see 'poi categories'; default: all)",
+    )
+    plan.add_argument("--poi-corridor-km", type=float, default=None, help="how far off the line")
+    plan.add_argument(
+        "--poi-min-fame", type=int, default=None, help="at least this many Wikipedia languages"
+    )
+    plan.add_argument(
+        "--format",
+        choices=("json", "text"),
+        default="json",
+        help="json (default; machine readable) or text (a readable summary)",
+    )
+    plan.add_argument(
+        "--candidate",
+        type=int,
+        default=None,
+        metavar="RANK",
+        help="with --gpx/--geojson: export the alternative of this rank (default: the best)",
+    )
+    plan.add_argument("--gpx", type=Path, default=None, help="write the route as a GPX file")
+    plan.add_argument("--geojson", type=Path, default=None, help="write the route as GeoJSON")
+    plan.add_argument(
         "--output",
         type=Path,
         default=None,
@@ -108,6 +158,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         action="store_true",
         help="do not record the plan in the route history even when DATABASE_URL is set",
     )
+
+    show = route_sub.add_parser("show", help="show a saved plan (from 'plan --output') again")
+    show.add_argument("file", type=Path, help="the JSON file written by 'route plan --output'")
+    show.add_argument("--format", choices=("json", "text"), default="text")
+
+    export = route_sub.add_parser("export", help="write a saved plan's route as GPX or GeoJSON")
+    export.add_argument("file", type=Path, help="the JSON file written by 'route plan --output'")
+    export.add_argument("--candidate", type=int, default=None, metavar="RANK")
+    export.add_argument("--gpx", type=Path, default=None)
+    export.add_argument("--geojson", type=Path, default=None)
     return route
 
 
@@ -156,6 +216,18 @@ def _loop_usage_error(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _model_error(request: dict[str, Any]) -> str | None:
+    """The API's own request rules (loop vs stops, via limits, engines, ranges) as one message."""
+    try:
+        RoutePlanAPIRequest.model_validate(request)
+    except ValidationError as exc:
+        return "; ".join(
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else str(e["msg"])
+            for e in exc.errors()
+        )
+    return None
+
+
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
     if args.text is not None:
         return {"text": args.text, "timezone": args.timezone}
@@ -179,6 +251,19 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
         request["destination"] = _place(args.destination)
     if args.departure_time is not None:
         request["departure_time"] = args.departure_time
+    if args.max_alternatives is not None:
+        request["max_alternatives"] = args.max_alternatives
+    if args.engine:
+        request["routing_engines"] = list(args.engine)
+    if args.poi_stops is not None:
+        stops: dict[str, Any] = {"count": args.poi_stops}
+        if args.poi_categories:
+            stops["categories"] = _csv(args.poi_categories)
+        if args.poi_corridor_km is not None:
+            stops["corridor_km"] = args.poi_corridor_km
+        if args.poi_min_fame is not None:
+            stops["min_fame"] = args.poi_min_fame
+        request["poi_stops"] = stops
     return request
 
 
@@ -226,16 +311,36 @@ def run(
     graph_factory: Any = None,
     history_factory: Any = None,
 ) -> int:
+    if args.command == "show":
+        return _show(args, stdout, stderr)
+    if args.command == "export":
+        return _export_saved(args, stderr)
     if args.command != "plan":
         print("unknown route command", file=stderr)
         return 2
 
     usage_error = _loop_usage_error(args)
+    if (
+        usage_error is None
+        and args.text is not None
+        and (args.poi_stops is not None or args.engine or args.max_alternatives is not None)
+    ):
+        usage_error = (
+            "--poi-stops, --engine and --max-alternatives apply to --origin/--destination "
+            "plans; with --text, say it in the description (alternatives) or use the options "
+            "without --text"
+        )
+    if usage_error is None and (args.candidate is not None) and not (args.gpx or args.geojson):
+        usage_error = "--candidate only selects what --gpx / --geojson write"
+    request: dict[str, Any] = {}
+    if usage_error is None:
+        request = build_request(args)
+        if args.text is None:
+            usage_error = _model_error(request)
     if usage_error is not None:
         print(f"invalid request: {usage_error}", file=stderr)
         return 2
 
-    request = build_request(args)
     factory = graph_factory or _default_graph_factory
     try:
         graph = factory()
@@ -254,13 +359,91 @@ def run(
         else _record_plan(history_factory or _default_history_factory, final_state, stderr)
     )
     rendered = json.dumps(payload, indent=2, ensure_ascii=False)
-    print(rendered, file=stdout)
+    print(plan_text(payload) if args.format == "text" else rendered, file=stdout)
 
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
 
+    if (args.gpx or args.geojson) and payload["status"] == "ready":
+        export_code = _write_exports(payload, args.candidate, args.gpx, args.geojson, stderr)
+        if export_code != EXIT_OK:
+            return export_code
+
     return EXIT_OK if payload["status"] == "ready" else EXIT_FAILURE
+
+
+def _load_saved(path: Path, stderr: IO[str]) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"cannot read {path}: {exc}", file=stderr)
+        return None
+    if not isinstance(payload, dict) or "status" not in payload:
+        print(f"{path} is not a plan written by 'route plan --output'", file=stderr)
+        return None
+    return payload
+
+
+def _show(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
+    payload = _load_saved(args.file, stderr)
+    if payload is None:
+        return EXIT_FAILURE
+    if args.format == "json":
+        print(json.dumps(payload, indent=2, ensure_ascii=False), file=stdout)
+    else:
+        print(plan_text(payload), file=stdout)
+    return EXIT_OK if payload.get("status") == "ready" else EXIT_FAILURE
+
+
+def _export_saved(args: argparse.Namespace, stderr: IO[str]) -> int:
+    payload = _load_saved(args.file, stderr)
+    if payload is None:
+        return EXIT_FAILURE
+    if not (args.gpx or args.geojson):
+        print("nothing to write: give --gpx and/or --geojson", file=stderr)
+        return 2
+    if payload.get("status") != "ready":
+        print(f"the saved plan has no route (status: {payload.get('status')})", file=stderr)
+        return EXIT_FAILURE
+    return _write_exports(payload, args.candidate, args.gpx, args.geojson, stderr)
+
+
+def _write_exports(
+    payload: dict[str, Any],
+    rank: int | None,
+    gpx: Path | None,
+    geojson: Path | None,
+    stderr: IO[str],
+) -> int:
+    """Write the chosen alternative (default: the selected route) as GPX and/or GeoJSON."""
+    from bike_routing_agent.exporters.geojson import to_geojson_str
+    from bike_routing_agent.exporters.gpx import to_gpx_str
+
+    candidates = payload.get("candidates") or [payload.get("route")]
+    chosen = (
+        payload.get("route")
+        if rank is None
+        else next((c for c in candidates if c and c.get("rank") == rank), None)
+    )
+    if not chosen:
+        ranks = sorted(c["rank"] for c in candidates if c and c.get("rank"))
+        print(f"no alternative of rank {rank}; ranks in this plan: {ranks}", file=stderr)
+        return 2
+    try:
+        candidate = RouteCandidate.model_validate(chosen)
+    except ValidationError as exc:
+        missing = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
+        print(
+            f"the saved route is not a valid candidate (check: {', '.join(missing)})", file=stderr
+        )
+        return EXIT_FAILURE
+    for path, render in ((gpx, to_gpx_str), (geojson, to_geojson_str)):
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render(candidate), encoding="utf-8")
+            print(f"wrote {path}", file=stderr)
+    return EXIT_OK
 
 
 def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
@@ -273,10 +456,22 @@ def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
     if final_state.get("interpretation"):
         # How a --text request was read, so a wrong parse is visible.
         payload["interpretation"] = final_state["interpretation"]
+    if final_state.get("poi_stops_status") is not None:
+        payload["poi_stops_status"] = final_state["poi_stops_status"]
     if status == "ready":
         selected = dict(final_state.get("selected_candidate") or {})
         selected.pop("raw_provider_response", None)
         payload["route"] = selected
+        # Every ranked alternative (with its geometry, so any of them can be exported later).
+        payload["candidates"] = sorted(
+            (
+                {k: v for k, v in c.items() if k != "raw_provider_response"}
+                for c in final_state.get("candidates", [])
+            ),
+            key=lambda c: c.get("rank") if c.get("rank") is not None else 10**9,
+        )
+        payload["weather_status"] = final_state.get("weather_status")
+        payload["poi_stops"] = final_state.get("poi_stops")
         exported = final_state.get("artifacts", {})
         artifacts: dict[str, str] = {}
         if "geojson_file" in exported:

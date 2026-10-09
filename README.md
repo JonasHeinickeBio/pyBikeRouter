@@ -128,7 +128,15 @@ bike-router docker logs -f
 bike-router config show          # effective settings, secrets redacted
 bike-router config check         # validate settings against the environment
 bike-router providers list       # provider names and bike-type -> ORS profile map
+bike-router route plan ... --format text --gpx best.gpx   # alternatives, sight stops, exports
+bike-router route show plan.json # a saved plan again; `route export` writes any alternative
+bike-router poi along --route plan.json   # sights near a route, ranked by fame
+bike-router brouter needed|info|download  # BRouter map tiles (asks before downloading)
+bike-router history list|show|stats       # past plans (needs DATABASE_URL)
+bike-router status show          # readiness of every component and the active features
 ```
+
+Everything the API and the web form do is available from the CLI -- see [docs/cli.md](docs/cli.md).
 
 `route plan --text "50 km gravel loop from Braunschweig"` uses the optional LLM parser ([docs/llm-parser.md](docs/llm-parser.md)).
 
