@@ -72,6 +72,13 @@ def _headwind(candidate: RouteCandidate) -> float | None:
     return weather.summary.headwind_mean_kmh if weather is not None else None
 
 
+def _headwind_pro(mean_kmh: float) -> str:
+    """Positive is wind against you, negative with you; zero is neither."""
+    if mean_kmh < 0:
+        return "Most tailwind"
+    return "No headwind on average" if mean_kmh == 0 else "Least headwind"
+
+
 def _wet(candidate: RouteCandidate) -> bool | None:
     weather = candidate.weather
     return None if weather is None else weather.summary.wet_stretch is not None
@@ -223,7 +230,7 @@ def _compare(
     numeric(
         _headwind,
         rel=0.0, absolute=HEADWIND_KMH,
-        pro=lambda v: "Least headwind" if v > 0 else "Most tailwind",
+        pro=_headwind_pro,
         con=lambda gap, v: f"{gap:.0f} km/h more headwind on average",
     )  # fmt: skip
 

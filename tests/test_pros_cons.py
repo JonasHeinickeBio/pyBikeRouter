@@ -261,3 +261,15 @@ def test_a_surface_gap_under_ten_points_is_ignored():
         RouteConstraints(bike_type="road"),
     )
     assert not any("paved" in x for x in a.pros + a.cons + b.pros + b.cons)
+
+
+def test_zero_headwind_is_not_called_a_tailwind():
+    windy = route("windy", 10, 30, 50, weather=weather(headwind=20))
+    for mean, label in (
+        (8, "Least headwind"),
+        (0, "No headwind on average"),
+        (-6, "Most tailwind"),
+    ):
+        calm_a, windy_a = run([route("calm", 10, 30, 50, weather=weather(headwind=mean)), windy])
+        assert label in calm_a.pros, (mean, calm_a.pros)
+        assert not any("tailwind" in x for x in calm_a.pros) or mean < 0
