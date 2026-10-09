@@ -44,7 +44,11 @@
 
   /** The shell commands that fetch the missing tiles into BRouter's segment folder. */
   function downloadCommand(segments, base) {
-    const lines = segments.map((s) => `curl -fL --create-dirs -o segments/${s}.rd5 ${base}${s}.rd5`);
+    // Into a .part file first: a transfer that dies half way must not leave a truncated tile
+    // under the name BRouter reads (it would be taken for a real, broken one).
+    const lines = segments.map(
+      (s) => `curl -fL --create-dirs -o segments/${s}.rd5.part ${base}${s}.rd5 && mv segments/${s}.rd5.part segments/${s}.rd5`,
+    );
     return ["cd docker/brouter", ...lines].join("\n");
   }
 

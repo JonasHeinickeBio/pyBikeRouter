@@ -221,7 +221,7 @@ setting to copy.
    request) so it is known before anything is stored. Clicking starts a job on the server
    (`POST /v1/routing/segments/download`), the card shows per-tile progress, and the trip is
    planned again when the job is done. Without that setting the card shows the `curl` lines for
-   `docker/brouter/segments/`. Either way tiles come from the official source and are large
+   `docker/brouter/segments/` (each into a `.part` file, renamed only when curl succeeded). Either way tiles come from the official source and are large
    (checked on 2026-10-09: 125 MB `E10_N50`, 139 MB `W5_N50`, 199 MB `E10_N45`).
 2. **Use openrouteservice instead.** *Plan this trip with openrouteservice* re-plans with
    `routing_engines: ["ors"]` for this request only (shown when the server offers ORS and it is

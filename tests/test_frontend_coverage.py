@@ -49,11 +49,15 @@ def test_the_coverage_error_is_found_among_other_errors():
 def test_the_download_command_names_every_missing_tile_and_the_official_source():
     command = call("downloadCommand", ["W5_N50", "W5_N45"], "https://brouter.de/brouter/segments4/")
     assert command.splitlines()[0] == "cd docker/brouter"
+    url = "https://brouter.de/brouter/segments4/W5_N50.rd5"
+    # Downloaded to a .part file and only renamed when curl succeeded.
     assert (
-        "curl -fL --create-dirs -o segments/W5_N50.rd5 https://brouter.de/brouter/segments4/W5_N50.rd5"
-        in command
-    )
-    assert command.count("curl") == 2
+        f"curl -fL --create-dirs -o segments/W5_N50.rd5.part {url}"
+        " && mv segments/W5_N50.rd5.part segments/W5_N50.rd5"
+    ) in command
+    assert command.count("curl") == 2 and command.count("&& mv") == 2
+    # Never straight into the final name.
+    assert "-o segments/W5_N50.rd5 " not in command
 
 
 def test_without_server_support_the_card_gives_commands_to_copy():

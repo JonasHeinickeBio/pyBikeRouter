@@ -766,7 +766,9 @@ function renderRoute(data) {
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
-  revealOnPhone(els.resultsPanel);
+  // One scroll target: when a routing engine lacked map data the card that asks the user what
+  // to do is revealed instead (renderCoverage), not the result.
+  if (!BikeCoverage.find(data.errors)) revealOnPhone(els.resultsPanel);
   els.explanation.textContent = data.explanation || "";
 
   renderCandidatesTable();
