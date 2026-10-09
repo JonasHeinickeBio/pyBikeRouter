@@ -108,7 +108,8 @@ switch, one checkbox per kind (sights on and services off by default; remembered
 in the browser), and *Route past the most famous sights* with a count.
 
 - With a route on screen the active candidate's surroundings are searched; without
-  one, the visible map (from zoom 11) is.
+  one, the visible map is -- from zoom 11 and only while the view is under 0.5 degrees wide
+  and tall (a wide window can exceed that even at zoom 11; the panel then asks for a zoom).
 - A marker's popup shows the kind, the fame as a fact ("Described in 93
   languages"), the distance from the route and the opening hours as mapped.
   *Read more* loads the Wikipedia summary, a thumbnail and links to Wikipedia,

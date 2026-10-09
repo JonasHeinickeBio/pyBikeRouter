@@ -196,6 +196,16 @@
     return out;
   }
 
+  /**
+   * True when a map view is too large to list POIs for. The server refuses views wider or
+   * taller than 0.5 degrees, so the check keeps a margin and the UI asks for a zoom instead
+   * of sending a request that is bound to fail.
+   */
+  function viewTooLarge(west, south, east, north, maxDegrees) {
+    const limit = (maxDegrees == null ? 0.5 : maxDegrees) * 0.98;
+    return east - west > limit || north - south > limit;
+  }
+
   /** What to say about the stops a plan was asked to pass. */
   function stopsNote(status, stops) {
     const names = (stops || []).map((s) => escapeHtml(s.name || s.category)).join(", ");
@@ -231,6 +241,7 @@
     alongMeters,
     insertionIndex,
     thin,
+    viewTooLarge,
     stopsNote,
   };
   root.BikePois = api;

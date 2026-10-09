@@ -1203,7 +1203,8 @@ async function refreshPois() {
       });
     } else {
       const b = state.map.getBounds();
-      if (state.map.getZoom() < POI_MIN_ZOOM) {
+      if (state.map.getZoom() < POI_MIN_ZOOM || BikePois.viewTooLarge(b.getWest(), b.getSouth(), b.getEast(), b.getNorth())) {
+        // A wide window shows more than the server will list at zoom 11 and 12 alike.
         setPoiStatus("Zoom in to see points of interest in the map view.");
         return;
       }
@@ -1216,7 +1217,9 @@ async function refreshPois() {
     if (request !== state.poiRequest) return;
     if (!resp.ok) {
       setPoiStatus(
-        resp.status === 502
+        resp.status === 422 && !entry
+          ? "Zoom in to see points of interest in the map view."
+          : resp.status === 502
           ? "The map data service (Overpass) is busy right now; points of interest could not be loaded."
           : "Points of interest could not be loaded.",
       );
