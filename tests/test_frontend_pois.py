@@ -186,3 +186,13 @@ def test_the_note_about_the_stops_says_what_happened(status, expected):
 def test_no_note_when_nothing_was_asked():
     assert run_js("P.stopsNote(null, null)") == ""
     assert run_js("P.stopsNote('ok', [])") == ""
+
+
+def test_a_view_wider_than_the_servers_limit_asks_for_a_zoom_instead_of_failing():
+    # The view that the deployed app logged as 422: 0.5009 degrees wide at zoom 11.
+    assert call("viewTooLarge", -1.50032, 51.66084, -0.99941, 51.83917) is True
+    assert call("viewTooLarge", 10.50, 52.25, 10.55, 52.28) is False
+    assert call("viewTooLarge", 10.0, 52.0, 10.1, 52.6) is True  # too tall
+    assert call("viewTooLarge", 10.0, 52.0, 10.49, 52.1) is True  # inside the margin
+    assert call("viewTooLarge", 10.0, 52.0, 10.45, 52.45) is False
+    assert call("viewTooLarge", 10.0, 52.0, 10.2, 52.2, 0.1) is True  # another limit

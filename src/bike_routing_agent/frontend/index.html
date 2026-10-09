@@ -140,10 +140,7 @@
 
       <section class="panel" id="poi-panel" hidden>
         <details open>
-          <summary><h2>Points of interest</h2></summary>
-          <label class="check"><input id="poi-enabled" type="checkbox" checked /> Show them on the map</label>
-          <div id="poi-categories" class="check-grid poi-cats" role="group" aria-label="Kinds of points of interest"></div>
-          <p class="hint" id="poi-status" aria-live="polite"></p>
+          <summary><h2>Sights on the way</h2></summary>
           <label class="check"><input id="poi-stops-enabled" type="checkbox" /> Route past the most famous sights</label>
           <div class="field" id="poi-stops-field" hidden>
             <label for="poi-stops-count">How many sights</label>
@@ -155,8 +152,7 @@
               <option value="5">5</option>
             </select>
           </div>
-          <p class="hint" id="poi-stops-hint">Picks the best-known sights between origin and destination (by how many languages describe them) and adds them as stops. Uses the sight kinds ticked above. Not available for loops.</p>
-          <p class="hint">Open data: OpenStreetMap, Wikipedia, Wikidata, Wikivoyage. Click a marker to read more.</p>
+          <p class="hint" id="poi-stops-hint">Picks the best-known sights between origin and destination (by how many languages describe them) and adds them as stops. Uses the sight kinds ticked in the settings (&#9881;). Not available for loops.</p>
         </details>
       </section>
 
@@ -223,6 +219,22 @@
     </aside>
 
     <main id="map" role="application" aria-label="Route map"></main>
+    <button id="settings-toggle" class="settings-toggle" type="button" aria-controls="settings-panel" aria-expanded="false" aria-label="Open settings" title="Settings">&#9881;</button>
+    <section id="settings-panel" class="settings-panel" role="region" aria-labelledby="settings-title" aria-hidden="true" inert>
+      <header class="settings-head">
+        <h2 id="settings-title">Settings</h2>
+        <button id="settings-close" class="icon-btn" type="button" aria-label="Close settings" title="Close (Esc)">&times;</button>
+      </header>
+      <section class="settings-group" id="poi-settings" hidden>
+        <h3>Points of interest</h3>
+        <label class="check"><input id="poi-enabled" type="checkbox" checked /> Show them on the map</label>
+        <div id="poi-categories" class="check-grid poi-cats" role="group" aria-label="Kinds of points of interest"></div>
+        <p class="hint" id="poi-status" aria-live="polite"></p>
+        <p class="hint">Open data: OpenStreetMap, Wikipedia, Wikidata, Wikivoyage. Click a marker to read more.</p>
+      </section>
+      <p class="hint" id="settings-empty" hidden>Nothing to configure on this server yet.</p>
+      <p class="hint settings-foot">Settings are kept in this browser only.</p>
+    </section>
     <div id="map-mode-banner" hidden>Click the map to set the <strong id="map-mode-kind"></strong> &middot; <a href="#" id="map-mode-cancel">cancel</a></div>
   </div>
 
@@ -236,6 +248,7 @@
   <script src="export.js"></script>
   <script src="pois.js"></script>
   <script src="coverage.js"></script>
+  <script src="settings.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>

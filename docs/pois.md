@@ -103,12 +103,15 @@ winding trip a stop can add a long detour -- the route's distance and the
 
 ## The map
 
-When the server has POIs the form shows a *Points of interest* panel: a master
-switch, one checkbox per kind (sights on and services off by default; remembered
-in the browser), and *Route past the most famous sights* with a count.
+When the server has POIs, the **settings panel** (the gear at the top right; it is hidden until
+opened and slides out from the right, Esc or × closes it) has a master switch and one checkbox
+per kind (sights on and services off by default; remembered in the browser). The form has
+*Sights on the way*: *Route past the most famous sights* with a count, using the kinds ticked
+in the settings.
 
 - With a route on screen the active candidate's surroundings are searched; without
-  one, the visible map (from zoom 11) is.
+  one, the visible map is -- from zoom 11 and only while the view is under 0.5 degrees wide
+  and tall (a wide window can exceed that even at zoom 11; the panel then asks for a zoom).
 - A marker's popup shows the kind, the fame as a fact ("Described in 93
   languages"), the distance from the route and the opening hours as mapped.
   *Read more* loads the Wikipedia summary, a thumbnail and links to Wikipedia,

@@ -62,6 +62,11 @@ const els = {
   poiEnabled: $("poi-enabled"),
   poiCategories: $("poi-categories"),
   poiStatus: $("poi-status"),
+  poiSettings: $("poi-settings"),
+  settingsToggle: $("settings-toggle"),
+  settingsPanel: $("settings-panel"),
+  settingsClose: $("settings-close"),
+  settingsEmpty: $("settings-empty"),
   poiStopsEnabled: $("poi-stops-enabled"),
   poiStopsField: $("poi-stops-field"),
   poiStopsCount: $("poi-stops-count"),
@@ -1279,6 +1284,8 @@ async function initPois() {
   els.poiEnabled.addEventListener("change", onChange);
   els.poiCategories.addEventListener("change", onChange);
   els.poiPanel.hidden = false;
+  els.poiSettings.hidden = false;
+  updateSettingsEmpty();
   updatePoiStopsAvailability();
   schedulePoiRefresh();
 }
@@ -1331,7 +1338,8 @@ async function refreshPois() {
       });
     } else {
       const b = state.map.getBounds();
-      if (state.map.getZoom() < POI_MIN_ZOOM) {
+      if (state.map.getZoom() < POI_MIN_ZOOM || BikePois.viewTooLarge(b.getWest(), b.getSouth(), b.getEast(), b.getNorth())) {
+        // A wide window shows more than the server will list at zoom 11 and 12 alike.
         setPoiStatus("Zoom in to see points of interest in the map view.");
         return;
       }
@@ -1344,7 +1352,9 @@ async function refreshPois() {
     if (request !== state.poiRequest) return;
     if (!resp.ok) {
       setPoiStatus(
-        resp.status === 502
+        resp.status === 422 && !entry
+          ? "Zoom in to see points of interest in the map view."
+          : resp.status === 502
           ? "The map data service (Overpass) is busy right now; points of interest could not be loaded."
           : "Points of interest could not be loaded.",
       );
@@ -1459,6 +1469,38 @@ function renderPoiStops(data) {
   for (const poi of data.poi_stops || []) addPoiMarker(poi, state.poiStopLayer, true);
 }
 
+/* --------------------------- settings panel (right) --------------------------- */
+
+function updateSettingsEmpty() {
+  const groups = [...els.settingsPanel.querySelectorAll(".settings-group")];
+  els.settingsEmpty.hidden = !BikeSettings.isEmpty(groups.map((g) => g.hidden));
+}
+
+function setSettingsOpen(open, restoreFocus) {
+  const v = BikeSettings.view(open);
+  els.settingsPanel.classList.toggle("open", open);
+  els.settingsPanel.setAttribute("aria-hidden", v.hidden);
+  els.settingsPanel.inert = !open; // out of the tab order while hidden
+  els.settingsToggle.setAttribute("aria-expanded", v.expanded);
+  els.settingsToggle.setAttribute("aria-label", v.label);
+  els.settingsToggle.title = open ? "Close settings" : "Settings";
+  if (open) els.settingsClose.focus();
+  else if (restoreFocus) els.settingsToggle.focus();
+}
+
+function initSettingsPanel() {
+  updateSettingsEmpty();
+  els.settingsToggle.addEventListener("click", () => {
+    setSettingsOpen(!els.settingsPanel.classList.contains("open"), true);
+  });
+  els.settingsClose.addEventListener("click", () => setSettingsOpen(false, true));
+  document.addEventListener("keydown", (ev) => {
+    if (BikeSettings.closesOnKey(ev.key, els.settingsPanel.classList.contains("open"))) {
+      setSettingsOpen(false, true);
+    }
+  });
+}
+
 /* --------------------------------- boot ---------------------------------- */
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1466,5 +1508,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initDeparture();
   wireEvents();
   initTextPlanning();
+  initSettingsPanel();
   initPois();
 });
