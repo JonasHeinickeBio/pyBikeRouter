@@ -643,3 +643,58 @@ textarea {
 .poi-popup .poi-links { margin: 0.2rem 0; }
 .poi-popup .poi-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
 .poi-popup .poi-actions button { padding: 0.25rem 0.55rem; font-size: 0.8rem; cursor: pointer; }
+
+/* ------------------------- settings panel (slides out) ------------------------- */
+.settings-toggle {
+  position: fixed;
+  top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  right: calc(0.75rem + env(safe-area-inset-right, 0px));
+  z-index: 1100; /* above the map panes and controls */
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+.settings-toggle:hover { background: var(--bg); }
+.settings-toggle:focus-visible, .settings-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.settings-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1200;
+  width: min(22rem, 100vw);
+  padding: calc(1rem + env(safe-area-inset-top, 0px)) 1.1rem calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--ink);
+  border-left: 1px solid var(--line);
+  box-shadow: -6px 0 18px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  /* Hidden by default: off to the right, and out of reach for keyboards and screen readers. */
+  transform: translateX(105%);
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0s linear 0.25s;
+}
+.settings-panel.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.25s ease, visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-panel, .settings-panel.open { transition: none; }
+}
+.settings-head { display: flex; align-items: center; justify-content: space-between; }
+.settings-head h2 { margin: 0; font-size: 1.1rem; }
+.settings-group h3 { margin: 0 0 0.4rem; font-size: 0.95rem; }
+.settings-group { padding-bottom: 0.8rem; border-bottom: 1px solid var(--line); }
+.settings-foot { margin-top: auto; }
