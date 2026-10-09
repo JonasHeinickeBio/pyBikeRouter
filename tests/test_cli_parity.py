@@ -183,9 +183,13 @@ def test_any_alternative_can_be_written_as_gpx_and_geojson(tmp_path: Path):
     assert code == 0 and "wrote" in err
     assert gpx.read_text().startswith("<?xml") and "<trkpt" in gpx.read_text()
     feature = json.loads(geo.read_text())
-    assert feature["properties"]["provider_profile"] == "custom_gravel-v2" or feature
-    # Rank 2 starts at lon 10.52; rank 1 at 10.51.
-    assert '"10.52' in gpx.read_text() or 'lon="10.52' in gpx.read_text()
+    assert feature["properties"]["provider_profile"] == "mtb"  # rank 2, not the selected rank 1
+    import xml.etree.ElementTree as ET
+
+    ns = {"g": "http://www.topografix.com/GPX/1/1"}
+    first = ET.fromstring(gpx.read_text()).find(".//g:trkpt", ns)
+    assert first is not None and float(first.attrib["lon"]) == pytest.approx(10.52)  # rank 1: 10.51
+    assert ET.fromstring(gpx.read_text()).findtext(".//g:provider_profile", namespaces=ns) == "mtb"
 
 
 def test_asking_for_a_rank_that_does_not_exist_names_the_ranks(tmp_path: Path):
@@ -556,3 +560,85 @@ def test_every_group_is_registered_and_has_help():
         assert group in out
     for group in ("poi", "brouter", "history", "status"):
         assert cli(group)[0] == 2  # a group without a command prints its help
+
+
+def test_a_hand_edited_saved_route_is_reported_not_a_traceback(tmp_path: Path):
+    broken = tmp_path / "broken.json"
+    route = {k: v for k, v in cand(1).items() if k != "geometry_geojson"}
+    broken.write_text(json.dumps({"status": "ready", "route": route}))
+    code, _, err = cli("route", "export", str(broken), "--gpx", str(tmp_path / "x.gpx"))
+    assert code == 1 and "not a valid candidate" in err and "geometry_geojson" in err
+    assert not (tmp_path / "x.gpx").exists()
+
+
+def test_history_pagination_is_checked_before_anything_runs(monkeypatch: pytest.MonkeyPatch):
+    seeded_history(monkeypatch)
+    for argv in (
+        ["--limit", "0"], ["--limit", "201"], ["--limit", "ten"], ["--offset", "-1"],
+    ):  # fmt: skip
+        out, err = io.StringIO(), io.StringIO()
+        code = main(["history", "list", *argv], stdout=out, stderr=err)
+        assert code == 2 and out.getvalue() == ""
+    assert cli("history", "list", "--limit", "200", "--offset", "0")[0] == 0
+
+
+def test_a_validation_error_inside_an_endpoint_function_is_a_usage_error_not_a_crash():
+    from pydantic import BaseModel
+
+    from bike_routing_agent.cli._handlers import call_handler
+
+    class Strict(BaseModel):
+        count: int
+
+    async def raises() -> None:
+        Strict(count="many")  # type: ignore[arg-type]
+
+    err = io.StringIO()
+    result, code = call_handler(raises, err)
+    assert result is None and code == 2 and "invalid request: count" in err.getvalue()
+
+
+def line_file(tmp_path: Path, data: Any) -> Path:
+    path = tmp_path / "route.geojson"
+    path.write_text(json.dumps(data))
+    return path
+
+
+def test_an_empty_feature_collection_is_not_a_route(pois: StubPois, tmp_path: Path):
+    empty = line_file(tmp_path, {"type": "FeatureCollection", "features": []})
+    code, _, err = cli("poi", "along", "--route", str(empty))
+    assert code == 2 and "without any feature" in err and "Traceback" not in err
+    assert pois.calls == []
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {"type": "FeatureCollection", "features": [{"type": "Feature"}]},
+        {"type": "Feature", "geometry": None},
+        {"type": "Point", "coordinates": [1, 2]},
+        [1, 2, 3],
+        {"status": "ready"},
+    ],
+)
+def test_other_unusable_route_files_are_usage_errors_too(pois: StubPois, tmp_path: Path, data):
+    code, _, err = cli("poi", "along", "--route", str(line_file(tmp_path, data)))
+    assert code == 2 and "invalid request" in err and "Traceback" not in err
+
+
+def test_the_parts_of_a_multilinestring_are_joined_only_when_they_connect(
+    pois: StubPois, tmp_path: Path
+):
+    connected = {
+        "type": "MultiLineString",
+        "coordinates": [[[10.0, 52.0], [10.1, 52.0]], [[10.1, 52.0], [10.2, 52.0]]],
+    }
+    assert cli("poi", "along", "--route", str(line_file(tmp_path, connected)))[0] == 0
+    assert pois.calls[-1][1] == [(10.0, 52.0), (10.1, 52.0), (10.2, 52.0)]  # no duplicate point
+    gap = {
+        "type": "MultiLineString",
+        "coordinates": [[[10.0, 52.0], [10.1, 52.0]], [[11.0, 53.0], [11.1, 53.0]]],
+    }
+    calls = len(pois.calls)
+    code, _, err = cli("poi", "along", "--route", str(line_file(tmp_path, gap)))
+    assert code == 2 and "not connected" in err and len(pois.calls) == calls  # nothing searched

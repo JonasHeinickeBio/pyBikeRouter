@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import IO, Any, TypeVar
 
 from fastapi import HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 T = TypeVar("T")
 
@@ -30,6 +30,14 @@ def call_handler(make: Callable[[], Awaitable[T]], stderr: IO[str]) -> tuple[T |
     except HTTPException as exc:
         print(f"error: {exc.detail}", file=stderr)
         return None, EXIT_USAGE if exc.status_code == 422 else EXIT_FAILURE
+    except ValidationError as exc:
+        # A request the endpoint would have answered with 422 had it come over HTTP.
+        problems = "; ".join(
+            f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" if e["loc"] else str(e["msg"])
+            for e in exc.errors()
+        )
+        print(f"invalid request: {problems}", file=stderr)
+        return None, EXIT_USAGE
 
 
 async def _await(make: Callable[[], Awaitable[T]]) -> T:
