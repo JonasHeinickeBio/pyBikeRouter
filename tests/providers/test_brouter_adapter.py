@@ -356,3 +356,23 @@ def test_the_gravel_bike_type_uses_the_current_profile_version_and_the_file_exis
     # v1 stays for reproducibility and differs only in that switch
     old = (profiles / "gravel-v1.brf").read_text()
     assert "assign consider_elevation false" in old
+
+
+def test_the_commuter_profile_file_matches_what_its_header_says():
+    from pathlib import Path
+
+    from bike_routing_agent.config import BROUTER_PROFILE_MAP
+
+    assert BROUTER_PROFILE_MAP["commuter"] == "custom_commuter-v1"
+    path = (
+        Path(__file__).resolve().parents[2] / "docker" / "brouter" / "profiles" / "commuter-v1.brf"
+    )
+    text = path.read_text()
+    for line in ("allow_steps", "allow_ferries"):
+        assert any(
+            ln.startswith(f"assign   {line}") and "= false" in ln for ln in text.splitlines()
+        ), line
+    assert any(
+        ln.startswith("assign   consider_traffic") and "= true" in ln for ln in text.splitlines()
+    )
+    assert "pyBikeRouter custom profile: commuter-v1" in text

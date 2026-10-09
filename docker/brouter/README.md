@@ -43,6 +43,7 @@ repository:
 | `custom_gravel-v2` | `profiles/gravel-v2.brf` | stock `gravel.brf` with `consider_elevation=true` (current) |
 | `custom_gravel-v1` | `profiles/gravel-v1.brf` | stock `gravel.brf`, pinned copy (superseded; kept so older plans stay reproducible) |
 | `custom_touring-v1` | `profiles/touring-v1.brf` | stock `trekking.brf`, steps+ferries disallowed |
+| `custom_commuter-v1` | `profiles/commuter-v1.brf` | stock `trekking.brf`, traffic estimates on, steps+ferries disallowed |
 
 Stock profiles shipped inside the image (`fastbike`, `mtb`, `trekking`) are
 used for the remaining bike types; the mapping lives in

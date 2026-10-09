@@ -71,7 +71,9 @@ changes.
 | bs-okerradweg | commuter (fastbike-verylowtraffic) | 6.21 | 2 | 18.7 | 19 | 34 | 94 | 0 | 0 | 6 |
 | bs-okerradweg | recumbent (vm-forum-liegerad-schnell) | 6.28 | 4 | 14.8 | 20 | 34 | 89 | 0 | 0 | 10 |
 
-(+% is the detour over the shortest route among the eight profiles; surfaces are
+(The `commuter` and `gravel` rows were measured with the profiles used at the time,
+`fastbike-verylowtraffic` and `custom_gravel-v1`; both have since been replaced, see below.
++% is the detour over the shortest route among the eight profiles; surfaces are
 shares of route length, so paved + compacted + loose + cobbles + unknown = 100.)
 
 ## Findings
@@ -97,18 +99,37 @@ Elm ride, with three more routes held out when the choice was made:
 `custom_gravel-v1` stays in the repository (profiles are never edited in place, so
 older plans stay reproducible) and its warnings still apply.
 
+**Needed adjusting (done): `commuter`.** `fastbike-verylowtraffic` does not deliver
+"low traffic". Against plain `fastbike` it had the same route on 4 of 9 routes and
+*more* unprotected main-road traffic on 4 (Wolfenbüttel tour 30 % vs 20 %, Okerradweg
+35 % vs 27 %, Elm ride 91 % vs 88 %, Goslar 69 % vs 67 %); on five city-to-city routes
+(Gifhorn-Braunschweig, Braunschweig-Wolfsburg, Helmstedt-Königslutter, Wolfenbüttel-
+Salzgitter, Bad Harzburg-Goslar) it put 77 % of the length on unprotected main roads.
+`custom_commuter-v1` is stock trekking with BRouter's traffic estimates on (and steps
+and ferries off, as in touring-v1).
+
+How it was chosen, because a candidate can always be made to look good on the routes
+it was picked on: eight candidates (fastbike with `consider_traffic` 2 and 4, trekking
+with traffic estimates, with `avoid_unsafe`, with both, plain trekking, the old commuter,
+fastbike) were run on nine routes, and the rule was *no route more than 15 % slower than
+the faster of the two current fast profiles, mean slowdown at most 5 %, then the lowest
+mean traffic*. The rule was written down after seeing that grid, so it is not blind;
+that is why the winner was then checked on five routes that took no part in the choice:
+
+| set | old commuter | fastbike | commuter-v1 |
+| --- | ---: | ---: | ---: |
+| 9 selection routes: mean traffic % | 55 | 54 | **15** (worst slowdown +12 %, schoeppenstedt-elm) |
+| 5 unseen routes: mean traffic % | 77 | 61 | **13** (worst slowdown +6.9 %, mean +1.8 %) |
+| all 14: mean traffic % / mean time vs the faster fast profile | 63 | 56 | **14** / -0.7 % |
+
+Things to know: the flat farmland route (Wolfenbüttel -> Lehre) improves a lot (23.9 -> 23.7
+km, 73 -> 70 min, 79 % -> 0 % traffic); the Harz climb gets slower (148 vs 135 min) because
+the profile now takes a calmer, longer way; `avoid_unsafe` candidates were rejected for
+adding up to 28 % on the Elm ride. "Time" is BRouter's estimate from the profile's own
+speed model.
+
 **Left alone, with the evidence:**
 
-- **`commuter` (`fastbike-verylowtraffic`) does not deliver "low traffic".** Against
-  plain `fastbike` it has the *same* route on 4 of 9 routes and *more* traffic on 4
-  (Wolfenbüttel tour 30 % vs 20 %, Okerradweg 34 % vs 27 %, Elm ride 91 % vs 88 %,
-  Goslar 69 % vs 67 %); it is better only on flat farmland (79 % vs 90 %, and
-  23.9 km / 73 min against `fastbike`'s 29.6 km / 91 min). A candidate
-  (`fastbike` with `consider_traffic = 2`) cut traffic almost everywhere (city hop
-  43 % -> 0, tour 20 -> 12, Okerradweg 27 -> 20) for at most +1 % time, but it is
-  identical to `fastbike` on the farmland route, where the current profile is much
-  better. Mixed evidence, so not changed; a purpose-built commuter profile is the
-  open item.
 - **`ebike` is `road`.** Identical geometry on all five routes. BRouter has no
   assist model and an e-bike's cost of climbing differs; ORS has a dedicated profile.
   Known and documented, not a regression.

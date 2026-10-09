@@ -123,8 +123,8 @@ def test_ebike_uses_dedicated_ors_electric_profile():
     assert ORS_PROFILE_MAP["ebike"] == "cycling-electric"
 
 
-def test_commuter_and_recumbent_use_distinct_brouter_stock_profiles():
-    assert BROUTER_PROFILE_MAP["commuter"] == "fastbike-verylowtraffic"
+def test_commuter_and_recumbent_use_distinct_brouter_profiles():
+    assert BROUTER_PROFILE_MAP["commuter"] == "custom_commuter-v1"
     assert BROUTER_PROFILE_MAP["recumbent"] == "vm-forum-liegerad-schnell"
 
 

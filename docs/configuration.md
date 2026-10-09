@@ -116,7 +116,7 @@ profiles with genuinely different cost models:
 | `mountain` | `mtb` (stock) |
 | `city` | `trekking` (stock) |
 | `ebike` | `fastbike` (stock; BRouter does not model e-assist) |
-| `commuter` | `fastbike-verylowtraffic` (stock) |
+| `commuter` | `custom_commuter-v1` (repo: `docker/brouter/profiles/`; trekking with traffic estimates on) |
 | `recumbent` | `vm-forum-liegerad-schnell` (stock recumbent profile) |
 
 Similarly, the ORS adapter only forwards `avoid_features` that cycling

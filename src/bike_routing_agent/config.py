@@ -364,10 +364,12 @@ BROUTER_PROFILE_MAP: dict[str, str] = {
     # Stock profiles shipped with the BRouter image (misc/profiles2 in the
     # upstream repo). BRouter's cost model has no e-assist term, so ebike
     # rides use the fastbike profile (faster target speed, cycle-infrastructure
-    # preference). fastbike-verylowtraffic is the community commuter profile;
+    # preference). The commuter profile is our own (commuter-v1: trekking with
+    # traffic estimates on; the stock fastbike-verylowtraffic it replaced put
+    # 63 % of 14 test routes on unprotected main roads, docs/profile-evaluation.md);
     # vm-forum-liegerad-schnell is the recumbent (Liegerad) forum profile.
     "ebike": "fastbike",
-    "commuter": "fastbike-verylowtraffic",
+    "commuter": "custom_commuter-v1",
     "recumbent": "vm-forum-liegerad-schnell",
 }
 

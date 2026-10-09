@@ -1,5 +1,6 @@
-> **Note (2026-10):** the BRouter `gravel` rows below were measured with `custom_gravel-v1`;
-> the app now uses `custom_gravel-v2` (elevation costs on), see
+> **Note (2026-10):** the BRouter `gravel` and `commuter` rows below were measured with
+> `custom_gravel-v1` and `fastbike-verylowtraffic`; the app now uses `custom_gravel-v2`
+> (elevation costs on) and `custom_commuter-v1` (traffic estimates on), see
 > [profile-evaluation.md](profile-evaluation.md).
 
 # Backend comparison: ORS vs BRouter (real-world test)
