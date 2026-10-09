@@ -139,3 +139,65 @@ once, then the next configured instance is tried, and a search that still fails
 is a `502` from the POI endpoints -- never a failed plan: `poi_stops` falls back
 to `unavailable` and the route is planned without. Identical searches are served
 from the cache.
+
+## Evidence: what was tested, and how
+
+Written down so the next person knows what has been seen working and what has not
+(all of it from the development of issue #55, 2026-10-09).
+
+### Automated
+
+The default suite (`tests/poi/`, `tests/nodes/test_poi_stops.py`,
+`tests/graph/test_graph_poi_stops.py`, `tests/test_api_pois.py`,
+`tests/test_frontend_pois.py`) never touches the network (`tests/conftest.py` sets
+`POI_ENABLED=false`). Its fixtures are **real responses**, not invented ones:
+`overpass_poi_corridor.json` (Braunschweig -> Goslar, ways and relations with
+`center`), `wikidata_sitelinks_raw.json`, `wikidata_entity_raw.json`,
+`wikipedia_summary_neuschwanstein.json`, `wikipedia_pageprops_raw.json` (including a
+page that does not exist). The front-end helpers in `frontend/pois.js` run under node.
+
+### Checked live
+
+| What | Result |
+| --- | --- |
+| Wikidata fame, titles -> items, summaries, thumbnails, links | worked; e.g. Rammelsberg 36 languages, Herzog Anton Ulrich-Museum 23, Braunschweiger Dom 20, Imperial Palace of Goslar 16 |
+| Overpass, all kinds, 1.5 km buffer, 40 km route | 289 POIs in 21 s, ranked by real fame |
+| Overpass, linked-only corridor of 6 km | 304 elements, but only after 158 s (the instance was overloaded) |
+| Plan Braunschweig -> Goslar with `poi_stops` against real BRouter | `ok`, 3 stops, 53.5 km, 10 s (corridor data replayed from a real capture) |
+| Browser: popup, *Read more*, *Add to route* (re-plans), kind filter, remembered filter after reload, browsing without a route, 375 px phone width | all worked; no horizontal overflow |
+
+### Findings from the live runs
+
+1. **The public Overpass instance was unreliable for hours**: `504` after 10-50 s,
+   200-OK answers after 20-160 s, and two alternative public instances answering `500`.
+   Single small queries sometimes took 1 s and sometimes 60 s. This is why searches are
+   cached, retried, spread over `POI_OVERPASS_URLS`, and why a failed search never fails
+   a plan.
+2. **`around` over a polyline is too expensive** when unioned for every category; bounding
+   boxes along the route are not (see [How Overpass is asked](#how-overpass-is-asked)).
+3. **Overpass reports a timed-out query as HTTP 200** with
+   `remark: "runtime error: Query timed out ..."` and empty or partial `elements`. Read
+   naively that is "no POIs here" and would be cached for 24 h; it is now an error.
+4. **Wikipedia geosearch is not a POI source**: around Wolfenbüttel it returned schools,
+   villages, a stream and a mast among its first 60 hits.
+5. **Fame is modest for regional sights** (castles and museums 5-25 languages; only world
+   landmarks such as Neuschwanstein reach about 90), so "famous" is relative to the area,
+   and `min_fame` exists to keep local chapels from being presented as famous.
+6. **The best-known places sit at the ends of a trip** (city centres) and are skipped as
+   stops on purpose, so on a trip between two towns the mid-route picks can be modest
+   (8, 5 and 4 languages on the test route).
+
+### Not verified / known limits
+
+- The complete `poi_stops` plan against the *real* public Overpass worked once; a second
+  run hit `504`s and correctly fell back to planning without stops. The browser walk-through
+  ran against a local stand-in answering with Overpass-shaped data (real Wikidata, Wikipedia
+  and BRouter); the real corridor response was replayed through it for the plan above.
+- The `dropped` fallback (the engines cannot route through a stop) is unit-tested. One real
+  run reported it; the cause could not be reproduced afterwards, so it is not understood.
+- Stops are chosen near the **straight line** origin -> destination; on a winding trip a
+  stop can add a long detour. Loops are rejected.
+- Opening hours are shown as mapped and not compared with the arrival time.
+- No self-hosted Overpass, no pageview-based fame, no scoring effect -- see the roadmap.
+- The Overpass quirks above are those of one day's public instance; if they no longer
+  occur, `POI_OVERPASS_URLS` with a single URL is fine.
