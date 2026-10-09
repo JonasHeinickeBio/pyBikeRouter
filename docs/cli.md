@@ -89,7 +89,9 @@ bike-router chat start -m "40 km loop from Goslar" --format json
 
 The conversation of [chat.md](chat.md), in-process: one-line requests, step by step, changes,
 alternatives, questions, sights, files (shown as files in the export folder). Free text needs the
-LLM parser. `--message` (repeatable) scripts the turns of one conversation.
+LLM parser. `--message` (repeatable) scripts the turns of one conversation; the exit code is `1` when a
+turn could not produce the route that was asked for (no route, place not found), `0` otherwise -- a
+question back (which Springfield?) is not a failure. With `--format json` stdout is JSON lines only.
 
 ## `history`
 

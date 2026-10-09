@@ -6,7 +6,7 @@ from typing import Annotated, Any, Literal, Protocol, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MAX_MESSAGE_CHARS = 500
 
@@ -55,6 +55,8 @@ class ChatState(TypedDict, total=False):
     last_plan: dict[str, Any] | None
     # The request that could not be planned last (so "use openrouteservice" can retry exactly it).
     failed_request: dict[str, Any] | None
+    failed: bool  # this turn could not produce the route that was asked for
+    awaiting_request: dict[str, Any] | None  # waits for a place choice; not tied to last_plan
     # A request waiting to be planned, and a short note on what changed to get there.
     pending_request: dict[str, Any] | None
     change_note: str
@@ -79,10 +81,14 @@ class ChatReply(BaseModel):
     focus_rank: int | None = None
     intent: str | None = None
     awaiting: Awaiting | None = None
+    # The turn could not do what was asked (no route, a failed lookup); a question back is not.
+    failed: bool = False
 
 
 class ChatRequest(BaseModel):
     """Body of ``POST /v1/chat``."""
+
+    model_config = ConfigDict(extra="forbid")
 
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
     # From the first reply; omitted (or unknown) starts a new conversation.

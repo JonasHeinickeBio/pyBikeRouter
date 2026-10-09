@@ -143,20 +143,19 @@ class BRouterAdapter:
         return {variable: 1 if request.constraints.avoid_high_traffic_roads else 0}
 
     async def _get(self, params: dict[str, str]) -> httpx.Response:
-        async with self._slots:
-            return await self._get_unqueued(params)
-
-    async def _get_unqueued(self, params: dict[str, str]) -> httpx.Response:
         attempt = 0
         while True:
             try:
-                if self._client is not None:
-                    response = await self._client.get(
-                        f"{self._base_url}/brouter", params=params, timeout=self._timeout_s
-                    )
-                else:
-                    async with httpx.AsyncClient(timeout=self._timeout_s) as client:
-                        response = await client.get(f"{self._base_url}/brouter", params=params)
+                # The slot is held for the HTTP call only, not while backing off: BRouter is
+                # idle then, and a waiting request should be able to use it.
+                async with self._slots:
+                    if self._client is not None:
+                        response = await self._client.get(
+                            f"{self._base_url}/brouter", params=params, timeout=self._timeout_s
+                        )
+                    else:
+                        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                            response = await client.get(f"{self._base_url}/brouter", params=params)
             except httpx.TimeoutException as exc:
                 if attempt >= self._max_retries:
                     raise ProviderTimeoutError(

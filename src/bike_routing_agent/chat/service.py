@@ -13,6 +13,7 @@ import logging
 import re
 import uuid
 from collections import OrderedDict
+from collections.abc import Sequence
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -36,6 +37,34 @@ FAILURE_REPLY = (
 )
 
 
+class LatestOnlyMemorySaver(MemorySaver):
+    """``MemorySaver`` that can drop a thread's history and keep only its latest checkpoint.
+
+    LangGraph writes a checkpoint per step, each holding the plan (route geometries): without
+    pruning, one long conversation grows the process without limit. Resuming a paused question
+    needs only the latest checkpoint and its pending writes, so those are kept.
+    """
+
+    def prune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:
+        if strategy != "keep_latest":
+            raise NotImplementedError(strategy)
+        for thread_id in thread_ids:
+            self._keep_latest(thread_id)
+
+    def _keep_latest(self, thread_id: str) -> None:
+        for namespace, checkpoints in self.storage.get(thread_id, {}).items():
+            if len(checkpoints) <= 1:
+                continue
+            latest = max(checkpoints)  # checkpoint ids sort in creation order
+            versions = self.serde.loads_typed(checkpoints[latest][0]).get("channel_versions") or {}
+            for checkpoint_id in [c for c in checkpoints if c != latest]:
+                del checkpoints[checkpoint_id]
+                self.writes.pop((thread_id, namespace, checkpoint_id), None)
+            kept = {(thread_id, namespace, channel, v) for channel, v in versions.items()}
+            for key in [k for k in self.blobs if k[:2] == (thread_id, namespace) and k not in kept]:
+                del self.blobs[key]
+
+
 class ChatService:
     def __init__(
         self,
@@ -46,7 +75,7 @@ class ChatService:
         checkpointer: BaseCheckpointSaver | None = None,
         max_sessions: int = 200,
     ) -> None:
-        self._checkpointer = checkpointer or MemorySaver()
+        self._checkpointer = checkpointer or LatestOnlyMemorySaver()
         self._graph = build_chat_graph(
             planner=planner,
             sights=sights,
@@ -78,8 +107,19 @@ class ChatService:
                     )
             except Exception:  # a turn must never crash the conversation
                 logger.exception("chat turn failed")
-                return ChatReply(session_id=sid, reply=FAILURE_REPLY, suggestions=["New route"])
+                return ChatReply(
+                    session_id=sid, reply=FAILURE_REPLY, suggestions=["New route"], failed=True
+                )
+            finally:
+                self._keep_latest_only(sid)
         return self._reply(sid, result)
+
+    def _keep_latest_only(self, sid: str) -> None:
+        """Bound memory: a thread needs only its latest checkpoint (see LatestOnlyMemorySaver)."""
+        try:
+            self._checkpointer.prune([sid], strategy="keep_latest")
+        except NotImplementedError:
+            pass  # a checkpointer that cannot prune keeps its history
 
     def _touch(self, sid: str) -> asyncio.Lock:
         lock = self._sessions.get(sid)
@@ -113,4 +153,5 @@ class ChatService:
             focus_rank=result.get("focus_rank"),
             intent=result.get("intent"),
             awaiting="guided" if result.get("asking") else None,
+            failed=bool(result.get("failed")),
         )

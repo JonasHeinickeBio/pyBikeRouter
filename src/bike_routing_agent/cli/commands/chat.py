@@ -108,11 +108,17 @@ def run(
 
     state: dict[str, Any] = {"sid": None, "numbered": []}
 
+    # One event loop for the whole conversation: the providers keep per-loop state (BRouter's
+    # request queue), which must not be carried from one loop to the next.
+    loop = asyncio.new_event_loop()
+
     def turn(text: str) -> ChatReply:
         message = text.strip()
         if message.isdigit() and 1 <= int(message) <= len(state["numbered"]):
             message = state["numbered"][int(message) - 1]
-        reply = asyncio.run(service.send(message, session_id=state["sid"], timezone=args.timezone))
+        reply = loop.run_until_complete(
+            service.send(message, session_id=state["sid"], timezone=args.timezone)
+        )
         state["sid"] = reply.session_id
         return reply
 
@@ -122,24 +128,34 @@ def run(
             file=stdout,
         )
 
-    if args.message:
-        for text in args.message:
-            if args.format == "text":
-                print(f"{PROMPT}{text}", file=stdout)
+    def converse() -> int:
+        if args.message:
+            failed = False
+            for text in args.message:
+                if args.format == "text":
+                    print(f"{PROMPT}{text}", file=stdout)
+                reply = turn(text)
+                show(reply)
+                failed = failed or reply.failed
+            return EXIT_FAILURE if failed else EXIT_OK  # a scripted run can tell
+        if args.format == "text":
+            print("Plan a bike route by chatting. Type 'help', or 'quit' to leave.", file=stdout)
+            print(f"bot> {_show_files(turn('help').reply)}".replace("\n", "\n     "), file=stdout)
+        # In JSON mode stdout holds JSON lines only: no prompt text in front of them.
+        prompt = PROMPT if args.format == "text" else ""
+        while True:
+            try:
+                text = reader(prompt)
+            except (EOFError, KeyboardInterrupt):
+                print("", file=stdout)
+                return EXIT_OK
+            if not text.strip():
+                continue
+            if text.strip().lower() in QUIT_WORDS:
+                return EXIT_OK
             show(turn(text))
-        return EXIT_OK
 
-    if args.format == "text":
-        print("Plan a bike route by chatting. Type 'help', or 'quit' to leave.", file=stdout)
-        print(f"bot> {_show_files(turn('help').reply)}".replace("\n", "\n     "), file=stdout)
-    while True:
-        try:
-            text = reader(PROMPT)
-        except (EOFError, KeyboardInterrupt):
-            print("", file=stdout)
-            return EXIT_OK
-        if not text.strip():
-            continue
-        if text.strip().lower() in QUIT_WORDS:
-            return EXIT_OK
-        show(turn(text))
+    try:
+        return converse()
+    finally:
+        loop.close()

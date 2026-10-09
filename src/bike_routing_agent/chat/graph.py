@@ -134,6 +134,7 @@ def build_chat_graph(
             "messages": [HumanMessage(content=text)],
             "intent": decide_intent(text, state, text_enabled=text_enabled),
             "reply": "",
+            "failed": False,
             "suggestions": [],
             "plan": None,
             "focus_rank": None,
@@ -184,10 +185,15 @@ def build_chat_graph(
 
     async def guided(state: ChatState) -> dict[str, Any]:
         draft = dict(state.get("draft") or {})
-        text = _clean_slot(state["user_text"])
+        raw = state["user_text"]
+        text = _clean_slot(raw)
         asking = state.get("asking")
         if asking is None and text and not GREETINGS.match(text) and len(text.split()) <= 5:
-            if not re.search(r"\b(?:plan|route|ride|trip|cycle|bike)\b|\?", text, re.I):
+            # Short bare text is taken as the start place -- unless it is a question or a
+            # follow-up ("how steep is it?") that only makes sense with a route.
+            if not re.search(r"\b(?:plan|route|ride|trip|cycle|bike)\b|\?", raw, re.I) and not (
+                rules.classify(raw, has_plan=True)
+            ):
                 draft["origin"], asking = rules.place_value(text), "origin_done"
         if asking and asking != "origin_done":
             problem = _fill_slot(draft, asking, text)
@@ -239,6 +245,7 @@ def build_chat_graph(
                 "reply": f"{state.get('change_note') or ''}That did not work: {exc}",
                 "suggestions": ["New route", "Help"],
                 "pending_request": None,
+                "failed": True,
             }
         return _after_plan(state, plan, request, prefix=state.get("change_note") or "")
 
@@ -246,7 +253,12 @@ def build_chat_graph(
         state: ChatState, plan: dict[str, Any], request: dict[str, Any], *, prefix: str
     ) -> dict[str, Any]:
         status = plan.get("status")
-        base: dict[str, Any] = {"pending_request": None, "asking": None, "draft": {}}
+        base: dict[str, Any] = {
+            "pending_request": None,
+            "awaiting_request": None,
+            "asking": None,
+            "draft": {},
+        }
         if status == "ready":
             geometry = ((plan.get("route") or {}).get("geometry_geojson")) or {}
             can_sights = sights is not None and bool(geometry.get("coordinates"))
@@ -261,9 +273,11 @@ def build_chat_graph(
                 "suggestions": describe.suggestions_after_plan(plan, sights=can_sights),
             }
         if status == "awaiting_clarification":
+            # The request waiting for a choice stays apart from last_request, which belongs to
+            # last_plan (the route on screen) -- a follow-up must change that route.
             return {
                 **base,
-                "last_request": request,
+                "awaiting_request": request,
                 "clarification": plan.get("clarification") or [],
                 "change_note": prefix,
             }
@@ -285,6 +299,7 @@ def build_chat_graph(
         )
         return {
             **base,
+            "failed": True,
             "failed_request": request,
             "reply": prefix + text + (f" ({detail})" if detail else ""),
             "suggestions": ["Use openrouteservice", "New route"] if gap else ["New route", "Help"],
@@ -301,6 +316,7 @@ def build_chat_graph(
             return {
                 "clarification": [],
                 "clarify_result": "failed",
+                "failed": True,
                 "reply": f"{state.get('change_note') or ''}I could not find {names}. Try a more "
                 "precise name (with the town or country) or coordinates like 52.27, 10.52.",
                 "suggestions": ["New route", "Help"],
@@ -327,7 +343,11 @@ def build_chat_graph(
                     "clarify_result": "restart",
                 }
             return {"clarify_result": "retry"}
-        request = _replace_place(state.get("last_request") or {}, str(group.get("field")), chosen)
+        request = _replace_place(
+            state.get("awaiting_request") or state.get("last_request") or {},
+            str(group.get("field")),
+            chosen,
+        )
         rest = [g for g in groups if g is not group]
         return {
             "pending_request": request,
@@ -436,6 +456,7 @@ def build_chat_graph(
             "last_request": None,
             "last_plan": None,
             "failed_request": None,
+            "awaiting_request": None,
             "clarification": [],
             "reply": "Okay, starting over. " + _question("origin")["reply"],
             "suggestions": [],

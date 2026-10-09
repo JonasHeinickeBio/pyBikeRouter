@@ -60,7 +60,8 @@ START -> ingest -> router --+-> plan_one_line --+
   `plan_route_from_text`), sights through `Sights` (`api._ApiSights`: the POI service) -- the graph
   has no idea about HTTP, so tests drive it with scripted fakes.
 - **Sessions** are in memory (`MemorySaver`): a restart forgets them, at most `CHAT_MAX_SESSIONS`
-  are kept (least recently used dropped first), a message is at most 500 characters, and a
+  are kept (least recently used dropped first) and only the latest checkpoint of each conversation (not
+  its step-by-step history), a message is at most 500 characters, and a
   conversation keeps its last 40 messages. One turn at a time per session.
 
 ## Configuration

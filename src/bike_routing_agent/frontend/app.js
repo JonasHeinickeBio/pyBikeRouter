@@ -106,6 +106,7 @@ const state = {
   segmentJob: null, // the tile download being followed
   chatSession: null, // the server-side conversation (kept in memory there)
   chatBusy: false,
+  planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
   capsPromise: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
@@ -422,6 +423,7 @@ async function planRoute() {
   if (state.aborted) state.aborted.abort();
   const controller = new AbortController();
   state.aborted = controller;
+  const generation = ++state.planGeneration;
   const startedAt = performance.now();
 
   try {
@@ -437,6 +439,7 @@ async function planRoute() {
       return;
     }
     const data = await resp.json();
+    if (generation !== state.planGeneration) return; // a newer plan (form or chat) took over
     state.lastResponse = data;
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
@@ -510,6 +513,7 @@ async function planFromText() {
   if (state.aborted) state.aborted.abort();
   const controller = new AbortController();
   state.aborted = controller;
+  const generation = ++state.planGeneration;
   const startedAt = performance.now();
 
   try {
@@ -525,6 +529,7 @@ async function planFromText() {
       return;
     }
     const data = await resp.json();
+    if (generation !== state.planGeneration) return; // a newer plan (form or chat) took over
     state.lastResponse = data;
     if (data.interpretation) applyInterpretation(data.interpretation);
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
@@ -1502,6 +1507,7 @@ async function sendChat(text) {
   chatSay("user", message);
   setChatChips([]);
   const waiting = chatSay("bot", "\u2026", true);
+  const generation = state.planGeneration;
   const startedAt = performance.now();
   try {
     const resp = await fetch(`${API_BASE}/v1/chat`, {
@@ -1522,7 +1528,12 @@ async function sendChat(text) {
     state.chatSession = data.session_id;
     chatSay("bot", data.reply);
     setChatChips(data.suggestions);
-    if (data.plan) {
+    // A plan the form requested after this message was sent is newer: keep it on the map.
+    if (data.plan && generation !== state.planGeneration) {
+      chatSay("bot", "(The map shows the route you asked for in the form meanwhile.)");
+    } else if (data.plan) {
+      state.planGeneration += 1;
+      if (state.aborted) state.aborted.abort(); // an older form request must not replace it
       state.lastResponse = data.plan;
       renderResponse(data.plan, ((performance.now() - startedAt) / 1000).toFixed(1));
       const index = BikeChat.candidateIndex(data.plan, data.focus_rank);

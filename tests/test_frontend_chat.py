@@ -87,3 +87,7 @@ def test_the_page_ships_the_chat_panel_hidden_until_the_server_has_a_chat():
     assert 'role="log"' in html and 'aria-live="polite"' in html
     app = (FRONTEND / "app.js").read_text()
     assert "v1/chat" in app and "caps.chat" in app  # shown only when capabilities say so
+    # One generation counter for form, text and chat plans: an older response never replaces a
+    # newer route on the map.
+    assert app.count("++state.planGeneration") == 2  # form and text plans
+    assert app.count("generation !== state.planGeneration") == 3  # form, text, chat

@@ -129,6 +129,50 @@ def test_end_of_input_blank_lines_and_quit_words_leave_cleanly():
     assert run([], lines=["quit", "A to B"])[0] == 0
 
 
+def test_a_scripted_conversation_that_fails_exits_non_zero_but_questions_do_not():
+    class Broken(Planner):
+        async def plan(self, request: dict[str, Any]) -> dict[str, Any]:
+            return {"status": "no_route", "errors": []}
+
+    code, out, _ = run(["-m", "A to B"], service=ChatService(Broken()))
+    assert code == 1 and "could not find a route" in out
+    assert run(["-m", "A to B", "-m", "how steep is it?"])[0] == 0
+    assert run(["-m", "help"])[0] == 0
+
+
+def test_json_mode_prints_no_prompt_so_every_line_is_json():
+    prompts: list[str] = []
+    service = factory()[0]
+    out, err = io.StringIO(), io.StringIO()
+    feed = iter(["A to B", "quit"])
+
+    def reader(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(feed)
+
+    args = build_parser().parse_args(["chat", "start", "--format", "json"])
+    assert chat_cmd.run(args, out, err, service_factory=lambda: service, reader=reader) == 0
+    assert set(prompts) == {""}
+    assert [json.loads(line)["intent"] for line in out.getvalue().strip().splitlines()] == ["plan"]
+
+
+def test_the_whole_conversation_runs_in_one_event_loop():
+    loops: list[Any] = []
+
+    class Spy(Planner):
+        async def plan(self, request: dict[str, Any]) -> dict[str, Any]:
+            import asyncio
+
+            loops.append(asyncio.get_running_loop())
+            return plan()
+
+    run(
+        ["-m", "A to B", "-m", "make it shorter", "-m", "make it longer"],
+        service=ChatService(Spy()),
+    )
+    assert len(loops) >= 2 and all(loop is loops[0] for loop in loops)
+
+
 def test_json_format_prints_one_object_per_turn_without_the_whole_route():
     code, out, _ = run(["-m", "A to B", "-m", "alternatives", "--format", "json"])
     lines = [json.loads(line) for line in out.strip().splitlines()]

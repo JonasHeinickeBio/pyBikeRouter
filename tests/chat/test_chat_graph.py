@@ -587,6 +587,87 @@ async def test_follow_ups_without_a_route_point_at_the_help():
         assert r.plan is None and r.intent == "guided"
 
 
+@pytest.mark.parametrize("text", ["how steep is it?", "what's the weather?", "make it shorter"])
+async def test_a_question_before_any_route_is_not_taken_as_the_start_place(text):
+    service, planner = chat()
+    t = Talk(service)
+    r = await t.say(text)
+    assert r.intent == "guided" and r.awaiting == "guided" and planner.requests == []
+    assert "Where do you want to start" in r.reply  # the dialogue starts from the beginning
+    # ... and a bare place name is still the start place.
+    assert "a loop back to the start" in (await t.say("Goslar")).reply
+
+
+async def test_a_pending_place_choice_does_not_replace_the_request_of_the_route_on_screen():
+    def respond(request):
+        return SPRINGFIELD if request.get("origin") == "Springfield" else ready_plan()
+
+    service, planner = chat(FakePlanner(respond))
+    t = Talk(service)
+    await t.say("Bremen to Hamburg by gravel")
+    await t.say("Springfield to Boston")  # asks which Springfield
+    await t.say("new route")  # ... and is abandoned
+    await t.say("Bremen to Hamburg by gravel")
+    await t.say("Qwxzy to Goslar")  # asks again; then the question is dropped
+    await t.say("Bremen to Hamburg by gravel")
+    r = await t.say("make it shorter")
+    assert planner.requests[-1]["origin"] == "Bremen" and r.plan is not None
+
+
+@pytest.mark.parametrize("abandon", ["help", "Qwxzy to Goslar"])
+async def test_a_follow_up_after_an_unresolved_place_changes_the_route_on_screen(abandon):
+    nothing = {
+        "status": "awaiting_clarification",
+        "clarification": [{"field": "Qwxzy", "candidates": []}],
+        "errors": [],
+    }
+
+    def respond(request):
+        if request.get("origin") == "Springfield":
+            return SPRINGFIELD
+        return nothing if request.get("origin") == "Qwxzy" else ready_plan()
+
+    service, planner = chat(FakePlanner(respond))
+    t = Talk(service)
+    await t.say("Bremen to Hamburg")
+    await t.say("Springfield to Boston")  # a question is open ...
+    await t.say(abandon)  # ... and ends without an answer (help; or a place that is not found)
+    r = await t.say("avoid ferries")
+    assert r.plan is not None
+    changed = planner.requests[-1]
+    assert changed["origin"] == "Bremen" and changed["constraints"]["avoid_ferries"] is True
+
+
+async def test_failed_turns_are_flagged_and_questions_back_are_not():
+    nothing = {
+        "status": "awaiting_clarification",
+        "clarification": [{"field": "Qwxzy", "candidates": []}],
+        "errors": [],
+    }
+    service, _ = chat(FakePlanner(lambda r: nothing if r["origin"] == "Qwxzy" else ready_plan()))
+    t = Talk(service)
+    assert (await t.say("A to B")).failed is False
+    assert (await t.say("Qwxzy to Goslar")).failed is True  # not found at all
+    broken, _ = chat(FakePlanner(lambda r: PlanError("boom")))
+    assert (await Talk(broken).say("A to B")).failed is True
+    ambiguous, _ = chat(FakePlanner(ambiguous_once))
+    assert (await Talk(ambiguous).say("Springfield to Boston")).failed is False  # a question
+    assert (await t.say("how long is it?")).failed is False  # the flag does not stick
+
+
+async def test_only_the_latest_checkpoint_of_a_conversation_is_kept():
+    service, _ = chat(FakePlanner(ambiguous_once))
+    t = Talk(service)
+    for text in ("A to B", "make it shorter", "alternatives", "Springfield to Boston"):
+        await t.say(text)  # the last one leaves a question open (a paused graph)
+    storage = service._checkpointer.storage[t.sid]
+    assert all(len(checkpoints) == 1 for checkpoints in storage.values())
+    assert {key[0] for key in service._checkpointer.blobs} == {t.sid}
+    assert len(service._checkpointer.blobs) <= 40  # one per channel, not one per step
+    # The paused question can still be answered after pruning.
+    assert (await t.say("2")).plan is not None
+
+
 async def test_sessions_are_independent_and_unknown_ids_start_fresh():
     service, planner = chat()
     a, b = Talk(service), Talk(service)
@@ -617,6 +698,7 @@ async def test_long_conversations_are_trimmed_and_messages_clipped():
     snapshot = await service._graph.aget_state({"configurable": {"thread_id": t.sid}})
     assert len(snapshot.values["messages"]) <= 40
     await t.say("A to B " + "x" * 2000)
+    snapshot = await service._graph.aget_state({"configurable": {"thread_id": t.sid}})
     assert len(snapshot.values["user_text"]) <= 500
 
 

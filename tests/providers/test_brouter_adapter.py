@@ -691,6 +691,41 @@ async def test_requests_to_brouter_are_queued_to_the_configured_concurrency(
     assert len(results) == 3 and running["peak"] == expected_peak
 
 
+@respx.mock
+async def test_the_queue_slot_is_free_while_a_cancelled_request_waits_to_retry(
+    monkeypatch,
+) -> None:
+    import asyncio
+
+    import bike_routing_agent.providers.brouter as brouter_module
+
+    real_sleep = asyncio.sleep
+    order: list[str] = []
+
+    async def backoff(_: float) -> None:  # the retry delay of the first request
+        order.append("backoff")
+        await real_sleep(0.05)
+
+    monkeypatch.setattr(brouter_module.asyncio, "sleep", backoff)
+    calls = {"n": 0}
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        order.append(f"call{calls['n']}")
+        return (
+            httpx.Response(400, text=KILLED)
+            if calls["n"] == 1
+            else httpx.Response(200, json=ROUTE_FIXTURE)
+        )
+
+    respx.get(BROUTER_URL).mock(side_effect=answer)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, max_retries=1, max_concurrency=1)
+    await asyncio.gather(adapter.route(make_request()), adapter.route(make_request()))
+    # call1 is cancelled; during its backoff the other request gets the slot (call2) --
+    # it does not wait for the retry (call3).
+    assert order.index("call2") < order.index("call3")
+
+
 def test_the_concurrency_must_be_at_least_one() -> None:
     with pytest.raises(ValueError):
         BRouterAdapter(base_url=BROUTER_BASE, max_concurrency=0)

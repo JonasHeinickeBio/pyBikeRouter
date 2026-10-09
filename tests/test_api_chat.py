@@ -158,7 +158,8 @@ async def test_a_request_the_api_would_reject_is_answered_not_a_422(client, plan
         {"message": "x" * 501},
         {"message": "hi", "session_id": "not-a-session"},
         {"message": "hi", "timezone": "Mars/Base"},
-        {"message": "hi", "extra": 1, "session_id": "A" * 32},
+        {"message": "hi", "session_id": "A" * 32},
+        {"message": "hi", "extra": 1},
     ],
 )
 async def test_bad_chat_requests_are_422(client, planned, payload):
