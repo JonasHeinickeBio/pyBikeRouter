@@ -15,7 +15,8 @@ Exit codes: `0` success, `1` the command ran but failed (no route, a service is 
 | `brouter` | map tiles: which a trip needs, what is on disk, download them |
 | `history` | past plans from the PostGIS route history |
 | `status` | readiness of every component and the active features |
-| `serve`, `docker`, `config`, `providers`, `retention`, `db` | run and operate the deployment |
+| `deploy` | build the image, (re)create the container, check it, roll back, publish to the tailnet |
+| `serve`, `docker`, `config`, `providers`, `retention`, `db` | run and operate the stack (`docker` is the compose wrapper) |
 
 ## `route`
 
@@ -97,6 +98,46 @@ bike-router status show --format json
 
 Probes every component (routing engines, geocoder, artifact store, weather, database, cache) like
 `/readyz` and lists the active features like `/v1/capabilities`.
+
+## `deploy`
+
+The deployment of one API container on one machine, as commands instead of a recipe:
+
+```bash
+bike-router deploy config --routing-provider brouter    # print what 'up' would run; changes nothing
+bike-router deploy up --routing-provider brouter        # build, replace the container, wait until healthy
+bike-router deploy status                               # running? which commit? healthy? what it offers
+bike-router deploy logs --tail 50 -f
+bike-router deploy rollback                             # run the image that was deployed before
+bike-router deploy stop                                 # also: restart, build
+bike-router deploy tailscale start                      # publish to your tailnet (scripts/tailscale-serve.sh)
+```
+
+`up` does, in order: checks the checkout (**refuses a branch other than `main` or uncommitted
+changes** unless `--allow-branch` / `--allow-dirty`), builds the image tagged `latest` and with the
+commit (`--no-build` reuses what is built), keeps the image of the running container as
+`previous`, replaces the container, and waits for `/healthz` (`--wait-s`, default 60). If the new
+container does not answer it prints its last log lines and **goes back to `previous`** (unless
+`--no-rollback`); the exit code is then `1`. `--dry-run` prints every command and runs none of the
+changing ones.
+
+The container is `pybikerouter-api-hostnet` on `127.0.0.1:8765` by default (`--name`, `--image`,
+`--port`, `--bind`). Defaults worth knowing:
+
+- `--network host` (default): the container shares the host network, the app listens on loopback
+  only and the build uses `--network host` too. This is what works on machines where Docker's
+  published ports or build-time DNS are broken; `--network bridge` publishes `--bind:--port`
+  instead.
+- It runs as **you** (`--user`), so the folders it mounts are writable: BRouter's tile folder
+  (`docker/brouter/segments` when it exists, `--segments-dir`; sets `BROUTER_SEGMENTS_DIR`, which is
+  what turns the web form's *Download* button on) and the exports folder
+  (`~/.local/share/pybikerouter/exports`, `--exports-dir`).
+- Settings come from `--env-file` (default `.env`; `--no-env-file`). `--routing-provider` overrides
+  `ROUTING_PROVIDER` for this container only; with `brouter` or `all` it also sets
+  `BROUTER_BASE_URL` (`--brouter-url`, default `http://127.0.0.1:17777`, the host's loopback).
+
+Not part of it: starting BRouter itself (use `docker compose --profile brouter` or your own
+container), and anything remote -- it drives the local `docker` CLI only.
 
 ## Not covered
 

@@ -15,6 +15,7 @@ GROUP_MODULES: tuple[str, ...] = (
     "history",
     "status",
     "serve",
+    "deploy",
     "docker",
     "config",
     "providers",
