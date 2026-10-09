@@ -67,6 +67,7 @@ const els = {
   poiStopsCount: $("poi-stops-count"),
   poiStopsHint: $("poi-stops-hint"),
   poiStopsNote: $("poi-stops-note"),
+  coverageCard: $("coverage-card"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -547,6 +548,8 @@ function clearResults() {
   state.poiLayer.clearLayers();
   state.poiStopLayer.clearLayers();
   state.poiRequest++;
+  els.coverageCard.hidden = true;
+  els.coverageCard.innerHTML = "";
   els.poiStopsNote.hidden = true;
   els.poiStopsNote.innerHTML = "";
   els.weatherCard.hidden = true;
@@ -563,6 +566,7 @@ function clearResults() {
 function renderResponse(data, secs) {
   clearResults();
   renderErrors(data.errors);
+  renderCoverage(data);
 
   switch (data.status) {
     case "ready":
@@ -583,6 +587,25 @@ function renderResponse(data, secs) {
       setStatus("error", `The routing provider failed (status: ${escapeHtml(data.status)}).`);
   }
   if (data.status !== "ready") schedulePoiRefresh();
+}
+
+/** A routing engine without map data for the trip: put the choice to the user (coverage.js). */
+function renderCoverage(data) {
+  const gap = BikeCoverage.find(data.errors);
+  const html = gap ? BikeCoverage.cardHtml(gap, data.status === "ready") : "";
+  els.coverageCard.hidden = html === "";
+  els.coverageCard.innerHTML = html;
+  if (html) revealOnPhone(els.coverageCard);
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // No clipboard access (an http page, a blocked permission): select the text instead.
+    return false;
+  }
 }
 
 function renderErrors(errors) {
@@ -1019,6 +1042,22 @@ function wireEvents() {
   for (const id of ["origin-input", "destination-input"]) {
     $(id).addEventListener("input", () => markCoordInput($(id)));
   }
+  els.coverageCard.addEventListener("click", async (ev) => {
+    const button = ev.target.closest("button[data-copy]");
+    if (!button) return;
+    const source = $(button.dataset.copy);
+    if (!source) return;
+    if (await copyText(source.textContent)) {
+      button.textContent = "Copied";
+    } else {
+      const range = document.createRange();
+      range.selectNodeContents(source);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = "Selected \u2014 press Ctrl+C";
+    }
+  });
   els.returnOrigin.addEventListener("change", updatePoiStopsAvailability);
   els.poiStopsEnabled.addEventListener("change", updatePoiStopsAvailability);
 

@@ -22,10 +22,11 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from bike_routing_agent.errors import ProviderError, ProviderNoRouteError
+from bike_routing_agent.errors import ProviderCoverageError, ProviderError, ProviderNoRouteError
 from bike_routing_agent.loops import synthesize_loop_vias
 from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
 from bike_routing_agent.providers.base import RoutingProvider
+from bike_routing_agent.providers.brouter_segments import SEGMENTS_BASE_URL, segments_for_points
 from bike_routing_agent.state import RouteAgentState
 
 NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
@@ -40,6 +41,26 @@ async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[
         return list(await asyncio.wait_for(provider.alternatives(request), ALTERNATIVES_DEADLINE_S))
     except Exception:  # best effort: timeouts and failures just mean no extras
         return []
+
+
+def _coverage_error(
+    error: ProviderCoverageError, request: RoutingRequest, providers: Sequence[RoutingProvider]
+) -> dict[str, Any]:
+    """The coverage error with what a client needs to put the choice to the user: which map
+    tiles the trip touches (the engine reports only the first one it lacks), where the official
+    files are, and which engines are already configured."""
+    points = [request.origin, *request.via, request.destination]
+    reported = list(error.detail.get("segments", []))
+    touched = segments_for_points((p.lon, p.lat) for p in points)
+    as_dict = error.to_dict()
+    as_dict["detail"] = {
+        **error.detail,
+        "segments": [*reported, *(s for s in touched if s not in reported)],
+        "reported_missing": reported,
+        "download_base": SEGMENTS_BASE_URL,
+        "configured_engines": [p.name for p in providers],
+    }
+    return as_dict
 
 
 def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
@@ -97,7 +118,10 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
         for provider, result in zip(routing_providers, results, strict=True):
             if isinstance(result, BaseException) and not isinstance(result, Exception):
                 raise result
-            if isinstance(result, ProviderNoRouteError):
+            if isinstance(result, ProviderCoverageError):
+                no_route_only = False
+                errors.append(_coverage_error(result, request, routing_providers))
+            elif isinstance(result, ProviderNoRouteError):
                 errors.append(result.to_dict())
             elif isinstance(result, ProviderError):
                 no_route_only = False

@@ -191,6 +191,41 @@ lets the scorer pick the best candidate across engines.
    no-route paths.
 
 
+## BRouter map coverage
+
+BRouter only routes where it has the map tiles (`.rd5`, one per 5x5 degree; the Braunschweig
+set is `E10_N50`, see [docker/brouter/README.md](../docker/brouter/README.md)). For a trip
+that leaves them it answers `datafile W5_N50.rd5 not found`. That is neither an outage nor
+"no path exists", so the adapter raises a `ProviderCoverageError` and the plan reports
+
+```json
+{"code": "routing_area_not_covered", "provider": "brouter",
+ "message": "BRouter has no map data for this area (segment W5_N50)",
+ "detail": {"segments": ["W5_N50", "E10_N50"], "reported_missing": ["W5_N50"],
+            "download_base": "https://brouter.de/brouter/segments4/",
+            "configured_engines": ["brouter"]}}
+```
+
+`reported_missing` is what BRouter said (it names only the first tile it lacks); `segments`
+adds the other tiles the trip's start, end and via points lie in. With only BRouter
+configured the plan is a `provider_failure`; with another engine the plan goes on with that
+engine's candidate and the error stays in `errors`.
+
+**The web form puts the choice to the user** (`frontend/coverage.js`): a *Map data missing*
+card with the two ways out and a copy button for each --
+
+1. **Download the missing tile(s)**: the exact `curl` lines into `docker/brouter/segments/`
+   from the official source, then restart the BRouter container. Tiles are large; the three
+   checked on 2026-10-09 were 125 MB (`E10_N50`), 139 MB (`W5_N50`) and 199 MB (`E10_N45`).
+2. **`ROUTING_PROVIDER=all`**: ORS answers where BRouter has no data. Checked: with BRouter
+   lacking the tile and Valhalla not running, a plan still came back from ORS, the Valhalla
+   failure was listed in `errors` and `/readyz` reported `degraded` (still ready). ORS's
+   profile for a bike type (gravel -> `cycling-regular`) can outrank the BRouter gravel profile.
+
+The app never downloads a tile or changes its settings by itself; the card only explains and
+hands over the command or the line for `.env`. Not verified: the downloaded tile working with
+the pinned `lookups.dat` (see the BRouter README on version mismatches).
+
 ## BRouter per-request settings
 
 BRouter has no request fields for constraints, but it accepts a **profile variable per

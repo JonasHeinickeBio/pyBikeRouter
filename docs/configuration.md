@@ -19,7 +19,7 @@ cp .env.example .env
 | `ORS_BASE_URL` | openrouteservice base URL | `https://api.openrouteservice.org` |
 | `ORS_TIMEOUT_S` | per-request ORS timeout (seconds) | `10.0` |
 | `ORS_MAX_RETRIES` | retries for timeouts/5xx (not 429) | `2` |
-| `ROUTING_PROVIDER` | `ors`, `brouter`, `valhalla` or `all` -- `all` queries the three engines in parallel and scoring picks the best candidate; otherwise no automatic fallback | `ors` |
+| `ROUTING_PROVIDER` | `ors`, `brouter`, `valhalla` or `all` -- `all` queries the three engines in parallel and scoring picks the best candidate; an engine that fails is reported in `errors` and the others still answer (verified with Valhalla not running); with a single engine there is no fallback | `ors` |
 | `BROUTER_BASE_URL` | base URL of a local/self-hosted BRouter RouteServer | `http://127.0.0.1:17777` |
 | `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
 | `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |

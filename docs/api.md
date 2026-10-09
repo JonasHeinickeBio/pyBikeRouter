@@ -143,6 +143,11 @@ plan fails. The failure modes are structured, not exceptions:
 | `provider_failure` | `null` | `[]` | `[]` | structured provider errors |
 | `no_route` | `null` | `[]` | `[]` | why nothing was produced |
 
+An `errors` entry with `code: "routing_area_not_covered"` means a routing engine has no map data
+for the trip (BRouter: a missing tile). It also appears next to a `ready` result when another
+engine answered. `detail` names the tiles and the official download location --
+[providers.md](providers.md#brouter-map-coverage).
+
 `ready` example (trimmed):
 
 ```json

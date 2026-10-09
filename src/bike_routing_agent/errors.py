@@ -47,6 +47,16 @@ class ProviderNoRouteError(ProviderError):
     code = "no_route"
 
 
+class ProviderCoverageError(ProviderError):
+    """The engine has no map data for the area (BRouter: a missing 5-degree segment file).
+
+    Not an outage and not "no path exists": the operator can fix it (more data, another
+    engine), so it has its own code for clients to explain and offer that choice.
+    """
+
+    code = "routing_area_not_covered"
+
+
 class GeocodingError(Exception):
     """Base class for geocoding failures."""
 

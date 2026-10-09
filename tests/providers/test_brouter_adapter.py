@@ -592,3 +592,29 @@ async def test_alternatives_get_their_own_profiles_traffic_switch() -> None:
     }
     assert sent["custom_touring-v1"]["profile:consider_traffic"] == "1"
     assert not any(k.startswith("profile:") for k in sent["mtb"])
+
+
+@respx.mock
+async def test_a_missing_map_segment_is_a_coverage_error_not_a_generic_rejection() -> None:
+    from bike_routing_agent.errors import ProviderCoverageError
+
+    # The exact body the running BRouter returned for a trip near Oxford.
+    respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(400, text="datafile W5_N50.rd5 not found\n")
+    )
+    with pytest.raises(ProviderCoverageError) as raised:
+        await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    error = raised.value
+    assert error.code == "routing_area_not_covered" and error.provider == "brouter"
+    assert error.detail["segments"] == ["W5_N50"]
+    assert "W5_N50" in error.message
+
+
+@respx.mock
+async def test_other_400s_keep_their_classification() -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(400, text="no track found"))
+    with pytest.raises(ProviderNoRouteError):
+        await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(400, text="unknown profile"))
+    with pytest.raises(ProviderBadResponseError):
+        await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())

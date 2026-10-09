@@ -643,3 +643,11 @@ textarea {
 .poi-popup .poi-links { margin: 0.2rem 0; }
 .poi-popup .poi-actions { display: flex; gap: 0.4rem; margin-top: 0.4rem; }
 .poi-popup .poi-actions button { padding: 0.25rem 0.55rem; font-size: 0.8rem; cursor: pointer; }
+
+/* ------------------------ routing engine without map data ------------------------ */
+.coverage-card { border-left: 3px solid #d97706; }
+.coverage-card h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }
+.coverage-card p { margin: 0.3rem 0; font-size: 0.85rem; }
+.coverage-option { margin-top: 0.6rem; padding-top: 0.5rem; border-top: 1px solid rgba(127,127,127,0.25); font-size: 0.85rem; }
+.coverage-option pre { margin: 0.35rem 0; padding: 0.4rem 0.5rem; overflow-x: auto; background: rgba(127,127,127,0.12); border-radius: 4px; font-size: 0.75rem; white-space: pre; user-select: all; }
+.coverage-option button { padding: 0.2rem 0.6rem; font-size: 0.8rem; cursor: pointer; }
