@@ -366,8 +366,9 @@ def run(
         args.output.write_text(rendered + "\n", encoding="utf-8")
 
     if (args.gpx or args.geojson) and payload["status"] == "ready":
-        if _write_exports(payload, args.candidate, args.gpx, args.geojson, stderr) != EXIT_OK:
-            return 2
+        export_code = _write_exports(payload, args.candidate, args.gpx, args.geojson, stderr)
+        if export_code != EXIT_OK:
+            return export_code
 
     return EXIT_OK if payload["status"] == "ready" else EXIT_FAILURE
 
@@ -429,7 +430,14 @@ def _write_exports(
         ranks = sorted(c["rank"] for c in candidates if c and c.get("rank"))
         print(f"no alternative of rank {rank}; ranks in this plan: {ranks}", file=stderr)
         return 2
-    candidate = RouteCandidate.model_validate(chosen)
+    try:
+        candidate = RouteCandidate.model_validate(chosen)
+    except ValidationError as exc:
+        missing = sorted({str(e["loc"][0]) for e in exc.errors() if e["loc"]})
+        print(
+            f"the saved route is not a valid candidate (check: {', '.join(missing)})", file=stderr
+        )
+        return EXIT_FAILURE
     for path, render in ((gpx, to_gpx_str), (geojson, to_geojson_str)):
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)

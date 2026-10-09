@@ -80,9 +80,23 @@ def _categories(values: list[str]) -> list[str] | None:
     return keys or None
 
 
+# Parts of a MultiLineString that start within this distance of where the previous one ended
+# are one continuous route; anything farther is a gap that must not be searched as if it were road.
+_JOIN_TOLERANCE_M = 5.0
+
+
 def _coordinates_from_file(path: Path, rank: int | None) -> list[list[float]]:
-    """The route line from a saved plan or from GeoJSON."""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    """The route line from a saved plan or from GeoJSON (``ValueError`` when it is not one)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return _line_of(data, rank, path)
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise ValueError(
+            f"{path} does not hold a route line ({type(exc).__name__}: {exc})"
+        ) from exc
+
+
+def _line_of(data: Any, rank: int | None, path: Path) -> list[list[float]]:
     geometry: Any
     if isinstance(data, dict) and "status" in data:  # a saved plan
         if data["status"] != "ready":
@@ -97,16 +111,40 @@ def _coordinates_from_file(path: Path, rank: int | None) -> list[list[float]]:
             raise ValueError(f"no alternative of rank {rank} in {path}")
         geometry = chosen["geometry_geojson"]
     elif isinstance(data, dict) and data.get("type") == "FeatureCollection":
-        geometry = data["features"][0]["geometry"]
+        features = data.get("features") or []
+        if not features:
+            raise ValueError(f"{path} is a GeoJSON FeatureCollection without any feature")
+        geometry = features[0]["geometry"]
     elif isinstance(data, dict) and data.get("type") == "Feature":
         geometry = data["geometry"]
     else:
         geometry = data
+    if not isinstance(geometry, dict):
+        raise ValueError("expected a GeoJSON LineString")
     if geometry.get("type") == "MultiLineString":
-        return [pt for line in geometry["coordinates"] for pt in line]
+        return _joined(geometry["coordinates"])
     if geometry.get("type") != "LineString":
         raise ValueError("expected a LineString route")
     return [[float(p[0]), float(p[1])] for p in geometry["coordinates"]]
+
+
+def _joined(parts: list[list[list[float]]]) -> list[list[float]]:
+    """The parts of a MultiLineString as one line -- only when each starts where the last ended."""
+    from bike_routing_agent.poi.geo import haversine_m
+
+    line: list[list[float]] = []
+    for part in parts:
+        points = [[float(p[0]), float(p[1])] for p in part]
+        if not points:
+            continue
+        if line and haversine_m(tuple(line[-1]), tuple(points[0])) > _JOIN_TOLERANCE_M:  # type: ignore[arg-type]
+            raise ValueError(
+                "the route is a MultiLineString whose parts are not connected; joining them would "
+                "search a straight line through places the route never visits. Use a single line "
+                "(or one part per run)"
+            )
+        line.extend(points if not line else points[1:])
+    return line
 
 
 def _lat_lon(text: str) -> list[float]:
@@ -149,7 +187,7 @@ def run(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
                 buffer_m=args.buffer_m,
                 limit_per_category=args.limit,
             )
-        except (OSError, ValueError, KeyError) as exc:
+        except (OSError, ValueError) as exc:
             print(f"invalid request: {exc}", file=stderr)
             return EXIT_USAGE
         result, code = call_handler(lambda: api.pois_along_route(request), stderr)

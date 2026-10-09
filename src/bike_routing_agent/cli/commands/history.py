@@ -6,6 +6,7 @@ Needs ``DATABASE_URL`` (docs/persistence.md). The same queries as ``/v1/history/
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from datetime import datetime
 from typing import IO
 
@@ -29,6 +30,23 @@ def _when(text: str) -> datetime:
         raise argparse.ArgumentTypeError(f"{text!r} is not an ISO-8601 date or datetime") from None
 
 
+def _bounded(name: str, low: int, high: int | None) -> Callable[[str], int]:
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{name} must be an integer") from None
+        if value < low or (high is not None and value > high):
+            raise argparse.ArgumentTypeError(
+                f"{name} must be between {low} and {high}"
+                if high is not None
+                else f"{name} must be at least {low}"
+            )
+        return value
+
+    return parse
+
+
 def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     group = subparsers.add_parser("history", help="past plans from the route history")
     sub = group.add_subparsers(dest="command", metavar="<command>")
@@ -44,8 +62,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     ls.add_argument("--since", type=_when, metavar="ISO8601")
     ls.add_argument("--until", type=_when, metavar="ISO8601")
     ls.add_argument("--bbox", metavar="W,S,E,N", help="min_lon,min_lat,max_lon,max_lat")
-    ls.add_argument("--limit", type=int, default=20)
-    ls.add_argument("--offset", type=int, default=0)
+    ls.add_argument("--limit", type=_bounded("limit", 1, 200), default=20)
+    ls.add_argument("--offset", type=_bounded("offset", 0, None), default=0)
     ls.add_argument("--format", choices=("text", "json"), default="text")
 
     show = sub.add_parser("show", help="one plan with its request, candidates and errors (JSON)")
