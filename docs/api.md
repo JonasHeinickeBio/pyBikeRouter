@@ -111,7 +111,11 @@ alternative, and the better-scored one is kept.
   a route with more than 30 % of its length without a surface tag is not judged at all:
   unknown is never read as paved or unpaved.
 - The web UI shows them as *Alternative route* cards under the result (click one to see it
-  on the map); near-copies are left out of the cards.
+  on the map); near-copies are left out of the cards. Under the cards, *Download* saves the
+  route you are viewing as GPX or GeoJSON: built in the browser from the candidate already in
+  the response (`frontend/export.js`, the same two formats as the server's exporters, which a
+  test compares), so any alternative can be taken on the road. The files linked at the bottom
+  of the result are the server's and always the top-ranked route.
 - The web UI exposes this as *Distinct alternatives (1-5)* in the constraints
   panel (empty sends no cap) and marks merged routes in the comparison table
   (`+N similar` on the kept route, `near-copy` on a listed duplicate).

@@ -623,3 +623,6 @@ textarea {
 .alt-pros .alt-sign { color: var(--accent); }
 .alt-cons .alt-sign { color: #c2410c; }
 .alt-none, .alt-merged { margin: 0.2rem 0 0 0.2rem; font-size: 0.75rem; color: var(--muted); }
+
+.alt-download { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin: 0.6rem 0 0.2rem; font-size: 0.82rem; }
+.alt-download span { color: var(--muted); margin-right: 0.2rem; }
