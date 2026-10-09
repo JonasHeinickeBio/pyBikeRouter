@@ -22,6 +22,15 @@ from bike_routing_agent.models import RouteCandidate
 
 DEFAULT_DEDUP_THRESHOLD_M = 50.0
 
+# A style alternative (the same trip under another routing profile, marked
+# ``provenance["alternative_of"]``) only takes rank 1 from the route made for the
+# rider's own bike type when its fit is clearly better: otherwise a gravel request
+# could be answered with a mountain-bike route on a near-tie. For this comparison the
+# alternative gets the main route's warning penalty (the adapter words the "not
+# enforced" warnings per profile, so a stock profile would otherwise look cleaner
+# only because it says less). Used for ordering only; the scores shown are the real ones.
+ALTERNATIVE_RANK_MARGIN = 0.10
+
 # Both lines are resampled to this many points before comparison, which makes
 # the metric independent of how densely each engine emits vertices.
 _RESAMPLE_POINTS = 64
@@ -114,8 +123,17 @@ def frechet_distance_m(a: RouteCandidate, b: RouteCandidate) -> float | None:
     return _discrete_frechet(ra, rb)
 
 
-def _order_key(c: RouteCandidate) -> tuple[float, float, str, str]:
+def _penalty(c: RouteCandidate) -> float:
+    return c.score_breakdown.get("warning_penalty", 0.0)
+
+
+def _order_key(
+    c: RouteCandidate, main_penalty: dict[str, float] | None = None
+) -> tuple[float, float, str, str]:
     score = c.score if c.score is not None else float("-inf")
+    if c.provenance.get("alternative_of"):
+        own = _penalty(c)
+        score += own - (main_penalty or {}).get(c.provider, own) - ALTERNATIVE_RANK_MARGIN
     return (-score, c.metrics.distance_m, c.provider, c.provider_profile)
 
 
@@ -125,6 +143,13 @@ def _signed(value: float, unit: str, more: str, less: str, digits: int = 0) -> s
     return f"{abs(value):.{digits}f} {unit} {more if value > 0 else less}"
 
 
+def _margin_note() -> str:
+    return (
+        "an alternative profile must lead by "
+        f"{ALTERNATIVE_RANK_MARGIN:.2f} to rank above the route for your bike type"
+    )
+
+
 def _rationale(
     rank: int,
     candidate: RouteCandidate,
@@ -132,7 +157,11 @@ def _rationale(
     total: int,
     duplicate_of: str | None,
     threshold_m: float,
+    *,
+    outscored: bool = False,
 ) -> str:
+    """``outscored``: another listed route has a higher raw score, so the order is the
+    alternative-profile margin's doing and the text must not credit the score for it."""
     if duplicate_of is not None:
         return (
             f"rank {rank}: near-identical to {duplicate_of} (within {threshold_m:.0f} m); "
@@ -141,15 +170,20 @@ def _rationale(
     if rank == 1:
         if candidate.score is None:
             return "rank 1: only candidate" if total == 1 else "rank 1: first candidate"
-        return (
-            "rank 1: only candidate"
-            if total == 1
-            else f"rank 1: highest score ({candidate.score:.2f})"
-        )
+        if total == 1:
+            return "rank 1: only candidate"
+        if outscored:
+            return f"rank 1: score {candidate.score:.2f}; {_margin_note()}"
+        return f"rank 1: highest score ({candidate.score:.2f})"
     parts: list[str] = []
     if candidate.score is not None and best.score is not None:
         gap = best.score - candidate.score
-        parts.append(f"score {candidate.score:.2f} ({gap:.2f} below rank 1)")
+        if gap < 0:  # scores higher than rank 1 but did not clear the margin
+            parts.append(
+                f"score {candidate.score:.2f} ({-gap:.2f} above rank 1, but {_margin_note()})"
+            )
+        else:
+            parts.append(f"score {candidate.score:.2f} ({gap:.2f} below rank 1)")
     distance_km = (candidate.metrics.distance_m - best.metrics.distance_m) / 1000
     distance = _signed(distance_km, "km", "longer", "shorter", 1)
     if distance:
@@ -185,7 +219,10 @@ def rank_candidates(
     rank 1 and is never a duplicate: the best-scored member of a cluster is
     the one kept.
     """
-    ordered = sorted(candidates, key=_order_key)
+    main_penalty = {
+        c.provider: _penalty(c) for c in candidates if not c.provenance.get("alternative_of")
+    }
+    ordered = sorted(candidates, key=lambda c: _order_key(c, main_penalty))
     kept: list[RouteCandidate] = []
     duplicate_of: dict[int, str] = {}
     duplicates_of_kept: dict[int, list[str]] = {}
@@ -213,6 +250,9 @@ def rank_candidates(
         return []
     best = result[0]
     total = len(result)
+    outscored = any(
+        c.score is not None and best.score is not None and c.score > best.score for c in result[1:]
+    )
     ranked: list[RouteCandidate] = []
     for rank, candidate in enumerate(result, start=1):
         dup = duplicate_of.get(id(candidate))
@@ -221,7 +261,7 @@ def rank_candidates(
                 update={
                     "rank": rank,
                     "rank_rationale": _rationale(
-                        rank, candidate, best, total, dup, dedup_threshold_m
+                        rank, candidate, best, total, dup, dedup_threshold_m, outscored=outscored
                     ),
                     "duplicate_of": dup,
                     "duplicates": duplicates_of_kept.get(id(candidate), []),

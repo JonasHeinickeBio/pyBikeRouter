@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     # candidate. No automatic fallback between engines is attempted.
     routing_provider: Literal["ors", "brouter", "valhalla", "all"] = "ors"
     brouter_base_url: str = "http://127.0.0.1:17777"
+    # Also ask BRouter for the alternative profiles above (one extra request each).
+    brouter_alternatives: bool = True
+    # How long the alternatives may take; whatever is done by then is used, the rest dropped.
+    brouter_alternatives_timeout_s: float = 8.0
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
 
@@ -371,6 +375,22 @@ BROUTER_PROFILE_MAP: dict[str, str] = {
     "ebike": "fastbike",
     "commuter": "custom_commuter-v1",
     "recumbent": "vm-forum-liegerad-schnell",
+}
+
+# Other BRouter profiles worth showing next to the one a bike type maps to: the
+# same trip priced differently (calmer, more direct, more off-road), so the web
+# UI can compare real alternatives with one engine. They are suggestions, not
+# promises: each result is described by facts about that route, not by the
+# profile's name (docs/profile-evaluation.md has what each profile does).
+BROUTER_ALTERNATIVE_PROFILES: dict[str, tuple[str, ...]] = {
+    "road": ("custom_commuter-v1",),
+    "gravel": ("custom_touring-v1", "mtb"),
+    "touring": ("fastbike", "custom_gravel-v2"),
+    "mountain": ("custom_gravel-v2", "custom_touring-v1"),
+    "city": ("fastbike",),
+    "ebike": ("custom_commuter-v1",),
+    "commuter": ("fastbike",),
+    "recumbent": ("custom_touring-v1",),
 }
 
 # Internal bike type -> Valhalla costing model. Current Valhalla bicycle

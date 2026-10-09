@@ -225,6 +225,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
                 base_url=cfg.brouter_base_url,
                 timeout_s=cfg.brouter_timeout_s,
                 max_retries=cfg.brouter_max_retries,
+                alternatives=cfg.brouter_alternatives,
+                alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
             )
         ]
     if cfg.routing_provider == "valhalla":
@@ -249,6 +251,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
             base_url=cfg.brouter_base_url,
             timeout_s=cfg.brouter_timeout_s,
             max_retries=cfg.brouter_max_retries,
+            alternatives=cfg.brouter_alternatives,
+            alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
         ),
         ValhallaAdapter(
             base_url=cfg.valhalla_base_url,

@@ -376,3 +376,147 @@ def test_the_commuter_profile_file_matches_what_its_header_says():
         ln.startswith("assign   consider_traffic") and "= true" in ln for ln in text.splitlines()
     )
     assert "pyBikeRouter custom profile: commuter-v1" in text
+
+
+def _payload_with_tags(rows: list[tuple[float, str]]) -> dict:
+    header = [
+        "Longitude", "Latitude", "Elevation", "Distance", "CostPerKm", "ElevCost",
+        "TurnCost", "NodeCost", "InitialCost", "WayTags", "NodeTags", "Time", "Energy",
+    ]  # fmt: skip
+    messages = [header] + [
+        ["0", "0", "0", str(length), "0", "0", "0", "0", "0", tags, "", "0", "0"]
+        for length, tags in rows
+    ]
+    total = sum(length for length, _ in rows)
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[10.0, 52.0], [10.1, 52.1]]},
+                "properties": {
+                    "track-length": str(total),
+                    "total-time": "600",
+                    "filtered ascend": "12",
+                    "messages": messages,
+                },
+            }
+        ],
+    }
+
+
+@respx.mock
+async def test_main_road_share_comes_from_the_way_tags_and_ignores_bike_lanes() -> None:
+    payload = _payload_with_tags(
+        [
+            (400, "highway=secondary surface=asphalt"),  # unprotected main road
+            (200, "highway=tertiary cycleway=lane"),  # main road with a lane: protected
+            (200, "highway=primary bicycle=designated"),  # designated for bikes: protected
+            (200, "highway=residential"),
+        ]
+    )
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=payload))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.main_road_share == 0.4
+
+
+@respx.mock
+async def test_without_way_tags_the_share_is_unknown_not_zero(brouter_route_response: dict) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.main_road_share is None
+
+
+@respx.mock
+async def test_alternatives_price_the_trip_with_the_other_profiles_and_are_marked() -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True)
+    found = await adapter.alternatives(make_request())  # gravel: touring + mtb
+    assert [c.provider_profile for c in found] == ["custom_touring-v1", "mtb"]
+    assert all(c.provenance["alternative_of"] == "custom_gravel-v2" for c in found)
+    assert {call.request.url.params["profile"] for call in route.calls} == {
+        "custom_touring-v1",
+        "mtb",
+    }
+
+
+@respx.mock
+async def test_alternatives_are_off_by_default_and_failures_are_dropped() -> None:
+    route = respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json={}))
+    assert await BRouterAdapter(base_url=BROUTER_BASE).alternatives(make_request()) == []
+    assert not route.called
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(500))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, max_retries=0)
+    assert await adapter.alternatives(make_request()) == []  # all failed: nothing, no raise
+
+
+@respx.mock
+async def test_surface_shares_come_from_the_surface_tags_and_unknown_stays_unknown() -> None:
+    payload = _payload_with_tags(
+        [
+            (500, "highway=cycleway surface=asphalt"),
+            (200, "highway=track surface=compacted"),
+            (100, "highway=path surface=dirt"),  # natural soft
+            (100, "highway=cycleway surface=paving_stones"),  # cobbles
+            (100, "highway=track"),  # no surface tag: unknown, not paved, not unpaved
+        ]
+    )
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=payload))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.engine_surface_shares == {
+        "paved": 0.5,
+        "unpaved": 0.3,
+        "cobbles": 0.1,
+        "unknown": 0.1,
+    }
+    # the Overpass-style enrichment fields are untouched: scoring never sees these
+    assert candidate.metrics.surface_coverage == {}
+    assert candidate.metrics.unknown_surface_fraction is None
+
+
+@respx.mock
+async def test_without_tags_there_are_no_surface_shares(brouter_route_response: dict) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.engine_surface_shares == {}
+
+
+@respx.mock
+async def test_a_slow_alternative_is_dropped_at_the_deadline_and_the_fast_one_is_kept() -> None:
+    import asyncio
+    import time
+
+    ok = httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+
+    async def by_profile(request: httpx.Request) -> httpx.Response:
+        if request.url.params["profile"] == "mtb":
+            await asyncio.sleep(30)  # an alternative profile that hangs
+        return ok
+
+    respx.get(BROUTER_URL).mock(side_effect=by_profile)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, alternatives_timeout_s=0.3)
+    started = time.monotonic()
+    found = await adapter.alternatives(make_request())  # gravel: touring + mtb
+    assert time.monotonic() - started < 5  # not 30 s
+    assert [c.provider_profile for c in found] == ["custom_touring-v1"]
+
+
+def test_way_tags_missing_on_some_rows_do_not_pass_for_quiet_roads() -> None:
+    from bike_routing_agent.providers.brouter_tags import main_road_share, surface_shares
+
+    header = ["lon", "lat", "ele", "dist", "c", "e", "t", "n", "i", "WayTags"]
+
+    def rows(*items):
+        return [header] + [
+            ["0", "0", "0", str(length), "0", "0", "0", "0", "0", tags] for length, tags in items
+        ]
+
+    # no tags anywhere, or empty/null tag cells: unknown, not a 0 % share
+    assert main_road_share(rows((500, ""), (500, None))) is None
+    assert main_road_share(rows((100, "highway=primary"), (900, ""))) is None  # 10 % tagged
+    assert surface_shares(rows((500, ""), (500, None))) == {}
+    # enough coverage: the share is of the tagged length, untagged rows are not "quiet"
+    covered = rows((450, "highway=primary"), (450, "highway=residential"), (100, ""))
+    assert main_road_share(covered) == 0.5

@@ -600,3 +600,26 @@ textarea {
 .opt-rain.wet { color: #3b82f6; }
 .opt-wind { margin-left: auto; font-variant-numeric: tabular-nums; }
 .opt-tag { font-size: 0.7rem; padding: 0 0.35rem; border-radius: 999px; background: var(--accent); color: #fff; }
+
+/* ------------------------------ alternative routes ------------------------------ */
+
+.alternatives { margin: 0.8rem 0 0; }
+.alternatives h3 { margin: 0 0 0.2rem; font-size: 0.95rem; }
+.alt-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.45rem; }
+.alt-card {
+  display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer;
+  padding: 0.5rem 0.65rem; border-radius: 8px; background: transparent;
+  border: 1px solid var(--border, rgba(127,127,127,0.3));
+}
+.alt-card:hover, .alt-card:focus-visible { background: rgba(127,127,127,0.1); }
+.alt-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.alt-head { display: flex; align-items: center; gap: 0.45rem; }
+.alt-title { font-weight: 600; font-size: 0.9rem; }
+.alt-tag { margin-left: auto; font-size: 0.68rem; padding: 0 0.4rem; border-radius: 999px; background: var(--accent); color: #fff; }
+.alt-metrics { display: block; margin: 0.15rem 0 0.25rem 1.05rem; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.alt-pros, .alt-cons { list-style: none; margin: 0.15rem 0 0 0.2rem; padding: 0; font-size: 0.8rem; }
+.alt-pros li, .alt-cons li { display: flex; gap: 0.4rem; margin: 0.08rem 0; }
+.alt-sign { font-weight: 700; width: 0.8rem; text-align: center; flex: none; }
+.alt-pros .alt-sign { color: var(--accent); }
+.alt-cons .alt-sign { color: #c2410c; }
+.alt-none, .alt-merged { margin: 0.2rem 0 0 0.2rem; font-size: 0.75rem; color: var(--muted); }

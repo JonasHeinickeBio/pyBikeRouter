@@ -46,10 +46,11 @@ START -> parse_request
       -> route_with_provider   -> (no_route | provider_failure) -> END
       -> score_candidates      -> (no_route) -> END
       -> weather_candidates    (best effort: never changes the outcome)
+      -> annotate_alternatives (pros/cons per distinct route; informational)
       -> explain_and_export    -> END
 ```
 
-`graph.build_graph` wires the six nodes and their conditional edges. Each
+`graph.build_graph` wires the nodes and their conditional edges. Each
 edge inspects `status` and either advances or ends the run -- there is no
 path that falls off the end without a status. The graph never calls a routing
 provider unless validation **and** geocoding have both succeeded.
@@ -64,6 +65,7 @@ provider unless validation **and** geocoding have both succeeded.
 | `route_with_provider` | `nodes/route.py` | Build an engine-neutral `RoutingRequest`, call the `RoutingProvider`. `no_route` vs `provider_failure` distinguished here. |
 | `score_candidates` | `nodes/score.py` | Score and rank candidates deterministically; select the best. |
 | `weather_candidates` | `nodes/weather.py` | Forecast along each ranked route at the departure time, via a free keyless provider (best effort, informational; [weather.md](weather.md)). |
+| `annotate_alternatives` | `nodes/compare.py` | Short, factual pros and cons of each distinct route against the others (`scoring/pros_cons.py`; informational, never changes the ranking; [api.md](api.md#alternatives)). |
 | `explain_and_export` | `nodes/export.py` | Facts-only explanation + GeoJSON/GPX artifacts written through the `ArtifactStore` (`EXPORT_DIR` by default; see [persistence.md](persistence.md)). |
 
 ### The parse step and the LLM boundary

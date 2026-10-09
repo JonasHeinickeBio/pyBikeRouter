@@ -78,6 +78,40 @@ alternative, and the better-scored one is kept.
 - It only has an effect when more than one engine is configured; with one
   engine the single candidate is simply rank 1.
 - Exports and the explanation always describe rank 1.
+- **Style alternatives (BRouter).** With `BROUTER_ALTERNATIVES=true` (the default) one
+  engine is enough to get alternatives: BRouter also routes the trip under the other
+  profiles suggested for the bike type (e.g. gravel -> touring and mountain bike; see
+  `BROUTER_ALTERNATIVE_PROFILES`). They carry `provenance.alternative_of` and are ranked
+  like any candidate, except that they take rank 1 from the route made for the rider's own
+  bike type only with a clear lead (+0.10 score, warning penalties equalised for this
+  comparison), so a gravel request is not answered with a mountain-bike route on a near-tie;
+  `rank_rationale` then says so ("... an alternative profile must lead by 0.10 to rank above the
+  route for your bike type") instead of crediting the raw score. They are best effort within
+  `BROUTER_ALTERNATIVES_TIMEOUT_S`: alternatives still running at the deadline are dropped.
+- **`pros` / `cons`** (per distinct route, at most 3 each; empty with a single route) are
+  facts with numbers relative to the other distinct routes: your own limits and target
+  distance first, then shortest, fastest, least climbing, least on main roads without a
+  bike lane (`metrics.main_road_share`, BRouter only), headwind and precipitation. A
+  difference must clear both a relative and an absolute bar to be mentioned, a metric a
+  route does not have is skipped (never read as zero), and nothing claims a route is safer
+  or better for you. `metrics.main_road_share` is the length share on
+  trunk/primary/secondary/tertiary roads without a mapped cycle lane/track or
+  `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement. Segments
+  without way tags are not counted as quiet road: with fewer than 80 % of the length tagged
+  the share is `null`.
+- **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
+  paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;
+  never feeds the score). Paved counts as a pro for `road`, `city`, `commuter` and
+  `recumbent`, unpaved for `mountain`; `gravel`, `touring` and `ebike` are neutral ("easy
+  gravel": no surface line either way). Your own `prefer_surfaces` / `avoid_surfaces` win over
+  the bike type, so a gravel request that prefers `compacted`/`loose` (off-road gravel) is
+  treated like a mountain bike, and contradictory wishes count as neutral. Lines:
+  `Most paved (90%)` / `Less paved (77% vs 90%)`, or `Most off-road (87% unpaved)` /
+  `Less off-road (2% unpaved vs 75%)`. Only differences of 10 points or more are stated, and
+  a route with more than 30 % of its length without a surface tag is not judged at all:
+  unknown is never read as paved or unpaved.
+- The web UI shows them as *Alternative route* cards under the result (click one to see it
+  on the map); near-copies are left out of the cards.
 - The web UI exposes this as *Distinct alternatives (1-5)* in the constraints
   panel (empty sends no cap) and marks merged routes in the comparison table
   (`+N similar` on the kept route, `near-copy` on a listed duplicate).

@@ -21,6 +21,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
 from bike_routing_agent.enrichment.base import SurfaceEnricher
+from bike_routing_agent.nodes.compare import build_compare_node
 from bike_routing_agent.nodes.enrich import build_enrich_node
 from bike_routing_agent.nodes.export import build_export_node
 from bike_routing_agent.nodes.geocode import build_geocode_node
@@ -110,6 +111,8 @@ def build_graph(
             option_hours_after=weather_option_hours[1],
         ),
     )
+    # Informational: short pros/cons per distinct route (never changes the ranking).
+    graph.add_node("annotate_alternatives", build_compare_node())
     graph.add_node(
         "explain_and_export",
         build_export_node(export_dir=export_dir, artifact_store=artifact_store),
@@ -122,7 +125,8 @@ def build_graph(
     graph.add_conditional_edges("route_with_provider", _after_route, ["enrich_candidates", END])
     graph.add_edge("enrich_candidates", "score_candidates")
     graph.add_conditional_edges("score_candidates", _after_score, ["weather_candidates", END])
-    graph.add_edge("weather_candidates", "explain_and_export")
+    graph.add_edge("weather_candidates", "annotate_alternatives")
+    graph.add_edge("annotate_alternatives", "explain_and_export")
     graph.add_edge("explain_and_export", END)
 
     return graph.compile(checkpointer=checkpointer)

@@ -30,6 +30,17 @@ from bike_routing_agent.state import RouteAgentState
 
 NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 
+# Hard cap on any provider's alternatives, whatever it does internally: they are a
+# bonus and must never hold back a route that already came back.
+ALTERNATIVES_DEADLINE_S = 12.0
+
+
+async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[Any]:
+    try:
+        return list(await asyncio.wait_for(provider.alternatives(request), ALTERNATIVES_DEADLINE_S))
+    except Exception:  # best effort: timeouts and failures just mean no extras
+        return []
+
 
 def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
     if not routing_providers:
@@ -64,11 +75,22 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
             constraints=constraints,
         )
 
-        results = await asyncio.gather(
-            *(provider.route(request) for provider in routing_providers),
-            return_exceptions=True,
+        # Engines that can price the same trip differently (BRouter profiles) add
+        # alternatives; they run alongside the main requests, are best effort and
+        # never turn into errors.
+        results, extras = await asyncio.gather(
+            asyncio.gather(
+                *(provider.route(request) for provider in routing_providers),
+                return_exceptions=True,
+            ),
+            asyncio.gather(
+                *(
+                    _bounded_alternatives(provider, request)
+                    for provider in routing_providers
+                    if hasattr(provider, "alternatives")
+                ),
+            ),
         )
-
         candidates: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         no_route_only = True
@@ -92,6 +114,8 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
                 candidates.append(result.model_dump(mode="json"))
 
         if candidates:
+            for extra in extras:
+                candidates.extend(c.model_dump(mode="json") for c in extra)
             return {
                 "status": "in_progress",
                 "candidates": candidates,

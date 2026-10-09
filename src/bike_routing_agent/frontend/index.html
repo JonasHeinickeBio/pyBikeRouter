@@ -154,6 +154,11 @@
         <p id="viewing-note" class="viewing-note" hidden></p>
         <p id="explanation" class="explanation"></p>
         <div class="metrics" id="metrics"></div>
+        <section id="alternatives" class="alternatives" hidden>
+          <h3>Alternative routes</h3>
+          <p class="hint">The same trip priced differently. Each line is a measured difference between the routes, not advice; click a card to see it on the map.</p>
+          <div id="alternatives-list"></div>
+        </section>
         <section id="weather-card" class="weather-card" hidden aria-live="polite"></section>
         <details id="candidates-details" hidden>
           <summary><h2>Candidates</h2></summary>
@@ -197,6 +202,7 @@
     crossorigin=""
   ></script>
   <script src="weather.js"></script>
+  <script src="alternatives.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>
