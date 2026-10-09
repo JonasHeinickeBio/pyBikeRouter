@@ -53,6 +53,8 @@ const els = {
   weatherCard: $("weather-card"),
   alternatives: $("alternatives"),
   alternativesList: $("alternatives-list"),
+  altDownload: $("alt-download"),
+  altDownloadLabel: $("alt-download-label"),
   textPanel: $("text-panel"),
   textInput: $("text-input"),
   textBtn: $("text-btn"),
@@ -703,6 +705,7 @@ function activateCandidate(index) {
     btn.classList.toggle("active", isActive);
     btn.setAttribute("aria-pressed", isActive ? "true" : "false");
   });
+  renderAlternativeDownload();
   updateActiveView();
 }
 
@@ -717,6 +720,33 @@ function renderAlternatives() {
   );
   els.alternatives.hidden = html === "";
   els.alternativesList.innerHTML = html;
+  renderAlternativeDownload();
+}
+
+/** "Download the route you are viewing" row, for whichever alternative is active. */
+function renderAlternativeDownload() {
+  const active = state.candidates[state.activeIndex];
+  els.altDownload.hidden = !active || els.alternatives.hidden;
+  if (!active) return;
+  els.altDownloadLabel.textContent = `Download ${BikeAlternatives.styleLabel(active)}:`;
+}
+
+function downloadActiveCandidate(format) {
+  const active = state.candidates[state.activeIndex];
+  if (!active) return;
+  try {
+    const file = BikeExport.build(active, format, `pyBikeRouter ${BikeAlternatives.styleLabel(active)}`);
+    const url = URL.createObjectURL(new Blob([file.text], { type: file.type }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (err) {
+    setStatus("error", `Could not export this route: ${escapeHtml(String(err.message || err))}`);
+  }
 }
 
 function windCellHtml(candidate) {
@@ -982,6 +1012,10 @@ function wireEvents() {
   els.addVia.addEventListener("click", () => addViaRow());
   els.swap.addEventListener("click", swapPlaces);
   els.planBtn.addEventListener("click", planRoute);
+  els.altDownload.addEventListener("click", (ev) => {
+    const button = ev.target.closest("button[data-export]");
+    if (button) downloadActiveCandidate(button.dataset.export);
+  });
   els.alternativesList.addEventListener("click", (ev) => {
     const card = ev.target.closest("button[data-candidate]");
     if (card) activateCandidate(Number(card.dataset.candidate));

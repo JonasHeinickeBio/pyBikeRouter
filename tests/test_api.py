@@ -53,6 +53,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/weather.js", "BikeWeather"),
         ("/text-planning.js", "BikeText"),
         ("/alternatives.js", "BikeAlternatives"),
+        ("/export.js", "BikeExport"),
+        ("/index.html", 'id="alt-download"'),
         ("/index.html", 'id="alternatives-list"'),
         ("/app.js", "route/plan-text"),
         ("/app.js", "v1/capabilities"),
