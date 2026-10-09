@@ -375,3 +375,48 @@ async def test_ordinary_request_records_no_loop_plan():
 
     assert update["loop_plan"] is None
     assert len(router.last_request.via) == 1
+
+
+class StyleRouter(CapturingRouter):
+    """A provider that can also price the same trip another way (BRouter profiles)."""
+
+    def __init__(self, *, extra=None, extra_error=None, **kw):
+        super().__init__(**kw)
+        self._extra = extra if extra is not None else ["other-profile"]
+        self._extra_error = extra_error
+
+    async def alternatives(self, request):
+        if self._extra_error is not None:
+            raise self._extra_error
+        return [
+            RouteCandidate(
+                provider=self._provider,
+                provider_profile=profile,
+                geometry_geojson={"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+                metrics=RouteMetrics(distance_m=1200, duration_s=240),
+            )
+            for profile in self._extra
+        ]
+
+
+async def test_alternative_profiles_are_added_after_the_main_candidates():
+    node = build_route_node(routing_providers=[StyleRouter(name="brouter")])
+    update = await node(base_state())
+    assert [c["provider_profile"] for c in update["candidates"]] == [
+        "cycling-regular",
+        "other-profile",
+    ]
+    assert update["errors"] == []
+
+
+async def test_a_failing_alternative_never_turns_into_an_error_or_loses_the_main_route():
+    router = StyleRouter(name="brouter", extra_error=RuntimeError("boom"))
+    update = await build_route_node(routing_providers=[router])(base_state())
+    assert update["status"] == "in_progress" and len(update["candidates"]) == 1
+    assert update["errors"] == []
+
+
+async def test_alternatives_are_not_asked_for_when_the_main_route_has_no_route():
+    router = StyleRouter(name="brouter", error=ProviderNoRouteError("none", provider="brouter"))
+    update = await build_route_node(routing_providers=[router])(base_state())
+    assert update["status"] == "no_route" and "candidates" not in update

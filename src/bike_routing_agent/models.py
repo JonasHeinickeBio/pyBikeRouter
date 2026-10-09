@@ -108,6 +108,11 @@ class RouteMetrics(BaseModel):
     descent_m: float | None = Field(default=None, ge=0)
     surface_coverage: dict[str, float] = Field(default_factory=dict)
     unknown_surface_fraction: float | None = Field(default=None, ge=0, le=1)
+    # Share of the route on trunk/primary/secondary/tertiary roads that have no
+    # mapped cycle lane/track and are not bicycle=designated, from the OSM tags
+    # the engine routed over (BRouter provides them). A proxy for exposure to
+    # motor traffic, not a measurement of it; None when the engine gives no tags.
+    main_road_share: float | None = Field(default=None, ge=0, le=1)
 
 
 class RouteCandidate(BaseModel):
@@ -129,6 +134,10 @@ class RouteCandidate(BaseModel):
     weather: RouteWeather | None = None
     rank: int | None = Field(default=None, ge=1)
     rank_rationale: str | None = None
+    # Short facts about how this route differs from the other distinct ones
+    # (scoring/pros_cons.py); empty when it is the only one. Never safety claims.
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
     duplicate_of: str | None = None
     duplicates: list[str] = Field(default_factory=list)
     raw_provider_response: dict[str, Any] | None = Field(default=None, repr=False)

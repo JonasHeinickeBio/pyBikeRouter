@@ -78,6 +78,24 @@ alternative, and the better-scored one is kept.
 - It only has an effect when more than one engine is configured; with one
   engine the single candidate is simply rank 1.
 - Exports and the explanation always describe rank 1.
+- **Style alternatives (BRouter).** With `BROUTER_ALTERNATIVES=true` (the default) one
+  engine is enough to get alternatives: BRouter also routes the trip under the other
+  profiles suggested for the bike type (e.g. gravel -> touring and mountain bike; see
+  `BROUTER_ALTERNATIVE_PROFILES`). They carry `provenance.alternative_of` and are ranked
+  like any candidate, except that they take rank 1 from the route made for the rider's own
+  bike type only with a clear lead (+0.10 score, warning penalties equalised for this
+  comparison), so a gravel request is not answered with a mountain-bike route on a near-tie.
+- **`pros` / `cons`** (per distinct route, at most 3 each; empty with a single route) are
+  facts with numbers relative to the other distinct routes: your own limits and target
+  distance first, then shortest, fastest, least climbing, least on main roads without a
+  bike lane (`metrics.main_road_share`, BRouter only), headwind and precipitation. A
+  difference must clear both a relative and an absolute bar to be mentioned, a metric a
+  route does not have is skipped (never read as zero), and nothing claims a route is safer
+  or better for you. `metrics.main_road_share` is the length share on
+  trunk/primary/secondary/tertiary roads without a mapped cycle lane/track or
+  `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement.
+- The web UI shows them as *Alternative route* cards under the result (click one to see it
+  on the map); near-copies are left out of the cards.
 - The web UI exposes this as *Distinct alternatives (1-5)* in the constraints
   panel (empty sends no cap) and marks merged routes in the comparison table
   (`+N similar` on the kept route, `near-copy` on a listed duplicate).

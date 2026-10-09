@@ -23,9 +23,7 @@ def _line(offset_m: float = 0.0, n: int = 10, start_lon: float = 10.0) -> dict:
     lat = LAT + offset_m / 111_320
     return {
         "type": "LineString",
-        "coordinates": [
-            [start_lon + i * (0.02 / (n - 1)), lat, 100.0] for i in range(n)
-        ],
+        "coordinates": [[start_lon + i * (0.02 / (n - 1)), lat, 100.0] for i in range(n)],
     }
 
 
@@ -260,3 +258,42 @@ def test_parse_node_passes_max_alternatives_through():
     base = {"origin": "A", "destination": "B"}
     assert node({"raw_input": {**base, "max_alternatives": 3}})["max_alternatives"] == 3
     assert node({"raw_input": base})["max_alternatives"] is None
+
+
+def _style_alternative(provider: str, geometry: dict, *, score: float) -> RouteCandidate:
+    return _candidate(provider, geometry, score=score).model_copy(
+        update={"provenance": {"alternative_of": "custom_gravel-v2"}}
+    )
+
+
+def test_a_style_alternative_needs_a_clear_lead_to_outrank_the_main_route():
+    main = _candidate("brouter", _line(0), score=0.80, profile="custom_gravel-v2")
+    near_tie = _style_alternative("mtb", _line(1000), score=0.84)  # better, but only by 0.04
+    clear_win = _style_alternative("touring", _line(2000), score=0.95)  # better by 0.15
+
+    ranked = rank_candidates([near_tie, main])
+    assert [c.provider for c in ranked] == ["brouter", "mtb"]  # the rider's own profile stays first
+    assert ranked[1].score == 0.84  # the margin orders only; the shown score is the real one
+
+    ranked = rank_candidates([main, near_tie, clear_win])
+    assert [c.provider for c in ranked] == ["touring", "brouter", "mtb"]
+
+
+def test_alternatives_do_not_change_the_order_when_there_are_none():
+    ranked = rank_candidates(
+        [_candidate("a", _line(0), score=0.6), _candidate("b", _line(1000), score=0.7)]
+    )
+    assert [c.provider for c in ranked] == ["b", "a"]
+
+
+def test_a_stock_profile_does_not_win_just_because_it_warns_less():
+    # The adapter words "not enforced" warnings per profile: gravel-v2 carries two (0.10),
+    # a stock profile none, though the situation is the same. That must not decide rank 1.
+    main = _candidate("brouter", _line(0), score=0.90, profile="custom_gravel-v2")
+    main = main.model_copy(update={"score_breakdown": {"warning_penalty": 0.10}})
+    stock = _style_alternative("mtb", _line(1000), score=1.00).model_copy(
+        update={"score_breakdown": {"warning_penalty": 0.0}}
+    )
+    ranked = rank_candidates([stock, main])
+    assert [c.provider for c in ranked] == ["brouter", "mtb"]
+    assert [c.score for c in ranked] == [0.90, 1.00]  # shown scores stay the real ones

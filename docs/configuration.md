@@ -23,6 +23,7 @@ cp .env.example .env
 | `BROUTER_BASE_URL` | base URL of a local/self-hosted BRouter RouteServer | `http://127.0.0.1:17777` |
 | `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
 | `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |
+| `BROUTER_ALTERNATIVES` | also ask BRouter for the same trip under the other profiles suggested for the bike type (`config.BROUTER_ALTERNATIVE_PROFILES`), one extra request each, so the UI can compare real alternatives -- [api.md](api.md#alternatives) | `true` |
 | `GEOCODER_PROVIDER` | `nominatim` or `pelias` (see below and [geocoding.md](geocoding.md)) | `nominatim` |
 | `GEOCODER_BASE_URL` | Nominatim base URL (ignored for `pelias`) | `https://nominatim.openstreetmap.org` |
 | `GEOCODER_TIMEOUT_S` | geocoder request timeout | `5.0` |

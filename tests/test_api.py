@@ -52,6 +52,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/app.js", "departure_time"),
         ("/weather.js", "BikeWeather"),
         ("/text-planning.js", "BikeText"),
+        ("/alternatives.js", "BikeAlternatives"),
+        ("/index.html", 'id="alternatives-list"'),
         ("/app.js", "route/plan-text"),
         ("/app.js", "v1/capabilities"),
         ("/index.html", 'id="text-input"'),

@@ -23,10 +23,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 import httpx
 
-from bike_routing_agent.config import BROUTER_PROFILE_MAP
+from bike_routing_agent.config import BROUTER_ALTERNATIVE_PROFILES, BROUTER_PROFILE_MAP
 from bike_routing_agent.errors import (
     ProviderBadResponseError,
     ProviderNoRouteError,
@@ -34,12 +35,15 @@ from bike_routing_agent.errors import (
     ProviderUnavailableError,
 )
 from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingRequest
+from bike_routing_agent.providers.brouter_tags import main_road_share
 
 # Fragments BRouter puts in its plain-text 400 body when the request was
 # well-formed but no path exists (as opposed to a bad profile/coordinates).
 # Every version of the gravel profile: results recorded with an older one (the
 # profile name is in each plan's provenance) keep their warnings.
 GRAVEL_PROFILES = frozenset({"custom_gravel-v1", "custom_gravel-v2"})
+logger = logging.getLogger(__name__)
+
 _NO_ROUTE_MARKERS = ("not reachable", "no route", "no track")
 
 _MAX_ERROR_BODY_CHARS = 500
@@ -56,8 +60,10 @@ class BRouterAdapter:
         base_url: str,
         timeout_s: float = 10.0,
         max_retries: int = 0,
+        alternatives: bool = False,
         client: httpx.AsyncClient | None = None,
     ) -> None:
+        self._alternatives = alternatives
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._max_retries = max_retries
@@ -149,7 +155,37 @@ class BRouterAdapter:
             return response
 
     async def route(self, request: RoutingRequest) -> RouteCandidate:
-        profile = self._profile_for(request.constraints.bike_type.value)
+        return await self._route_with_profile(
+            request, self._profile_for(request.constraints.bike_type.value)
+        )
+
+    async def alternatives(self, request: RoutingRequest) -> list[RouteCandidate]:
+        """The same trip under the other profiles suggested for this bike type.
+
+        Best effort: a profile that finds no route or fails is left out, because
+        the main route is what the caller asked for. Results are marked in their
+        provenance (``alternative_of``) so they can be told apart.
+        """
+        if not self._alternatives:
+            return []
+        main = self._profile_for(request.constraints.bike_type.value)
+        profiles = [
+            p for p in BROUTER_ALTERNATIVE_PROFILES.get(request.constraints.bike_type.value, ())
+            if p != main
+        ]  # fmt: skip
+        results = await asyncio.gather(
+            *(self._route_with_profile(request, p) for p in profiles), return_exceptions=True
+        )
+        found: list[RouteCandidate] = []
+        for profile, result in zip(profiles, results, strict=True):
+            if isinstance(result, RouteCandidate):
+                provenance = {**result.provenance, "alternative_of": main}
+                found.append(result.model_copy(update={"provenance": provenance}))
+            elif isinstance(result, BaseException):
+                logger.info("brouter alternative profile %s unavailable: %s", profile, result)
+        return found
+
+    async def _route_with_profile(self, request: RoutingRequest, profile: str) -> RouteCandidate:
         response = await self._get(
             {
                 "lonlats": self._lonlats(request),
@@ -246,6 +282,7 @@ class BRouterAdapter:
             duration_s=_as_float(properties.get("total-time")),
             ascent_m=_as_float(properties.get("filtered ascend")),
             # BRouter reports no descent; leave it None rather than guess.
+            main_road_share=main_road_share(properties.get("messages")),
         )
 
         return RouteCandidate(

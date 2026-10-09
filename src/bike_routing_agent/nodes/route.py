@@ -64,11 +64,23 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
             constraints=constraints,
         )
 
-        results = await asyncio.gather(
-            *(provider.route(request) for provider in routing_providers),
-            return_exceptions=True,
+        # Engines that can price the same trip differently (BRouter profiles) add
+        # alternatives; they run alongside the main requests, are best effort and
+        # never turn into errors.
+        results, extras = await asyncio.gather(
+            asyncio.gather(
+                *(provider.route(request) for provider in routing_providers),
+                return_exceptions=True,
+            ),
+            asyncio.gather(
+                *(
+                    provider.alternatives(request)
+                    for provider in routing_providers
+                    if hasattr(provider, "alternatives")
+                ),
+                return_exceptions=True,
+            ),
         )
-
         candidates: list[dict[str, Any]] = []
         errors: list[dict[str, Any]] = []
         no_route_only = True
@@ -92,6 +104,9 @@ def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
                 candidates.append(result.model_dump(mode="json"))
 
         if candidates:
+            for extra in extras:
+                if isinstance(extra, list):
+                    candidates.extend(c.model_dump(mode="json") for c in extra)
             return {
                 "status": "in_progress",
                 "candidates": candidates,

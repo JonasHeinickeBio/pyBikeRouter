@@ -51,6 +51,8 @@ const els = {
   departureCustomField: $("departure-custom-field"),
   departureHint: $("departure-hint"),
   weatherCard: $("weather-card"),
+  alternatives: $("alternatives"),
+  alternativesList: $("alternatives-list"),
   textPanel: $("text-panel"),
   textInput: $("text-input"),
   textBtn: $("text-btn"),
@@ -520,6 +522,8 @@ function clearResults() {
   state.weatherMarkers.clearLayers();
   els.weatherCard.hidden = true;
   els.weatherCard.innerHTML = "";
+  els.alternatives.hidden = true;
+  els.alternativesList.innerHTML = "";
   els.viewingNote.hidden = true;
   els.resultsPanel.hidden = true;
   els.errorsPanel.hidden = true;
@@ -636,6 +640,7 @@ function renderRoute(data) {
   els.explanation.textContent = data.explanation || "";
 
   renderCandidatesTable();
+  renderAlternatives();
   updateActiveView();
   renderArtifacts(data.artifacts);
 
@@ -693,7 +698,25 @@ function activateCandidate(index) {
   els.candidatesTable.querySelectorAll("tr.cand-row").forEach((tr, i) => {
     tr.classList.toggle("active", i === index);
   });
+  els.alternativesList.querySelectorAll("button[data-candidate]").forEach((btn) => {
+    const isActive = Number(btn.dataset.candidate) === index;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
   updateActiveView();
+}
+
+/** Alternative routes as short pros/cons cards; hidden unless two distinct routes came back. */
+function renderAlternatives() {
+  const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
+  const html = BikeAlternatives.alternativesHtml(
+    state.candidates,
+    state.candidateLayers.map((entry) => entry.color),
+    selectedIndex,
+    state.activeIndex,
+  );
+  els.alternatives.hidden = html === "";
+  els.alternativesList.innerHTML = html;
 }
 
 function windCellHtml(candidate) {
@@ -959,6 +982,10 @@ function wireEvents() {
   els.addVia.addEventListener("click", () => addViaRow());
   els.swap.addEventListener("click", swapPlaces);
   els.planBtn.addEventListener("click", planRoute);
+  els.alternativesList.addEventListener("click", (ev) => {
+    const card = ev.target.closest("button[data-candidate]");
+    if (card) activateCandidate(Number(card.dataset.candidate));
+  });
   // "Other departure times": choosing one sets the departure picker and plans again.
   els.weatherCard.addEventListener("click", (ev) => {
     const row = ev.target.closest("button[data-departure]");

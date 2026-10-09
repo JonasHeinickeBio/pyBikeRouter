@@ -376,3 +376,77 @@ def test_the_commuter_profile_file_matches_what_its_header_says():
         ln.startswith("assign   consider_traffic") and "= true" in ln for ln in text.splitlines()
     )
     assert "pyBikeRouter custom profile: commuter-v1" in text
+
+
+def _payload_with_tags(rows: list[tuple[float, str]]) -> dict:
+    header = [
+        "Longitude", "Latitude", "Elevation", "Distance", "CostPerKm", "ElevCost",
+        "TurnCost", "NodeCost", "InitialCost", "WayTags", "NodeTags", "Time", "Energy",
+    ]  # fmt: skip
+    messages = [header] + [
+        ["0", "0", "0", str(length), "0", "0", "0", "0", "0", tags, "", "0", "0"]
+        for length, tags in rows
+    ]
+    total = sum(length for length, _ in rows)
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": [[10.0, 52.0], [10.1, 52.1]]},
+                "properties": {
+                    "track-length": str(total),
+                    "total-time": "600",
+                    "filtered ascend": "12",
+                    "messages": messages,
+                },
+            }
+        ],
+    }
+
+
+@respx.mock
+async def test_main_road_share_comes_from_the_way_tags_and_ignores_bike_lanes() -> None:
+    payload = _payload_with_tags(
+        [
+            (400, "highway=secondary surface=asphalt"),  # unprotected main road
+            (200, "highway=tertiary cycleway=lane"),  # main road with a lane: protected
+            (200, "highway=primary bicycle=designated"),  # designated for bikes: protected
+            (200, "highway=residential"),
+        ]
+    )
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=payload))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.main_road_share == 0.4
+
+
+@respx.mock
+async def test_without_way_tags_the_share_is_unknown_not_zero(brouter_route_response: dict) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    assert candidate.metrics.main_road_share is None
+
+
+@respx.mock
+async def test_alternatives_price_the_trip_with_the_other_profiles_and_are_marked() -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True)
+    found = await adapter.alternatives(make_request())  # gravel: touring + mtb
+    assert [c.provider_profile for c in found] == ["custom_touring-v1", "mtb"]
+    assert all(c.provenance["alternative_of"] == "custom_gravel-v2" for c in found)
+    assert {call.request.url.params["profile"] for call in route.calls} == {
+        "custom_touring-v1",
+        "mtb",
+    }
+
+
+@respx.mock
+async def test_alternatives_are_off_by_default_and_failures_are_dropped() -> None:
+    route = respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json={}))
+    assert await BRouterAdapter(base_url=BROUTER_BASE).alternatives(make_request()) == []
+    assert not route.called
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(500))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, max_retries=0)
+    assert await adapter.alternatives(make_request()) == []  # all failed: nothing, no raise
