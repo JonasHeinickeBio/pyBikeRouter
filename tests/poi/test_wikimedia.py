@@ -277,12 +277,52 @@ async def test_an_odd_summary_shape_costs_the_description_not_the_poi():
 
 async def test_a_language_can_only_ever_be_a_language_code_in_a_host_name():
     r = resolver()
-    for bad in ("evil.com/x", "en\n", "EN", "e", "en-", "a@b", "en.evil", "../x", ""):
+    for bad in (
+        "evil.com/x",
+        "en\n",
+        "EN",
+        "e",
+        "en-",
+        "a@b",
+        "en.evil",
+        "../x",
+        "",
+        "xx",  # well formed, but not a Wikipedia edition
+        "en-evil",
+    ):
         with pytest.raises(ValueError):
             r._wikipedia_base(bad)
         with pytest.raises(ValueError):
             await r.info(wikidata=None, wikipedia=None, osm_id=None, website=None, lang=bad)
     assert r._wikipedia_base("de") == "https://de.wikipedia.example"
-    assert r._wikipedia_base("zh-yue") == "https://zh-yue.wikipedia.example"
+    assert r._wikipedia_base("be-tarask") == "https://be-tarask.wikipedia.example"
     # A title never ends up in the host: bad tags are dropped before any request.
     assert await r.wikidata_for_titles(["evil.com/x:Title", "de\n:Title"]) == {}
+
+
+@respx.mock
+async def test_only_known_wikipedia_editions_are_ever_asked():
+    """Whatever the data says: an OSM tag or sitelink naming an unknown edition is ignored."""
+    route = respx.get(host="xx.wikipedia.example").mock(return_value=httpx.Response(200, json={}))
+    assert await resolver().wikidata_for_titles(["xx:Title"]) == {}
+    entity = fixture("wikidata_entity_raw.json")
+    entity["entities"]["Q4152"]["sitelinks"] = {"xxwiki": {"site": "xxwiki", "title": "T"}}
+    respx.get(WIKIDATA).mock(return_value=httpx.Response(200, json=entity))
+    info = await resolver().info(
+        wikidata="Q4152", wikipedia="xx:Other", osm_id=None, website=None, lang="de"
+    )
+    assert info.extract is None and all(link.kind != "wikipedia" for link in info.links)
+    assert not route.called
+
+
+@respx.mock
+async def test_the_info_cache_key_holds_no_client_supplied_text():
+    cache = InMemoryTTLCache()
+    respx.get(host="de.wikipedia.example").mock(
+        return_value=httpx.Response(200, json=fixture("wikipedia_summary_neuschwanstein.json"))
+    )
+    await resolver(cache=cache).info(
+        wikidata=None, wikipedia="de:Schloss Neuschwanstein", osm_id=None, website=None, lang="de"
+    )
+    keys = list(cache._store)
+    assert keys and all("Neuschwanstein" not in key and " " not in key for key in keys)

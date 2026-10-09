@@ -131,6 +131,16 @@ in the browser), and *Route past the most famous sights* with a count.
 | `POI_DEFAULT_BUFFER_M` / `POI_MAX_BUFFER_M` | how far from the route a sight may be, and the cap | `1500` / `5000` |
 | `POI_PER_CATEGORY_LIMIT` | most POIs returned per kind (best-known first) | `40` |
 
+## Which hosts are ever contacted
+
+Overpass (`POI_OVERPASS_URLS`), Wikidata (`POI_WIKIDATA_URL`) and
+`{lang}.wikipedia.org` (`POI_WIKIPEDIA_URL`). The language is the only client-influenced
+part of any URL: it must be one of the Wikipedia editions listed in
+`poi/wikipedia_languages.py` (a well-formed code that is not one, as in
+`/v1/pois/info?lang=xx`, is read in English), and a `wikipedia=xx:Title` tag or sitelink for
+an unknown edition is ignored. Titles are percent-encoded into the path. Cache keys never
+contain client text (hashed), and keys are stripped of line breaks before they are logged.
+
 ## Reliability
 
 The public Overpass service answers `504` under load -- during development of this

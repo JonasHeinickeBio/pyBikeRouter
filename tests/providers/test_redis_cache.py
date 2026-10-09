@@ -110,6 +110,18 @@ async def test_a_corrupt_entry_is_a_miss_and_not_an_outage(server, caplog):
     assert "not valid JSON" in caplog.text and not cache.circuit_open
 
 
+async def test_a_key_with_line_breaks_cannot_forge_log_lines(server, caplog):
+    cache, client = backend(server)
+    evil = "x\r\nWARNING forged entry"
+    await client.set(f"bike-routing:v{SCHEMA_VERSION}:{evil}", "{not json")
+    with caplog.at_level(logging.WARNING):
+        assert await cache.get(evil) is None
+        await cache.set(evil, {"x": object()}, ttl_s=60)
+    messages = [r.getMessage() for r in caplog.records]
+    assert len(messages) == 2 and all("forged entry" in m for m in messages)  # still readable ...
+    assert not any("\n" in m or "\r" in m for m in messages)  # ... but never a new line
+
+
 async def test_namespaced_views_do_not_collide(server):
     cache, client = backend(server)
     geocode, overpass = NamespacedCache(cache, "geocode"), NamespacedCache(cache, "overpass")

@@ -17,6 +17,7 @@ Wikimedia requires a descriptive ``User-Agent`` (a generic one gets blocked).
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
 from collections.abc import Iterable, Sequence
@@ -34,12 +35,12 @@ from bike_routing_agent.errors import (
 )
 from bike_routing_agent.poi.fetcher import DEFAULT_USER_AGENT
 from bike_routing_agent.poi.models import (
-    LANG_RE,
     QID_RE,
     WIKIPEDIA_TAG_RE,
     PoiInfo,
     PoiLink,
 )
+from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
 from bike_routing_agent.providers.base import CacheBackend
 
 logger = logging.getLogger(__name__)
@@ -140,7 +141,7 @@ class WikimediaResolver:
         by_lang: dict[str, list[str]] = {}
         for tag in sorted(set(tags)):
             match = WIKIPEDIA_TAG_RE.match(tag)
-            if match:
+            if match and match.group(1) in WIKIPEDIA_LANGUAGES:
                 by_lang.setdefault(match.group(1), []).append(match.group(2))
 
         result: dict[str, str] = {}
@@ -210,9 +211,11 @@ class WikimediaResolver:
         lang: str,
     ) -> PoiInfo:
         """Text, thumbnail and links for one POI. Whatever could not be fetched is left out."""
-        if not LANG_RE.fullmatch(lang):
-            raise ValueError(f"invalid language code {lang!r}")
-        cache_key = f"poi:info:{wikidata or ''}:{wikipedia or ''}:{lang}"
+        if lang not in WIKIPEDIA_LANGUAGES:
+            raise ValueError(f"unknown Wikipedia language {lang!r}")
+        # Hashed: the key holds text a client supplied, and cache keys end up in logs.
+        digest = hashlib.sha256(f"{wikidata}|{wikipedia}|{lang}".encode()).hexdigest()
+        cache_key = f"poi:info:{digest}"
         cached = await self._cache_get(cache_key)
         base: PoiInfo | None = None
         if isinstance(cached, dict):
@@ -360,10 +363,10 @@ class WikimediaResolver:
 
     def _wikipedia_base(self, lang: str) -> str:
         """``https://{lang}.wikipedia.org`` -- the only place a language enters a host name, so
-        it is checked here: a bare two/three letter code (optionally ``-xx``), never anything
-        that could change the host or add a path."""
-        if not LANG_RE.fullmatch(lang):
-            raise ValueError(f"invalid language code {lang!r}")
+        it must be one of the known Wikipedia editions (``WIKIPEDIA_LANGUAGES``): nothing a
+        client or an OSM tag says can change the host or add a path."""
+        if lang not in WIKIPEDIA_LANGUAGES:
+            raise ValueError(f"unknown Wikipedia language {lang!r}")
         return self._wikipedia_url.format(lang=lang)
 
     async def _get_json(self, url: str, params: dict[str, str] | None) -> Any:
@@ -448,6 +451,8 @@ def _pick_site(sitelinks: dict[str, str], project: str, lang: str) -> tuple[str,
     """``(language, title)`` of a project's article: requested language, English, then any."""
     pattern = re.compile(rf"^([a-z]{{2,3}}){project}$")
     found = {m.group(1): title for key, title in sitelinks.items() if (m := pattern.match(key))}
+    if project == "wiki":  # an article is fetched from its language's host: known editions only
+        found = {code: title for code, title in found.items() if code in WIKIPEDIA_LANGUAGES}
     for code in (lang, *_FALLBACK_LANGS):
         if code in found:
             return code, found[code]
@@ -464,7 +469,7 @@ def _pick_article(
     if picked:
         return picked
     match = WIKIPEDIA_TAG_RE.match(osm_tag or "")
-    if match:
+    if match and match.group(1) in WIKIPEDIA_LANGUAGES:
         return match.group(1), match.group(2)
     return None, None
 

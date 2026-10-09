@@ -319,3 +319,11 @@ async def test_a_failure_without_stops_is_not_retried(client, monkeypatch):
     monkeypatch.setattr(api_module, "_graph", graph)
     await client.post("/v1/route/plan", json={"origin": "A", "destination": "B", "poi_stops": {}})
     assert len(graph.inputs) == 1
+
+
+async def test_a_well_formed_but_unknown_language_is_read_in_english(client, stub):
+    response = await client.get("/v1/pois/info?wikidata=Q1&lang=xx")
+    assert response.status_code == 200
+    assert stub.calls[-1][1]["lang"] == "en"
+    await client.get("/v1/pois/info?wikidata=Q1&lang=de")
+    assert stub.calls[-1][1]["lang"] == "de"

@@ -47,6 +47,7 @@ from bike_routing_agent.poi.models import (
 )
 from bike_routing_agent.poi.service import PoiService
 from bike_routing_agent.poi.wikimedia import WikimediaResolver
+from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
 from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
@@ -795,6 +796,8 @@ async def poi_info(
     lang = lang.lower()
     if not LANG_RE.fullmatch(lang):
         raise HTTPException(status_code=422, detail="lang must be a language code like en or de")
+    if lang not in WIKIPEDIA_LANGUAGES:
+        lang = "en"  # a well-formed code Wikipedia does not have: read it in English
     if wikidata is not None and not QID_RE.match(wikidata):
         raise HTTPException(status_code=422, detail="wikidata must look like Q42")
     if wikipedia is not None and not WIKIPEDIA_TAG_RE.match(wikipedia):
