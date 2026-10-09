@@ -56,22 +56,87 @@ def test_the_download_command_names_every_missing_tile_and_the_official_source()
     assert command.count("curl") == 2
 
 
-def test_the_card_puts_both_options_to_the_user_and_says_nothing_happens_by_itself():
+def test_without_server_support_the_card_gives_commands_to_copy():
     html = call("cardHtml", error(), False)
     assert "Map data missing" in html and "no route could be made" in html
-    assert "Nothing is downloaded or changed automatically" in html
+    assert "Nothing is downloaded or changed until you choose" in html
     assert "1. Download the missing tile" in html and "100&ndash;200&nbsp;MB" in html
     assert "segments/W5_N50.rd5" in html and 'data-copy="coverage-download"' in html
-    assert "2. Use all routing engines" in html and "ROUTING_PROVIDER=all" in html
+    assert "BROUTER_SEGMENTS_DIR" in html  # how to get the button
+    assert "2. Use openrouteservice instead" in html and "ROUTING_PROVIDER=all" in html
     assert 'data-copy="coverage-env"' in html
+    assert "data-action" not in html  # nothing the server cannot do is offered as a button
     # The other tile of the trip is mentioned, but not part of the command.
     assert "E10_N50" in html and "segments/E10_N50.rd5" not in html
+
+
+CTX = {
+    "downloads": True,
+    "engines": ["brouter", "ors"],
+    "info": {"W5_N50": {"name": "W5_N50", "present": False, "size_bytes": 139294448}},
+}
+
+
+def test_with_server_support_the_card_offers_real_buttons_and_says_how_big_the_download_is():
+    html = call("cardHtml", error(), False, CTX)
+    assert 'data-action="download" data-segments="W5_N50"' in html
+    assert "Download W5_N50 (139 MB) now" in html  # 139294448 bytes, as the source reports it
+    assert 'id="coverage-progress"' in html
+    assert "Or run it yourself" in html and "segments/W5_N50.rd5" in html  # still available
+    assert 'data-action="use-engine" data-engine="ors"' in html
+    assert "Plan this trip with openrouteservice" in html and "This trip only" in html
+    assert "ROUTING_PROVIDER=all" in html  # the permanent way, tucked into the details
+
+
+def test_the_size_is_left_out_when_the_source_could_not_say():
+    ctx = {**CTX, "info": {"W5_N50": {"present": False, "size_bytes": None}}}
+    html = call("cardHtml", error(), False, ctx)
+    assert "Download W5_N50 now" in html and "MB) now" not in html
+
+
+def test_a_tile_already_on_disk_hints_at_a_restart():
+    ctx = {**CTX, "info": {"W5_N50": {"present": True, "size_bytes": 1}}}
+    assert "already on disk" in call("cardHtml", error(), False, ctx)
+
+
+def test_the_engine_button_is_only_offered_when_the_server_can_use_that_engine():
+    assert "use-engine" not in call("cardHtml", error(), False, {**CTX, "engines": ["brouter"]})
+    # ORS already in use: nothing to switch to.
+    assert "use-engine" not in call(
+        "cardHtml", error(configured_engines=["brouter", "ors"]), True, CTX
+    )
+
+
+def test_progress_is_shown_per_tile_and_failures_are_visible():
+    job = {
+        "state": "running",
+        "segments": [
+            {"name": "W5_N50", "state": "downloading", "bytes": 52428800, "total_bytes": 139294448},
+            {"name": "E10_N45", "state": "pending", "bytes": 0, "total_bytes": None},
+            {"name": "E10_N50", "state": "present", "bytes": 0, "total_bytes": None},
+        ],
+    }
+    html = call("progressHtml", job)
+    assert "52 of 139 MB (38%)" in html and "waiting" in html and "already on disk" in html
+    failed = {
+        "state": "failed",
+        "error": "disk full",
+        "segments": [{"name": "W5_N50", "state": "failed", "error": "<b>x</b>", "bytes": 0}],
+    }
+    out = call("progressHtml", failed)
+    assert "failed: &lt;b&gt;x&lt;/b&gt;" in out and "<b>" not in out and "disk full" in out
+    assert call("progressHtml", None) == ""
+    done = {
+        "state": "done",
+        "segments": [{"name": "W5_N50", "state": "done", "bytes": 1, "total_bytes": 100000000}],
+    }
+    assert "done (100 MB)" in call("progressHtml", done)
 
 
 def test_when_another_engine_answered_the_card_says_the_result_comes_from_it():
     html = call("cardHtml", error(configured_engines=["brouter", "ors"]), True)
     assert "the result below comes from the other engine" in html
-    assert "Use all routing engines" not in html  # already several engines
+    assert "Use openrouteservice instead" not in html  # already several engines
     assert "Several engines are already configured (brouter, ors)" in html
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import uuid
 from collections.abc import Callable
@@ -14,8 +15,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, StringConstraints
 
-from bike_routing_agent.config import Settings, settings
+from bike_routing_agent.config import PUBLIC_ORS_BASE_URLS, Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.errors import ProviderError
@@ -56,6 +58,14 @@ from bike_routing_agent.providers.base import (
     RoutingProvider,
 )
 from bike_routing_agent.providers.brouter import BRouterAdapter
+from bike_routing_agent.providers.brouter_downloads import (
+    MAX_SEGMENTS_PER_JOB,
+    SEGMENT_NAME_RE,
+    DownloadBusyError,
+    DownloadJob,
+    SegmentDownloader,
+    SegmentInfo,
+)
 from bike_routing_agent.providers.geocoder import NominatimGeocoder
 from bike_routing_agent.providers.ors import OpenRouteServiceAdapter
 from bike_routing_agent.providers.ors_client import OpenRouteServiceClient
@@ -168,6 +178,59 @@ def build_weather_service(
         cache_ttl_s=cfg.weather_cache_ttl_s,
         merge=cfg.weather_merge,
     )
+
+
+def build_segment_downloader(cfg: Settings) -> SegmentDownloader | None:
+    """The BRouter tile downloader, or ``None`` unless ``BROUTER_SEGMENTS_DIR`` names the folder
+    BRouter reads its tiles from (and this process can write to)."""
+    if not cfg.brouter_segments_dir:
+        return None
+    directory = Path(cfg.brouter_segments_dir)
+    if not directory.is_dir() or not os.access(directory, os.W_OK):
+        logger.warning(
+            "BROUTER_SEGMENTS_DIR %s is not a writable directory; tile downloads are off", directory
+        )
+        return None
+    return SegmentDownloader(
+        directory,
+        base_url=cfg.brouter_segments_url,
+        max_bytes=cfg.brouter_segments_max_mb * 2**20,
+    )
+
+
+def build_optional_routing_providers(
+    cfg: Settings, configured: list[RoutingProvider]
+) -> list[RoutingProvider]:
+    """Engines a single request may pick instead of the configured ones.
+
+    Offered: BRouter always, openrouteservice when it can work (an API key, or a self-hosted
+    base URL). Valhalla only when configured -- its default address answers nothing. Engines
+    that are already configured are not repeated.
+    """
+    have = {p.name for p in configured}
+    optional: list[RoutingProvider] = []
+    if "ors" not in have and (
+        cfg.ors_api_key or cfg.ors_base_url.rstrip("/") not in PUBLIC_ORS_BASE_URLS
+    ):
+        optional.append(
+            OpenRouteServiceAdapter(
+                api_key=cfg.ors_api_key,
+                base_url=cfg.ors_base_url,
+                timeout_s=cfg.ors_timeout_s,
+                max_retries=cfg.ors_max_retries,
+            )
+        )
+    if "brouter" not in have:
+        optional.append(
+            BRouterAdapter(
+                base_url=cfg.brouter_base_url,
+                timeout_s=cfg.brouter_timeout_s,
+                max_retries=cfg.brouter_max_retries,
+                alternatives=cfg.brouter_alternatives,
+                alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+            )
+        )
+    return optional
 
 
 def build_poi_service(cfg: Settings, *, cache: CacheBackend | None = None) -> PoiService | None:
@@ -377,6 +440,8 @@ _artifact_store, _history = build_storage(settings)
 _weather_service = build_weather_service(settings, cache=_cache)
 _llm_parser = build_llm_parser(settings)
 _poi_service = build_poi_service(settings, cache=_cache)
+_segment_downloader = build_segment_downloader(settings)
+_optional_routing_providers = build_optional_routing_providers(settings, _routing_providers)
 
 _health_monitor = build_health_monitor(
     geocoder=_geocode_provider,
@@ -410,6 +475,7 @@ _graph = build_graph(
         settings.weather_option_hours_after,
     ),
     poi_service=_poi_service,
+    optional_routing_providers=_optional_routing_providers,
 )
 
 
@@ -432,6 +498,7 @@ def build_graph_for_settings(cfg: Settings) -> Any:
         weather_spacing_km=cfg.weather_sample_spacing_km,
         weather_option_hours=(cfg.weather_option_hours_before, cfg.weather_option_hours_after),
         poi_service=build_poi_service(cfg, cache=cache),
+        optional_routing_providers=build_optional_routing_providers(cfg, routing_providers),
     )
 
 
@@ -457,6 +524,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "poi_stops": (
             request.poi_stops.model_dump(mode="json") if request.poi_stops is not None else None
         ),
+        "routing_engines": request.routing_engines,
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
@@ -516,13 +584,19 @@ async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
 
 
 @app.get("/v1/capabilities")
-async def capabilities() -> dict[str, bool]:
-    """Which optional features this instance has, for clients to adapt to."""
+async def capabilities() -> dict[str, Any]:
+    """Which optional features this instance has, for clients to adapt to.
+
+    Booleans for features; ``engines`` lists the routing engines a plan request may name in
+    ``routing_engines`` (the configured ones and the optional ones the server offers).
+    """
     return {
         "text_planning": _llm_parser is not None,
         "weather": _weather_service is not None,
-        "pois": _poi_service is not None,
         "history": _history is not None,
+        "pois": _poi_service is not None,
+        "segment_downloads": _segment_downloader is not None,
+        "engines": [p.name for p in [*_routing_providers, *_optional_routing_providers]],
     }
 
 
@@ -695,6 +769,60 @@ async def get_history_plan(plan_id: str) -> PlanRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="plan not found")
     return record
+
+
+def _require_segment_downloads() -> SegmentDownloader:
+    if _segment_downloader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="map downloads are off (set BROUTER_SEGMENTS_DIR to BRouter's tile folder)",
+        )
+    return _segment_downloader
+
+
+class SegmentDownloadRequest(BaseModel):
+    segments: list[Annotated[str, StringConstraints(pattern=SEGMENT_NAME_RE.pattern)]] = Field(
+        min_length=1, max_length=MAX_SEGMENTS_PER_JOB
+    )
+
+
+class SegmentsResponse(BaseModel):
+    segments: list[SegmentInfo]
+    free_bytes: int
+
+
+@app.get("/v1/routing/segments", response_model=SegmentsResponse)
+async def routing_segments(
+    names: Annotated[str, Query(description="comma separated tile names, e.g. W5_N50")],
+) -> SegmentsResponse:
+    """Whether BRouter map tiles are present and how big each is at the source, so the form
+    can tell the user before anything is downloaded."""
+    downloader = _require_segment_downloads()
+    try:
+        infos = await downloader.inspect([n for n in names.split(",") if n])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SegmentsResponse(segments=infos, free_bytes=downloader.free_bytes())
+
+
+@app.post("/v1/routing/segments/download", response_model=DownloadJob, status_code=202)
+async def start_segment_download(request: SegmentDownloadRequest) -> DownloadJob:
+    """Start downloading BRouter map tiles (large: ~100-200 MB each). Poll the job."""
+    downloader = _require_segment_downloads()
+    try:
+        return downloader.start(request.segments)
+    except DownloadBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/v1/routing/segments/download/{job_id}", response_model=DownloadJob)
+async def segment_download_status(job_id: str) -> DownloadJob:
+    job = _require_segment_downloads().job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="no such download")
+    return job
 
 
 def _require_pois() -> PoiService:

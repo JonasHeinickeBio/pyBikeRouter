@@ -63,11 +63,33 @@ def _coverage_error(
     return as_dict
 
 
-def build_route_node(*, routing_providers: Sequence[RoutingProvider]) -> NodeFn:
+def _engines_for(
+    requested: Sequence[str] | None,
+    configured: Sequence[RoutingProvider],
+    optional: Sequence[RoutingProvider],
+) -> Sequence[RoutingProvider]:
+    """The engines for one request: the ones it names (among the configured and the optional
+    ones the server offers), or the configured ones when it names none that exist."""
+    if not requested:
+        return configured
+    by_name = {p.name: p for p in [*optional, *configured]}  # configured wins a name clash
+    chosen = [by_name[name] for name in dict.fromkeys(requested) if name in by_name]
+    return chosen or configured
+
+
+def build_route_node(
+    *,
+    routing_providers: Sequence[RoutingProvider],
+    optional_providers: Sequence[RoutingProvider] = (),
+) -> NodeFn:
     if not routing_providers:
         raise ValueError("build_route_node requires at least one routing provider")
+    configured_providers = routing_providers
 
     async def route_with_provider(state: RouteAgentState) -> dict[str, Any]:
+        routing_providers = _engines_for(
+            state.get("routing_engines"), configured_providers, optional_providers
+        )
         constraints = RouteConstraints.model_validate(state.get("constraints", {}))
         origin = Coordinate.model_validate(state["resolved_origin"])
         via = [Coordinate.model_validate(v) for v in state.get("resolved_via", [])]

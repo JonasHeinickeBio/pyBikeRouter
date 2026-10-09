@@ -211,20 +211,44 @@ adds the other tiles the trip's start, end and via points lie in. With only BRou
 configured the plan is a `provider_failure`; with another engine the plan goes on with that
 engine's candidate and the error stays in `errors`.
 
-**The web form puts the choice to the user** (`frontend/coverage.js`): a *Map data missing*
-card with the two ways out and a copy button for each --
+**The web form puts the choice to the user** (`frontend/coverage.js`): a *Map data missing* card
+with the two ways out. What it offers as a button depends on what the server can do
+(`GET /v1/capabilities`: `segment_downloads`, `engines`); otherwise it gives the command or the
+setting to copy.
 
-1. **Download the missing tile(s)**: the exact `curl` lines into `docker/brouter/segments/`
-   from the official source, then restart the BRouter container. Tiles are large; the three
-   checked on 2026-10-09 were 125 MB (`E10_N50`), 139 MB (`W5_N50`) and 199 MB (`E10_N45`).
-2. **`ROUTING_PROVIDER=all`**: ORS answers where BRouter has no data. Checked: with BRouter
-   lacking the tile and Valhalla not running, a plan still came back from ORS, the Valhalla
-   failure was listed in `errors` and `/readyz` reported `degraded` (still ready). ORS's
-   profile for a bike type (gravel -> `cycling-regular`) can outrank the BRouter gravel profile.
+1. **Download the missing tile(s).** With `BROUTER_SEGMENTS_DIR` set the card shows *Download
+   W5_N50 (139 MB) now* -- the size comes from the source (`GET /v1/routing/segments`, a HEAD
+   request) so it is known before anything is stored. Clicking starts a job on the server
+   (`POST /v1/routing/segments/download`), the card shows per-tile progress, and the trip is
+   planned again when the job is done. Without that setting the card shows the `curl` lines for
+   `docker/brouter/segments/`. Either way tiles come from the official source and are large
+   (checked on 2026-10-09: 125 MB `E10_N50`, 139 MB `W5_N50`, 199 MB `E10_N45`).
+2. **Use openrouteservice instead.** *Plan this trip with openrouteservice* re-plans with
+   `routing_engines: ["ors"]` for this request only (shown when the server offers ORS and it is
+   not already used). The permanent way is `ROUTING_PROVIDER=all`, which is behind a
+   *The setting* fold: ORS answers where BRouter has no data. Checked: with BRouter lacking the
+   tile and Valhalla not running, a plan still came back from ORS, the Valhalla failure was
+   listed in `errors` and `/readyz` reported `degraded` (still ready). ORS's profile for a bike
+   type (gravel -> `cycling-regular`) can differ from the BRouter gravel profile.
 
-The app never downloads a tile or changes its settings by itself; the card only explains and
-hands over the command or the line for `.env`. Not verified: the downloaded tile working with
-the pinned `lookups.dat` (see the BRouter README on version mismatches).
+Nothing happens until the user clicks. The server-side download is bounded
+(`providers/brouter_downloads.py`): validated tile names (at most 4 per job), only the
+configured source (`BROUTER_SEGMENTS_URL`, official brouter.de by default; https, no redirects
+followed), one job at a time, the tile's announced size must be known and under
+`BROUTER_SEGMENTS_MAX_MB` (600), free disk space is checked first, and a tile appears under its
+real name only when complete (`.part` file, size check, atomic rename). The endpoints are as open
+as the rest of the API: anyone who can reach it can start a download, so keep the API on
+loopback or behind tailscale (see [mobile.md](mobile.md)).
+
+BRouter must see the folder: mount the same directory the BRouter container reads
+(`docker/brouter/segments`) into the API container, writable for its user, and set
+`BROUTER_SEGMENTS_DIR` to the path *inside* the API container.
+
+Not verified: a real tile downloaded this way and then used by BRouter without a restart (the
+BRouter README says to restart the container; the lookups version of a newer tile may also
+differ from the pinned `lookups.dat`). The flow itself -- sizes, progress, atomic file, re-plan,
+the one-shot ORS plan -- was exercised in a browser against a local stand-in for brouter.de
+serving a 3 MB file.
 
 ## BRouter per-request settings
 

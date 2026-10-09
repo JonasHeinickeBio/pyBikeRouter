@@ -1177,6 +1177,10 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
         "weather",
         "history",
         "pois",
+        "segment_downloads",
+        "engines",
     }
+    assert off["segment_downloads"] is False  # needs BROUTER_SEGMENTS_DIR
+    assert isinstance(off["engines"], list) and off["engines"]
     monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())
     assert (await client.get("/v1/capabilities")).json()["text_planning"] is True

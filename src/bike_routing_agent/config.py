@@ -118,6 +118,13 @@ class Settings(BaseSettings):
     weather_max_samples: int = 5
     weather_sample_spacing_km: float = 10.0
 
+    # Map tiles on request: when this folder (the one BRouter reads its .rd5 tiles from, writable
+    # for this process) is set, the web form can download a missing tile after telling the user
+    # how big it is. Unset = no download endpoint; the form then shows the command to run.
+    brouter_segments_dir: str | None = None
+    brouter_segments_url: str = "https://brouter.de/brouter/segments4/"
+    brouter_segments_max_mb: int = 600
+
     # Points of interest (issue #55): found with Overpass, ranked and described with
     # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).
     # Searched areas and route shapes are sent to those services; false switches it off.
@@ -298,6 +305,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "llm_max_output_tokens must be between 256 and 64000 "
                 f"(got {self.llm_max_output_tokens})"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_brouter_segment_settings(self) -> Settings:
+        if self.brouter_segments_max_mb < 1:
+            raise ValueError("brouter_segments_max_mb must be >= 1")
+        url = self.brouter_segments_url
+        loopback = url.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]"))
+        if not (url.startswith("https://") or loopback):
+            raise ValueError(
+                "brouter_segments_url must be an https URL (http only for a loopback mirror)"
             )
         return self
 

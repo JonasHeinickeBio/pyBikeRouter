@@ -45,6 +45,8 @@ class RouteAgentState(TypedDict, total=False):
     # Famous-POI route stops (issue #55): the request (validated PoiStopsRequest as a dict),
     # the POIs chosen as extra via points, and how the selection went.
     poi_stops_request: dict[str, Any] | None
+    # Engines to use for this request instead of the configured ones (None = configured).
+    routing_engines: list[str] | None
     poi_stops: list[dict[str, Any]] | None
     poi_stops_status: str | None
     # What a free-text parser understood (issue #30): the structured request,

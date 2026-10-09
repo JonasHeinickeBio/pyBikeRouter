@@ -473,3 +473,28 @@ async def test_with_another_engine_the_plan_goes_on_and_still_reports_the_gap():
     [error] = update["errors"]
     assert error["code"] == "routing_area_not_covered"
     assert error["detail"]["configured_engines"] == ["brouter", "ors"]
+
+
+async def test_a_request_can_name_the_engines_to_use_instead_of_the_configured_ones():
+    brouter = CapturingRouter(name="brouter")
+    ors = CapturingRouter(name="ors")
+    node = build_route_node(routing_providers=[brouter], optional_providers=[ors])
+
+    update = await node({**base_state(), "routing_engines": ["ors"]})
+    assert [c["provider"] for c in update["candidates"]] == ["ors"]
+    assert ors.last_request is not None and brouter.last_request is None
+
+    both = await node({**base_state(), "routing_engines": ["brouter", "ors"]})
+    assert sorted(c["provider"] for c in both["candidates"]) == ["brouter", "ors"]
+
+
+async def test_without_a_choice_or_with_an_unknown_one_the_configured_engines_run():
+    brouter = CapturingRouter(name="brouter")
+    ors = CapturingRouter(name="ors")
+    node = build_route_node(routing_providers=[brouter], optional_providers=[ors])
+    for state in (base_state(), {**base_state(), "routing_engines": None}):
+        update = await node(state)
+        assert [c["provider"] for c in update["candidates"]] == ["brouter"]
+    odd = await node({**base_state(), "routing_engines": ["valhalla"]})  # not offered
+    assert [c["provider"] for c in odd["candidates"]] == ["brouter"]
+    assert ors.last_request is None

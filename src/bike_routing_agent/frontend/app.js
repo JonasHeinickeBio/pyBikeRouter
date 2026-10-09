@@ -91,6 +91,9 @@ const state = {
   poiPrefs: { enabled: true, keys: [] },
   poiRequest: 0, // bumped by every refresh and clear, so a slow answer cannot redraw stale POIs
   poiTimer: null,
+  engineOverride: null, // engines for the next plan only (set by "plan with openrouteservice")
+  segmentJob: null, // the tile download being followed
+  capsPromise: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
   aborted: null,
@@ -368,6 +371,10 @@ function buildRequest() {
   if (departure !== null) request.departure_time = departure.toISOString();
   const stops = poiStopsRequest();
   if (stops !== null) request.poi_stops = stops;
+  if (state.engineOverride) {
+    request.routing_engines = state.engineOverride;
+    state.engineOverride = null; // for this plan only
+  }
   return request;
 }
 
@@ -589,13 +596,83 @@ function renderResponse(data, secs) {
   if (data.status !== "ready") schedulePoiRefresh();
 }
 
+function getCapabilities() {
+  if (!state.capsPromise) {
+    state.capsPromise = fetch(`${API_BASE}/v1/capabilities`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}));
+  }
+  return state.capsPromise;
+}
+
 /** A routing engine without map data for the trip: put the choice to the user (coverage.js). */
-function renderCoverage(data) {
+async function renderCoverage(data) {
   const gap = BikeCoverage.find(data.errors);
-  const html = gap ? BikeCoverage.cardHtml(gap, data.status === "ready") : "";
+  if (!gap) {
+    els.coverageCard.hidden = true;
+    els.coverageCard.innerHTML = "";
+    return;
+  }
+  const hasRoute = data.status === "ready";
+  const caps = await getCapabilities();
+  const ctx = { downloads: Boolean(caps.segment_downloads), engines: caps.engines || [], info: {} };
+  const missing = BikeCoverage.details(gap).missing;
+  if (ctx.downloads && missing.length) {
+    try {
+      const resp = await fetch(`${API_BASE}/v1/routing/segments?names=${encodeURIComponent(missing.join(","))}`);
+      if (resp.ok) for (const s of (await resp.json()).segments) ctx.info[s.name] = s;
+    } catch {
+      // sizes are a courtesy: the button works without them
+    }
+  }
+  // A newer plan may have replaced this one while the sizes were fetched.
+  if (state.lastResponse !== data) return;
+  const html = BikeCoverage.cardHtml(gap, hasRoute, ctx);
   els.coverageCard.hidden = html === "";
   els.coverageCard.innerHTML = html;
   if (html) revealOnPhone(els.coverageCard);
+}
+
+/** Download the tiles the user chose, show progress, and plan the trip again when done. */
+async function downloadSegments(segments, button) {
+  const box = () => document.getElementById("coverage-progress");
+  button.disabled = true;
+  const show = (html) => {
+    if (box()) box().innerHTML = html;
+  };
+  try {
+    const resp = await fetch(`${API_BASE}/v1/routing/segments/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ segments }),
+    });
+    if (!resp.ok) {
+      const detail = await safeErrorText(resp);
+      show(`<div class="coverage-row failed">${escapeHtml(resp.status === 409 ? "A map download is already running \u2014 wait for it to finish." : detail)}</div>`);
+      button.disabled = false;
+      return;
+    }
+    let job = await resp.json();
+    state.segmentJob = job.id;
+    while (job.state === "running") {
+      show(BikeCoverage.progressHtml(job));
+      await new Promise((r) => setTimeout(r, 1500));
+      if (state.segmentJob !== job.id) return; // reset or another download took over
+      const poll = await fetch(`${API_BASE}/v1/routing/segments/download/${job.id}`);
+      if (!poll.ok) throw new Error(`HTTP ${poll.status}`);
+      job = await poll.json();
+    }
+    show(BikeCoverage.progressHtml(job));
+    if (job.state === "done") {
+      setStatus("info", "Map data downloaded &mdash; planning again&hellip;");
+      planRoute();
+    } else {
+      button.disabled = false;
+    }
+  } catch (err) {
+    show(`<div class="coverage-row failed">${escapeHtml(String(err))}</div>`);
+    button.disabled = false;
+  }
 }
 
 async function copyText(text) {
@@ -1043,6 +1120,16 @@ function wireEvents() {
     $(id).addEventListener("input", () => markCoordInput($(id)));
   }
   els.coverageCard.addEventListener("click", async (ev) => {
+    const action = ev.target.closest("button[data-action]");
+    if (action) {
+      if (action.dataset.action === "download") {
+        downloadSegments(action.dataset.segments.split(","), action);
+      } else if (action.dataset.action === "use-engine") {
+        state.engineOverride = [action.dataset.engine];
+        planRoute();
+      }
+      return;
+    }
     const button = ev.target.closest("button[data-copy]");
     if (!button) return;
     const source = $(button.dataset.copy);
