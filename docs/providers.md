@@ -191,6 +191,21 @@ lets the scorer pick the best candidate across engines.
    no-route paths.
 
 
+## BRouter serves one request at a time
+
+A stock BRouter server runs one routing thread (`server.sh` starts it with `maxthreads` 1). A
+request that waits more than about two seconds for that thread is **cancelled** and answered with HTTP
+`400` and the body `operation killed by thread-priority-watchdog after 1 seconds` (its log says
+`contention! ms killed 2000`). The main route and its alternatives are sent at the same time, so on a
+longer route one of them -- often the main route -- was killed: an intermittent
+`provider_bad_response`, 2 of 3 plans failing in a measurement on Braunschweig -> Goslar (56 km).
+
+The adapter now queues its requests (`BROUTER_MAX_CONCURRENCY`, default `1`) so BRouter never has
+two at once, and retries a request it did cancel (`BROUTER_MAX_RETRIES`) and reports it as
+`provider_unavailable` ("BRouter was busy"), not as a bad request. After the change the same plan
+succeeded 6 times out of 6 (2-3 candidates, 6-8 s). The price: the alternatives wait their turn, so on
+a long route the last alternative can miss `BROUTER_ALTERNATIVES_TIMEOUT_S` and be left out.
+
 ## BRouter map coverage
 
 BRouter only routes where it has the map tiles (`.rd5`, one per 5x5 degree; the Braunschweig

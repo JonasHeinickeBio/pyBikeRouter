@@ -327,9 +327,26 @@ and a `llm_parser_*` error code.
 ## GET /v1/capabilities
 
 `{"text_planning": bool, "weather": bool, "history": bool, "pois": bool, "segment_downloads":
-bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
+bool, "chat": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
 web form to show or hide controls; `engines` are the names a plan request may give in
 `routing_engines` (the configured engines plus optional ones the server can use).
+
+## POST /v1/chat
+
+One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id": "<from the last reply>",
+"timezone": "Europe/Berlin"}` -- `message` 1-500 characters; `session_id` (32 hex characters) and
+`timezone` optional; an unknown or missing session starts a new conversation. Response:
+
+```json
+{"session_id": "...", "reply": "Here is your route: 30.6 km, ...", "suggestions": ["Alternatives", "..."],
+ "plan": { "...": "a RoutePlanResponse, only when there is one to draw" }, "focus_rank": null,
+ "intent": "plan", "awaiting": null}
+```
+
+`suggestions` are quick answers; `plan` is present when the turn produced (or re-showed) a route, and
+`focus_rank` names the alternative that was asked for; `awaiting` is `place_choice` (an ambiguous place
+waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
+`CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
 
 ## BRouter map tiles
 

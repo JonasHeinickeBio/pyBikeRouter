@@ -59,6 +59,4 @@ class SurfaceEnricher(Protocol):
 
     name: str
 
-    async def surface_profile(
-        self, coordinates: Sequence[Coordinate]
-    ) -> SurfaceSummary: ...
+    async def surface_profile(self, coordinates: Sequence[Coordinate]) -> SurfaceSummary: ...

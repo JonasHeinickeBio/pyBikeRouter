@@ -639,3 +639,9 @@ def test_build_poi_service_respects_the_switch_and_splits_the_instances(monkeypa
     )
     assert service is not None
     assert service._fetcher._base_urls == ["https://a.example/x", "https://b.example/y"]
+
+
+def test_brouter_concurrency_defaults_to_one_and_must_be_positive():
+    assert Settings(_env_file=None).brouter_max_concurrency == 1
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, brouter_max_concurrency=0)

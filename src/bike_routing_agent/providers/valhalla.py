@@ -79,6 +79,7 @@ def _error_message_from_body(body: str) -> str | None:
             return value
     return None
 
+
 # 30 m matches the resolution of Valhalla's default elevation data source.
 _ELEVATION_INTERVAL_M = 30
 
@@ -225,9 +226,7 @@ class ValhallaAdapter:
         )
 
     @staticmethod
-    def _raise_for_status_message(
-        status_code: int, body: str, message: str | None = None
-    ) -> None:
+    def _raise_for_status_message(status_code: int, body: str, message: str | None = None) -> None:
         haystack = f"{message or ''} {body}".lower()
         if any(marker in haystack for marker in _NO_ROUTE_MARKERS):
             raise ProviderNoRouteError(
@@ -319,9 +318,7 @@ class ValhallaAdapter:
         coordinates: list[list[float]] = []
         for leg in legs:
             if not isinstance(leg, dict):
-                raise ProviderBadResponseError(
-                    "malformed Valhalla trip leg", provider=self.name
-                )
+                raise ProviderBadResponseError("malformed Valhalla trip leg", provider=self.name)
             encoded = leg.get("shape")
             if not isinstance(encoded, str):
                 raise ProviderBadResponseError(
@@ -335,9 +332,7 @@ class ValhallaAdapter:
             coordinates.extend(leg_coordinates)
 
         if len(coordinates) < 2:
-            raise ProviderNoRouteError(
-                "Valhalla route geometry is degenerate", provider=self.name
-            )
+            raise ProviderNoRouteError("Valhalla route geometry is degenerate", provider=self.name)
         return coordinates
 
     @staticmethod
@@ -419,9 +414,7 @@ def decode_polyline6(encoded: str, *, provider: str = "valhalla") -> list[list[f
         result = 0
         while True:
             if index >= length:
-                raise ProviderBadResponseError(
-                    "Valhalla route shape truncated", provider=provider
-                )
+                raise ProviderBadResponseError("Valhalla route shape truncated", provider=provider)
             chunk = data[index] - 63
             index += 1
             result |= (chunk & 0x1F) << shift
@@ -434,9 +427,7 @@ def decode_polyline6(encoded: str, *, provider: str = "valhalla") -> list[list[f
         result = 0
         while True:
             if index >= length:
-                raise ProviderBadResponseError(
-                    "Valhalla route shape truncated", provider=provider
-                )
+                raise ProviderBadResponseError("Valhalla route shape truncated", provider=provider)
             chunk = data[index] - 63
             index += 1
             result |= (chunk & 0x1F) << shift

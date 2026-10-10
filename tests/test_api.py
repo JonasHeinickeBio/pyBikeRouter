@@ -59,6 +59,9 @@ async def test_frontend_static_assets_are_served(client):
         ("/index.html", 'id="coverage-card"'),
         ("/index.html", 'src="coverage.js"'),
         ("/settings.js", "BikeSettings"),
+        ("/chat.js", "BikeChat"),
+        ("/index.html", 'id="chat-panel"'),
+        ("/app.js", "v1/chat"),
         ("/index.html", 'id="settings-panel"'),
         ("/index.html", 'src="settings.js"'),
         ("/app.js", "v1/pois/along-route"),
@@ -1181,6 +1184,7 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
         "history",
         "pois",
         "segment_downloads",
+        "chat",
         "engines",
     }
     assert off["segment_downloads"] is False  # needs BROUTER_SEGMENTS_DIR

@@ -82,9 +82,16 @@ class OpenRouteServiceClient:
     # Transport layer
     # ------------------------------------------------------------------
 
-    async def _send(self, method: str, path: str, *, params: dict[str, Any] | None = None,
-                    body: dict[str, Any] | None = None, retries: int | None = None,
-                    raise_on_5xx: bool = True) -> httpx.Response:
+    async def _send(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+        retries: int | None = None,
+        raise_on_5xx: bool = True,
+    ) -> httpx.Response:
         """Send one request with timeout and retry-on-5xx/timeout.
 
         Returns the raw response; status-code mapping is the caller's job.
@@ -105,7 +112,11 @@ class OpenRouteServiceClient:
             try:
                 if self._client is not None:
                     response = await self._client.request(
-                        method, url, params=params, json=body, headers=headers,
+                        method,
+                        url,
+                        params=params,
+                        json=body,
+                        headers=headers,
                         timeout=self._timeout_s,
                     )
                 else:
@@ -168,9 +179,7 @@ class OpenRouteServiceClient:
         try:
             return response.json()
         except json.JSONDecodeError as exc:
-            raise ProviderBadResponseError(
-                "ORS returned invalid JSON", provider=self.name
-            ) from exc
+            raise ProviderBadResponseError("ORS returned invalid JSON", provider=self.name) from exc
 
     async def _request_json(
         self,
@@ -238,9 +247,7 @@ class OpenRouteServiceClient:
         Returns a GeoJSON response; no options other than the two
         coordinates can be sent.
         """
-        params = {
-            "coordinates": f"{start[0]},{start[1]};{end[0]},{end[1]}"
-        }
+        params = {"coordinates": f"{start[0]},{start[1]};{end[0]},{end[1]}"}
         return await self._request_json("GET", f"/v2/directions/{profile}", params=params)
 
     async def directions(
@@ -324,7 +331,8 @@ class OpenRouteServiceClient:
         if options:
             body["options"] = options
         path = (
-            f"/v2/isochrones/{profile}" if format == "geojson"
+            f"/v2/isochrones/{profile}"
+            if format == "geojson"
             else f"/v2/isochrones/{profile}/{format}"
         )
         return await self._request_json("POST", path, body=body)
@@ -459,7 +467,9 @@ class OpenRouteServiceClient:
         if options:
             body["options"] = options
         return await self._request(
-            "POST", "/openelevationservice/v0/line", body=body,
+            "POST",
+            "/openelevationservice/v0/line",
+            body=body,
             parse=self._elevation_parse(format_out),
         )
 
@@ -490,12 +500,16 @@ class OpenRouteServiceClient:
                 point = f"{geometry[0]},{geometry[1]}"
             params = {"geometry": point}
             return await self._request(
-                "GET", "/openelevationservice/v0/point", params=params,
+                "GET",
+                "/openelevationservice/v0/point",
+                params=params,
                 parse=self._elevation_parse(format_out),
             )
         body = {"format_in": format_in, "format_out": format_out, "geometry": geometry}
         return await self._request(
-            "POST", "/openelevationservice/v0/point", body=body,
+            "POST",
+            "/openelevationservice/v0/point",
+            body=body,
             parse=self._elevation_parse(format_out),
         )
 

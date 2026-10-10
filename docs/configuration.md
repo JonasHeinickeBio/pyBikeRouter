@@ -51,6 +51,8 @@ cp .env.example .env
 | `WEATHER_OPTION_HOURS_BEFORE` / `WEATHER_OPTION_HOURS_AFTER` | compare departures this many hours before/after the requested one (0-12 each; both `0` = off) -- [weather.md](weather.md#other-departure-times) | `3` / `6` |
 | `WEATHER_MAX_SAMPLES` / `WEATHER_SAMPLE_SPACING_KM` | forecast points per route (2-10) and their spacing | `5` / `10` |
 | `BROUTER_SEGMENTS_DIR` / `BROUTER_SEGMENTS_URL` / `BROUTER_SEGMENTS_MAX_MB` | the folder BRouter reads its `.rd5` tiles from (writable for the API; unset = no download button, the form shows the command instead), where tiles come from, and the size limit -- [providers.md](providers.md#brouter-map-coverage) | unset / `https://brouter.de/brouter/segments4/` / `600` |
+| `CHAT_ENABLED` / `CHAT_MAX_SESSIONS` | the chat ([chat.md](chat.md)): on/off, most conversations kept in memory | `true` / `200` |
+| `BROUTER_MAX_CONCURRENCY` | requests sent to BRouter at the same time; `1` matches a stock server (one routing thread) -- more makes BRouter cancel the waiting ones ([providers.md](providers.md#brouter-serves-one-request-at-a-time)) | `1` |
 | `POI_ENABLED` / `POI_OVERPASS_URLS` / `POI_USER_AGENT` | points of interest on/off, Overpass instances (comma separated, tried in order), identifying User-Agent -- all `POI_*` settings in [pois.md](pois.md#configuration) | `true` / public Overpass / project URL |
 | `WEATHER_DWD_URL` / `WEATHER_OPEN_METEO_URL` / `WEATHER_MET_NO_URL` | provider endpoints (override for a self-hosted Bright Sky/Open-Meteo or a proxy) | public URLs |
 | `EXPORT_DIR` | directory for GeoJSON/GPX artifacts | `exports` |

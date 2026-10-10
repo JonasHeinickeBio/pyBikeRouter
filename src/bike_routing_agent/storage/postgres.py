@@ -166,9 +166,7 @@ class PostgresDatabase:
                 # connect timeout (not the pool's 30 s open wait) and a
                 # readiness check never creates the schema as a side effect.
                 psycopg, _ = _import_psycopg()
-                with psycopg.connect(
-                    self._url, connect_timeout=max(1, round(timeout_s))
-                ) as conn:
+                with psycopg.connect(self._url, connect_timeout=max(1, round(timeout_s))) as conn:
                     conn.execute("SELECT 1")
         except Exception:
             logger.warning("database ping failed", exc_info=True)
@@ -404,9 +402,7 @@ class PostgresRouteHistory:
             params["profile"] = plan_filter.profile
         if plan_filter.bbox is not None:
             cand_where.append("c.geom && ST_MakeEnvelope(%(x0)s, %(y0)s, %(x1)s, %(y1)s, 4326)")
-            params.update(
-                zip(("x0", "y0", "x1", "y1"), plan_filter.bbox, strict=True)
-            )
+            params.update(zip(("x0", "y0", "x1", "y1"), plan_filter.bbox, strict=True))
         if cand_where:
             where.append(
                 "EXISTS (SELECT 1 FROM candidates c WHERE c.plan_id = p.plan_id AND "
@@ -461,7 +457,6 @@ class PostgresRouteHistory:
             )
             for pid, created_at, status, bike_type, o_lon, o_lat, d_lon, d_lat in plans
         ]
-
 
     def stats(self, stats_filter: StatsFilter) -> HistoryStats:
         params: dict[str, Any] = {}

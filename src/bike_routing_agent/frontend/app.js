@@ -73,6 +73,12 @@ const els = {
   poiStopsHint: $("poi-stops-hint"),
   poiStopsNote: $("poi-stops-note"),
   coverageCard: $("coverage-card"),
+  chatPanel: $("chat-panel"),
+  chatLog: $("chat-log"),
+  chatChips: $("chat-chips"),
+  chatForm: $("chat-form"),
+  chatInput: $("chat-input"),
+  chatSend: $("chat-send"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -98,6 +104,12 @@ const state = {
   poiTimer: null,
   engineOverride: null, // engines for the next plan only (set by "plan with openrouteservice")
   segmentJob: null, // the tile download being followed
+  chatSession: null, // the server-side conversation (kept in memory there)
+  chatBusy: false,
+  planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
+  planPending: null, // generation of the form/text request in flight, if any
+  renderedGeneration: 0, // generation of the plan on the map
+  deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
@@ -414,6 +426,9 @@ async function planRoute() {
   if (state.aborted) state.aborted.abort();
   const controller = new AbortController();
   state.aborted = controller;
+  const generation = ++state.planGeneration;
+  state.planPending = generation;
+  let drawn = false;
   const startedAt = performance.now();
 
   try {
@@ -429,14 +444,33 @@ async function planRoute() {
       return;
     }
     const data = await resp.json();
+    if (generation !== state.planGeneration) return; // a newer plan (form or chat) took over
     state.lastResponse = data;
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
+    drawn = true;
   } catch (err) {
     if (err.name === "AbortError") return;
     setStatus("error", `Network error: ${escapeHtml(String(err))}`);
   } finally {
     els.planBtn.disabled = false;
+    settlePlan(generation, drawn);
+  }
+}
+
+/** A form/text request is over: remember what is on the map; if it failed, the chat's route
+ * that arrived meanwhile (and was held back) is shown after all. */
+function settlePlan(generation, drawn) {
+  if (state.planPending === generation) state.planPending = null;
+  if (generation !== state.planGeneration) return; // a newer plan took over
+  if (drawn) {
+    state.renderedGeneration = generation;
+    state.deferredChat = null;
+  } else if (state.deferredChat) {
+    const held = state.deferredChat;
+    state.deferredChat = null;
+    chatSay("bot", "(The form request did not give a route, so here is the one from our chat.)");
+    drawChatPlan(held.plan, held.focusRank, held.secs);
   }
 }
 
@@ -502,6 +536,9 @@ async function planFromText() {
   if (state.aborted) state.aborted.abort();
   const controller = new AbortController();
   state.aborted = controller;
+  const generation = ++state.planGeneration;
+  state.planPending = generation;
+  let drawn = false;
   const startedAt = performance.now();
 
   try {
@@ -517,10 +554,12 @@ async function planFromText() {
       return;
     }
     const data = await resp.json();
+    if (generation !== state.planGeneration) return; // a newer plan (form or chat) took over
     state.lastResponse = data;
     if (data.interpretation) applyInterpretation(data.interpretation);
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
+    drawn = true;
     if (data.interpretation && data.status !== "invalid") {
       const summary = BikeText.summaryHtml(data.interpretation);
       if (summary) els.status.insertAdjacentHTML("beforeend", `<div class="interpretation">${summary}</div>`);
@@ -531,6 +570,7 @@ async function planFromText() {
   } finally {
     els.textBtn.disabled = false;
     els.planBtn.disabled = false;
+    settlePlan(generation, drawn);
   }
 }
 
@@ -1469,6 +1509,107 @@ function renderPoiStops(data) {
   for (const poi of data.poi_stops || []) addPoiMarker(poi, state.poiStopLayer, true);
 }
 
+/* --------------------------------- chat --------------------------------- */
+
+function chatSay(role, text, pending = false) {
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = BikeChat.bubbleHtml(role, text);
+  const node = wrapper.firstElementChild;
+  if (pending) node.classList.add("pending");
+  els.chatLog.appendChild(node);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return node;
+}
+
+function setChatChips(suggestions) {
+  els.chatChips.innerHTML = BikeChat.chipsHtml(suggestions);
+}
+
+/** Send one chat message; draw the reply, the quick answers and the plan, if there is one. */
+async function sendChat(text) {
+  const message = BikeChat.outgoing(text);
+  if (message === null || state.chatBusy) return;
+  state.chatBusy = true;
+  els.chatSend.disabled = true;
+  chatSay("user", message);
+  setChatChips([]);
+  const waiting = chatSay("bot", "\u2026", true);
+  const generation = state.planGeneration;
+  const startedAt = performance.now();
+  try {
+    const resp = await fetch(`${API_BASE}/v1/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        session_id: state.chatSession,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    });
+    waiting.remove();
+    if (!resp.ok) {
+      chatSay("bot", BikeChat.failureText(resp.status));
+      return;
+    }
+    const data = await resp.json();
+    state.chatSession = data.session_id;
+    chatSay("bot", data.reply);
+    setChatChips(data.suggestions);
+    if (data.plan) {
+      const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
+      const stale = generation !== state.planGeneration; // the form asked for a route meanwhile
+      if (!stale || (state.planPending === null && state.renderedGeneration !== state.planGeneration)) {
+        // Current -- or the newer form request failed and left nothing on the map.
+        drawChatPlan(data.plan, data.focus_rank, secs);
+      } else {
+        chatSay("bot", "(The map shows the route you asked for in the form meanwhile.)");
+        // If that form request is still running and then fails, this route is shown after all.
+        if (state.planPending !== null) {
+          state.deferredChat = { plan: data.plan, focusRank: data.focus_rank, secs };
+        }
+      }
+    }
+  } catch {
+    waiting.remove();
+    chatSay("bot", BikeChat.failureText(0));
+  } finally {
+    state.chatBusy = false;
+    els.chatSend.disabled = false;
+    els.chatInput.focus();
+  }
+}
+
+/** Draw the plan a chat turn produced; it is now the newest plan on the map. */
+function drawChatPlan(plan, focusRank, secs) {
+  state.planGeneration += 1;
+  state.renderedGeneration = state.planGeneration;
+  state.deferredChat = null;
+  if (state.aborted) state.aborted.abort(); // an older form request must not replace it
+  state.lastResponse = plan;
+  renderResponse(plan, secs);
+  const index = BikeChat.candidateIndex(plan, focusRank);
+  if (index >= 0) activateCandidate(index);
+}
+
+/** Show the chat only when the server has one. */
+async function initChat() {
+  const caps = await getCapabilities();
+  if (!caps.chat) return;
+  els.chatPanel.hidden = false;
+  chatSay("bot", "Hi! Tell me where you want to ride -- for example \"from Braunschweig to Goslar by gravel bike\" or \"40 km loop from Goslar\". Or say \"plan a route\" and I will ask.");
+  setChatChips(["Plan a route", "40 km loop from Goslar", "Help"]);
+  els.chatForm.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const text = els.chatInput.value;
+    els.chatInput.value = "";
+    sendChat(text);
+  });
+  els.chatChips.addEventListener("click", (ev) => {
+    const chip = ev.target.closest("button[data-say]");
+    if (chip) sendChat(chip.dataset.say);
+  });
+}
+
 /* --------------------------- settings panel (right) --------------------------- */
 
 function updateSettingsEmpty() {
@@ -1510,4 +1651,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initTextPlanning();
   initSettingsPanel();
   initPois();
+  initChat();
 });

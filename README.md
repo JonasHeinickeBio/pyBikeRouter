@@ -134,6 +134,7 @@ bike-router poi along --route plan.json   # sights near a route, ranked by fame
 bike-router brouter needed|info|download  # BRouter map tiles (asks before downloading)
 bike-router history list|show|stats       # past plans (needs DATABASE_URL)
 bike-router status show          # readiness of every component and the active features
+bike-router chat start           # plan routes by chatting (docs/chat.md)
 ```
 
 Everything the API and the web form do is available from the CLI -- see [docs/cli.md](docs/cli.md).

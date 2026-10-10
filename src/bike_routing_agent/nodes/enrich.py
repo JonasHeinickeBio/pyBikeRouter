@@ -92,9 +92,7 @@ def build_enrich_node(*, surface_enricher: SurfaceEnricher | None) -> NodeFn:
 def _geometry_coordinates(candidate: dict[str, Any]) -> list[Coordinate]:
     raw = candidate.get("geometry_geojson", {}).get("coordinates")
     if not isinstance(raw, list):
-        raise ProviderError(
-            "candidate geometry is missing coordinates", provider="enrichment"
-        )
+        raise ProviderError("candidate geometry is missing coordinates", provider="enrichment")
     return [Coordinate(lon=float(pair[0]), lat=float(pair[1])) for pair in raw]
 
 
@@ -108,9 +106,7 @@ def _geometry_key(
         error = (
             exc
             if isinstance(exc, ProviderError)
-            else ProviderError(
-                f"unreadable candidate geometry: {exc}", provider="enrichment"
-            )
+            else ProviderError(f"unreadable candidate geometry: {exc}", provider="enrichment")
         )
         return None, error
     if len(coordinates) < 2:
@@ -148,9 +144,7 @@ def _apply_summary(
             "metrics": validated.metrics.model_copy(
                 update={
                     "surface_coverage": dict(summary.coverage) if summary else {},
-                    "unknown_surface_fraction": (
-                        summary.unknown_fraction if summary else None
-                    ),
+                    "unknown_surface_fraction": (summary.unknown_fraction if summary else None),
                 }
             ),
             "provenance": provenance,

@@ -5,6 +5,7 @@ Documentation for the bike-routing-agent service.
 | Document | Covers |
 | --- | --- |
 | [architecture.md](architecture.md) | Layers, LangGraph workflow, state contract, terminal statuses, error model, design principles |
+| [chat.md](chat.md) | A conversation that plans, changes and explains routes: one line, free text, step by step; alternatives, sights, files; a LangGraph with pause/resume |
 | [cli.md](cli.md) | The `bike-router` command: plan (alternatives, sight stops, GPX/GeoJSON), points of interest, BRouter tiles, history, status |
 | [api.md](api.md) | HTTP endpoints, request/response schemas, status semantics, artifact downloads |
 | [configuration.md](configuration.md) | Environment variables, `.env`, provider profile mapping, startup validation, Docker/compose |

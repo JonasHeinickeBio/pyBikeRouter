@@ -101,8 +101,7 @@ def weighted_score(
 ) -> float:
     """Combine breakdown components; shared with the calibration re-weighting."""
     total = (
-        distance_weight * breakdown["distance_fit"]
-        + elevation_weight * breakdown["elevation_fit"]
+        distance_weight * breakdown["distance_fit"] + elevation_weight * breakdown["elevation_fit"]
     )
     if use_surface:
         total = (total + surface_weight * breakdown["surface_fit"]) / (1 + surface_weight)
@@ -123,9 +122,7 @@ def score_candidates_together(
     out: list[tuple[float, dict[str, float]]] = []
     for _, breakdown in scored:
         breakdown = {**breakdown, "surface_weight_applied": weight}
-        out.append(
-            (weighted_score(breakdown, surface_weight=weight, use_surface=True), breakdown)
-        )
+        out.append((weighted_score(breakdown, surface_weight=weight, use_surface=True), breakdown))
     return out
 
 

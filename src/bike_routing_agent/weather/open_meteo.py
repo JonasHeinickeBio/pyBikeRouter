@@ -117,9 +117,7 @@ class OpenMeteoProvider:
         # One location answers with an object, several with a list of them.
         locations = payload if isinstance(payload, list) else [payload]
         if len(locations) != len(points) or not all(isinstance(x, dict) for x in locations):
-            raise ProviderBadResponseError(
-                "unexpected weather response shape", provider=self.name
-            )
+            raise ProviderBadResponseError("unexpected weather response shape", provider=self.name)
         return [self._parse(location) for location in locations]
 
     def _parse(self, location: dict[str, Any]) -> list[HourlyWeather]:

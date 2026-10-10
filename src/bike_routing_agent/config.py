@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     brouter_alternatives_timeout_s: float = 8.0
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
+    # Requests sent to BRouter at the same time. 1 matches a stock server (one routing thread);
+    # raise it only if BRouter was started with more threads.
+    brouter_max_concurrency: int = 1
 
     # OSM surface enrichment (issue #3). Off by default: the public Overpass
     # API is rate-limited and the PostGIS pipeline that should serve this at
@@ -124,6 +127,12 @@ class Settings(BaseSettings):
     brouter_segments_dir: str | None = None
     brouter_segments_url: str = "https://brouter.de/brouter/segments4/"
     brouter_segments_max_mb: int = 600
+
+    # Chat (docs/chat.md): a conversation that plans, changes and explains routes. Works without a
+    # language model (one-line requests and a step-by-step dialogue); free text uses the LLM parser
+    # when it is enabled. Sessions live in memory; at most this many are kept.
+    chat_enabled: bool = True
+    chat_max_sessions: int = 200
 
     # Points of interest (issue #55): found with Overpass, ranked and described with
     # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).
@@ -306,6 +315,18 @@ class Settings(BaseSettings):
                 "llm_max_output_tokens must be between 256 and 64000 "
                 f"(got {self.llm_max_output_tokens})"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _check_brouter_concurrency(self) -> Settings:
+        if self.brouter_max_concurrency < 1:
+            raise ValueError("brouter_max_concurrency must be >= 1")
+        return self
+
+    @model_validator(mode="after")
+    def _check_chat_settings(self) -> Settings:
+        if self.chat_max_sessions < 1:
+            raise ValueError("chat_max_sessions must be >= 1")
         return self
 
     @model_validator(mode="after")

@@ -107,9 +107,7 @@ def classify_way(tags: dict) -> WayClass:
     native = _tri_state(tags.get("native"))
 
     if _has_conflict(paved=paved, native=native, surface_category=surface_category):
-        return WayClass(
-            category=None, source=None, conflict=True, highway=highway, access=access
-        )
+        return WayClass(category=None, source=None, conflict=True, highway=highway, access=access)
 
     if surface_category is not None:
         return WayClass(
@@ -139,14 +137,10 @@ def classify_way(tags: dict) -> WayClass:
             highway=highway,
             access=access,
         )
-    return WayClass(
-        category=None, source=None, conflict=False, highway=highway, access=access
-    )
+    return WayClass(category=None, source=None, conflict=False, highway=highway, access=access)
 
 
-def _has_conflict(
-    *, paved: bool | None, native: bool | None, surface_category: str | None
-) -> bool:
+def _has_conflict(*, paved: bool | None, native: bool | None, surface_category: str | None) -> bool:
     if paved is True and native is True:
         return True
     if surface_category is None:

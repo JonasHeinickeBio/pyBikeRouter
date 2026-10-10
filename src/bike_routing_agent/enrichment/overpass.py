@@ -93,9 +93,7 @@ class OverpassEnricher(SurfaceEnricher):
         self._client = client
 
     async def surface_profile(self, coordinates: Sequence[Coordinate]) -> SurfaceSummary:
-        route_points = [
-            Coordinate(lon=float(p.lon), lat=float(p.lat)) for p in coordinates
-        ]
+        route_points = [Coordinate(lon=float(p.lon), lat=float(p.lat)) for p in coordinates]
         if len(route_points) < 2:
             raise ProviderBadResponseError(
                 "cannot enrich a route with fewer than two shape points",
@@ -206,9 +204,7 @@ class OverpassEnricher(SurfaceEnricher):
                 continue
             return response
 
-    def _summarize(
-        self, payload: object, *, route_points: Sequence[Coordinate]
-    ) -> SurfaceSummary:
+    def _summarize(self, payload: object, *, route_points: Sequence[Coordinate]) -> SurfaceSummary:
         ways = _parse_ways(payload, provider=self.name)
         segments = route_segments(route_points)
         total_m = polyline_length_m(route_points)
@@ -272,9 +268,7 @@ def build_overpass_query(
     )
 
 
-def _decimate(
-    coordinates: Sequence[Coordinate], max_points: int
-) -> list[Coordinate]:
+def _decimate(coordinates: Sequence[Coordinate], max_points: int) -> list[Coordinate]:
     if len(coordinates) <= max_points:
         return list(coordinates)
     step = (len(coordinates) - 1) / (max_points - 1)

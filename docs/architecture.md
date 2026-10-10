@@ -70,6 +70,13 @@ provider unless validation **and** geocoding have both succeeded.
 | `annotate_alternatives` | `nodes/compare.py` | Short, factual pros and cons of each distinct route against the others (`scoring/pros_cons.py`; informational, never changes the ranking; [api.md](api.md#alternatives)). |
 | `explain_and_export` | `nodes/export.py` | Facts-only explanation + GeoJSON/GPX artifacts written through the `ArtifactStore` (`EXPORT_DIR` by default; see [persistence.md](persistence.md)). |
 
+### The chat graph
+
+A second graph (`chat/graph.py`, [chat.md](chat.md)) keeps a conversation and calls the planning graph
+whenever a route is needed: one-line requests, free text, a step-by-step dialogue, changes to the last
+route, alternatives, sights, files. It uses LangGraph's checkpointer for the conversation state and
+`interrupt` for the question about an ambiguous place.
+
 ### The parse step and the LLM boundary
 
 `parse_request` is deterministic by default: `api.py` has already validated a
