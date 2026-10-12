@@ -62,6 +62,16 @@ changed too (`leave tomorrow at 8`, `on Saturday morning`). "Shorter" without
 any distance caps the distance at 75 % of the current route; "flatter" caps the climb at 70 % of the
 current one; "longer" needs a distance to aim for and says so.
 
+Every route reply reports **surface** and **traffic**, from the same numbers the web form and the CLI
+show: *"Surface: 71 % paved, 24 % unpaved, 5 % unknown. Traffic: 19 % on main roads without a bike lane."*
+Traffic is the share of the route on trunk to tertiary roads without a mapped cycle lane or track --
+a proxy for exposure to cars taken from the road tags, not a measurement of it; surface is the OSM
+`surface` tags the engine routed over, and "unknown" is never counted as paved. When the engine gave
+no tags the reply says so ("the engine gave no road data") instead of staying silent. Alternatives
+list their main-road and paved shares side by side, and `how much traffic is there?`, `is it busy?`,
+`what is the surface like?` answer with the same numbers (`is it safe?` gets them plus "I cannot
+judge safety"). `avoid busy roads` / `paved only` still change the route.
+
 Limits are goals the engines are steered towards, not guarantees. When the route misses one, the reply
 says so ("Note: it still climbs 335 m, more than the 234 m asked for -- the engines found nothing closer"; a
 loop more than 20 % off its length likewise). When a service did not answer in time, the reply offers

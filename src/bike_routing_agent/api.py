@@ -235,6 +235,8 @@ def build_optional_routing_providers(
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+                alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
+                alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
                 max_concurrency=cfg.brouter_max_concurrency,
             )
         )
@@ -338,6 +340,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+                alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
+                alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
                 max_concurrency=cfg.brouter_max_concurrency,
             )
         ]
@@ -365,6 +369,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
             max_retries=cfg.brouter_max_retries,
             alternatives=cfg.brouter_alternatives,
             alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
+            alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
+            alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
             max_concurrency=cfg.brouter_max_concurrency,
         ),
         ValhallaAdapter(

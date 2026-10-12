@@ -79,6 +79,9 @@ shows progress, and writes each tile through a `.part` file and an atomic rename
 as the server apply (`BROUTER_SEGMENTS_MAX_MB`, free disk space, official source only). The folder
 is `--dir` or `BROUTER_SEGMENTS_DIR`.
 
+Route output (`route plan`, `route show`, `chat`) reports **surface** and **traffic** under the route
+line, and each alternative carries its main-road and paved shares (`19 % main roads, 71 % paved`).
+
 ## `chat`
 
 ```bash

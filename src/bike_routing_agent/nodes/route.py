@@ -37,8 +37,12 @@ ALTERNATIVES_DEADLINE_S = 12.0
 
 
 async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[Any]:
+    cap = ALTERNATIVES_DEADLINE_S
+    own = getattr(provider, "alternatives_deadline_s", None)  # a provider whose time grows
+    if callable(own):  # with the trip names its own deadline; the cap only lets it finish
+        cap = max(cap, float(own(request)) + 5.0)
     try:
-        return list(await asyncio.wait_for(provider.alternatives(request), ALTERNATIVES_DEADLINE_S))
+        return list(await asyncio.wait_for(provider.alternatives(request), cap))
     except Exception:  # best effort: timeouts and failures just mean no extras
         return []
 

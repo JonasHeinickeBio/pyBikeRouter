@@ -241,6 +241,29 @@ def test_saved_plan_problems_are_reported_not_raised(tmp_path: Path):
     assert cli("route", "export", str(ok))[0] == 2  # nothing to write
 
 
+def test_the_cli_reports_traffic_and_surface_for_the_route_and_each_alternative():
+    metrics = {
+        "distance_m": 30_000,
+        "duration_s": 4200,
+        "main_road_share": 0.19,
+        "engine_surface_shares": {"paved": 0.71, "unpaved": 0.24, "unknown": 0.05},
+    }
+    other = {**metrics, "main_road_share": 0.55}
+    route = {"provider": "brouter", "provider_profile": "custom_gravel-v2", "rank": 1,
+             "metrics": metrics}  # fmt: skip
+    text = plan_text(
+        {
+            "status": "ready",
+            "route": route,
+            "candidates": [route, {**route, "rank": 2, "metrics": other}],
+        }
+    )
+    assert "Surface: 71 % paved, 24 % unpaved, 5 % unknown. Traffic: 19 % on main roads" in text
+    assert "19 % main roads, 71 % paved" in text and "55 % main roads, 71 % paved" in text
+    bare = plan_text({"status": "ready", "route": {"metrics": {}}})
+    assert "the engine gave no surface data" in bare and "no road data" in bare
+
+
 def test_renderers_cope_with_missing_data():
     assert (
         minutes(None) == "-" and minutes(59 * 60) == "59 min" and minutes(3 * 3600) == "3 h 00 min"

@@ -925,6 +925,13 @@ function downloadActiveCandidate(format) {
   }
 }
 
+/** A share (0..1) as "19 %", or a dash with the reason when the engine gave none. */
+function shareCell(share) {
+  return share == null
+    ? `<span title="the engine gave no data">&mdash;</span>`
+    : BikeFacts.pct(share);
+}
+
 function windCellHtml(candidate) {
   const cell = BikeWeather.windCell(candidate.weather);
   return `<span class="wind-cell ${cell.kind}" title="${escapeHtml(cell.title)}">${escapeHtml(cell.text)}</span>`;
@@ -941,7 +948,10 @@ function renderCandidatesTable() {
   const selectedIndex = findCandidateIndex(state.candidates, state.selectedRoute);
   const head =
     "<tr><th class='num'>Rank</th><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
-    "<th class='num'>Ascent</th><th class='num' title='Average wind against (&#9650;) or with (&#9660;) the direction of travel, km/h'>Wind</th>" +
+    "<th class='num'>Ascent</th>" +
+    "<th class='num' title='Share on main roads (trunk to tertiary) without a mapped bike lane: a proxy for motor traffic'>Main roads</th>" +
+    "<th class='num' title='Share on paved surfaces, from the OSM tags the engine routed over'>Paved</th>" +
+    "<th class='num' title='Average wind against (&#9650;) or with (&#9660;) the direction of travel, km/h'>Wind</th>" +
     "<th class='num'>Score</th><th class='num'>Warnings</th></tr>";
   const rows = state.candidates
     .map((cand, i) => {
@@ -970,6 +980,8 @@ function renderCandidatesTable() {
         `<td class="num">${fmtKm(m.distance_m)}</td>` +
         `<td class="num">${fmtDuration(m.duration_s)}</td>` +
         `<td class="num">${fmtM(m.ascent_m)}</td>` +
+        `<td class="num">${shareCell(m.main_road_share)}</td>` +
+        `<td class="num">${shareCell(BikeFacts.pavedShare(m))}</td>` +
         `<td class="num">${windCellHtml(cand)}</td>` +
         `<td class="num">${cand.score != null ? cand.score.toFixed(2) : "—"}</td>` +
         `<td class="num"><span class="warn-count" title="${warnTitle}">${(cand.warnings || []).length || 0}</span></td>` +
@@ -1003,13 +1015,22 @@ function updateActiveView() {
     metric(fmtDuration(m.duration_s), "Time") +
     metric(fmtM(m.ascent_m), "Ascent") +
     metric(fmtM(m.descent_m), "Descent") +
+    metric(m.main_road_share == null ? "&mdash;" : BikeFacts.pct(m.main_road_share), "On main roads") +
+    metric(
+      BikeFacts.pavedShare(m) == null ? "&mdash;" : BikeFacts.pct(BikeFacts.pavedShare(m)),
+      "Paved"
+    ) +
     metric(cand.score != null ? cand.score.toFixed(2) : "—", "Score") +
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
   renderWeather(cand);
   schedulePoiRefresh();
   renderScoreBreakdown(cand.score_breakdown);
-  renderSurfaces(m.surface_coverage, m.unknown_surface_fraction);
+  const shares = BikeFacts.surfaceShares(m);
+  renderSurfaces(
+    Object.fromEntries(shares),
+    shares.some(([k]) => k === "unknown") ? null : m.unknown_surface_fraction
+  );
 
   els.warnings.innerHTML = (cand.warnings || [])
     .map((w) => `<li>${escapeHtml(w)}</li>`)

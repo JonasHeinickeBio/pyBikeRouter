@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from bike_routing_agent.route_facts import facts_line, facts_short
+
 
 def km(meters: float | None) -> str:
     return "-" if meters is None else f"{meters / 1000:.1f} km"
@@ -47,6 +49,7 @@ def _candidate_line(candidate: dict[str, Any], selected: bool) -> str:
         f"  {candidate.get('rank') or '-'}. {candidate.get('provider')}/"
         f"{candidate.get('provider_profile')}  {km(m.get('distance_m'))}  "
         f"{minutes(m.get('duration_s'))}  up {metres(m.get('ascent_m'))}"
+        + (f"  {facts_short(m)}" if facts_short(m) else "")
         + (f"  score {score:.2f}" if isinstance(score, int | float) else "")
         + ("  <- selected" if selected else "")
     )
@@ -106,6 +109,7 @@ def plan_text(payload: dict[str, Any]) -> str:
             f"{km(m.get('distance_m'))}  {minutes(m.get('duration_s'))}  "
             f"up {metres(m.get('ascent_m'))} / down {metres(m.get('descent_m'))}"
         )
+        lines.append(facts_line(m))
         if payload.get("explanation"):
             lines.append(str(payload["explanation"]))
         candidates = payload.get("candidates") or []

@@ -27,6 +27,16 @@ from bike_routing_agent.providers.valhalla import ValhallaAdapter
 # ----------------------------------------------------------------------
 
 
+def test_the_alternatives_deadline_settings_are_checked() -> None:
+    assert Settings(_env_file=None).brouter_alternatives_timeout_per_km_s == 0.5
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, brouter_alternatives_timeout_per_km_s=-1)
+    with pytest.raises(ValueError):
+        Settings(
+            _env_file=None, brouter_alternatives_timeout_s=30, brouter_alternatives_timeout_max_s=10
+        )
+
+
 def test_default_geocoder_provider_is_nominatim():
     settings = Settings(_env_file=None)
     assert settings.geocoder_provider == "nominatim"
