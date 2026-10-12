@@ -104,3 +104,26 @@ async def test_no_poi_lookup_happens_unless_the_goal_was_asked_for():
     spec = {"goals": [{"metric": "distance", "weight": 1.0}]}
     update = await build_optimize_node(poi_service=stub)(state(optimize=spec))  # type: ignore[arg-type]
     assert stub.calls == [] and "poi_status" not in update["optimization"]
+
+
+class FlakyOnBigSearches(StubPois):
+    """Fails for searches over more than four routes, like a busy public Overpass."""
+
+    async def along_routes(self, lines, categories, *, buffer_m, linked_only=False, **kw):
+        if len(lines) > 4:
+            self.calls.append(("failed", len(lines)))
+            raise ProviderUnavailableError("Overpass returned HTTP 504", provider="overpass")
+        return await super().along_routes(
+            lines, categories, buffer_m=buffer_m, linked_only=linked_only, **kw
+        )
+
+
+async def test_a_failed_big_search_is_retried_for_the_leading_routes():
+    many = [candidate(f"p{i}", 50 + i, 47.5 + i / 100) for i in range(6)]
+    stub = FlakyOnBigSearches([[sight("Burg", 20)]] * 4)
+    update = await build_optimize_node(poi_service=stub)(state(candidates=many))  # type: ignore[arg-type]
+    assert stub.calls[0] == ("failed", 6) and stub.calls[1][0] == 4
+    report = update["optimization"]
+    assert report["poi_status"] == "ok" and report["poi_routes_counted"] == 4
+    counted = [c["metrics"]["poi_count"] for c in update["candidates"]]
+    assert sorted(x for x in counted if x is not None) == [1, 1, 1, 1] and counted.count(None) == 2

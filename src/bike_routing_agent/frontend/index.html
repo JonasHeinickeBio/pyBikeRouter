@@ -20,7 +20,7 @@
   />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body data-tab="plan">
   <div id="app">
     <aside id="sidebar">
       <header class="brand">
@@ -29,7 +29,13 @@
         <p class="tagline"><a href="dashboard.html">Evaluation dashboard</a></p>
       </header>
 
-      <section class="panel" id="chat-panel" hidden>
+      <!-- Shown only when the server has an engine that can return many routes (capabilities.optimizer). -->
+      <nav class="tabs" id="mode-tabs" role="tablist" aria-label="What to do" hidden>
+        <button type="button" role="tab" id="tab-plan" class="tab" data-tab-btn="plan" aria-selected="true" aria-controls="sidebar">Plan</button>
+        <button type="button" role="tab" id="tab-optimize" class="tab" data-tab-btn="optimize" aria-selected="false" aria-controls="optimize-panel">Optimize</button>
+      </nav>
+
+      <section class="panel" id="chat-panel" data-tab="plan" hidden>
         <details open>
           <summary><h2>Chat</h2></summary>
           <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation"></div>
@@ -43,7 +49,7 @@
         </details>
       </section>
 
-      <section class="panel" id="text-panel" hidden>
+      <section class="panel" id="text-panel" data-tab="plan" hidden>
         <h2>Describe your ride</h2>
         <div class="field">
           <label for="text-input" class="visually-hidden">Describe your ride in your own words</label>
@@ -152,7 +158,7 @@
         </details>
       </section>
 
-      <section class="panel" id="poi-panel" hidden>
+      <section class="panel" id="poi-panel" data-tab="plan" hidden>
         <details open>
           <summary><h2>Sights on the way</h2></summary>
           <label class="check"><input id="poi-stops-enabled" type="checkbox" /> Route past the most famous sights</label>
@@ -170,9 +176,55 @@
         </details>
       </section>
 
-      <div class="actions">
+      <section class="panel" id="optimize-panel" data-tab="optimize" aria-labelledby="optimize-title">
+        <h2 id="optimize-title">Optimize for</h2>
+        <p class="hint">Several routes are fetched for the same trip, measured, and the one that serves your goals best is chosen &mdash; with the numbers behind the choice. Origin, destination and the constraints above apply.</p>
+        <div class="presets" id="optimize-presets" role="group" aria-label="Starting points"></div>
+        <div id="optimize-goals" class="opt-goals"></div>
+        <div class="grid-2">
+          <div class="field">
+            <label for="optimize-detour">Longest detour (%)</label>
+            <input id="optimize-detour" type="number" min="0" max="300" step="5" value="30" />
+          </div>
+          <div class="field">
+            <label for="optimize-effort">Effort</label>
+            <select id="optimize-effort">
+              <option value="quick">Quick (about 4 routes)</option>
+              <option value="normal" selected>Normal (about 8)</option>
+              <option value="thorough">Thorough (about 12)</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid-2" id="optimize-poi-options" hidden>
+          <div class="field">
+            <label for="optimize-poi-corridor">Sights within</label>
+            <select id="optimize-poi-corridor">
+              <option value="150">150 m of the route</option>
+              <option value="300" selected>300 m</option>
+              <option value="600">600 m</option>
+              <option value="1000">1 km</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="optimize-poi-fame">Well-known means</label>
+            <select id="optimize-poi-fame">
+              <option value="3">3+ languages</option>
+              <option value="5" selected>5+ languages</option>
+              <option value="10">10+ languages</option>
+              <option value="20">20+ languages</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint" id="optimize-hint"></p>
+      </section>
+
+      <div class="actions" data-tab="plan">
         <button id="plan-btn" class="primary" type="button">Plan route</button>
         <button id="reset-btn" class="ghost" type="button">Reset</button>
+      </div>
+      <div class="actions" data-tab="optimize">
+        <button id="optimize-btn" class="primary" type="button">Optimize route</button>
+        <button id="optimize-reset-btn" class="ghost" type="button">Reset</button>
       </div>
       <div id="status" class="status" hidden></div>
       <section class="panel coverage-card" id="coverage-card" hidden aria-live="polite"></section>
@@ -180,6 +232,11 @@
       <section class="panel" id="clarification-panel" hidden>
         <h2>Which place did you mean?</h2>
         <div id="clarification-list"></div>
+      </section>
+
+      <section class="panel" id="optimization-panel" data-tab="optimize" hidden aria-live="polite">
+        <h2>What was compared</h2>
+        <div id="optimization-report"></div>
       </section>
 
       <section class="panel" id="results-panel" hidden>
@@ -259,6 +316,7 @@
   ></script>
   <script src="weather.js"></script>
   <script src="facts.js"></script>
+  <script src="optimize.js"></script>
   <script src="alternatives.js"></script>
   <script src="export.js"></script>
   <script src="pois.js"></script>

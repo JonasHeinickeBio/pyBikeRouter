@@ -61,6 +61,10 @@ async def test_frontend_static_assets_are_served(client):
         ("/settings.js", "BikeSettings"),
         ("/chat.js", "BikeChat"),
         ("/facts.js", "BikeFacts"),
+        ("/optimize.js", "BikeOptimize"),
+        ("/index.html", 'id="optimize-panel"'),
+        ("/index.html", 'src="optimize.js"'),
+        ("/app.js", "caps.optimizer"),
         ("/index.html", 'id="chat-panel"'),
         ("/app.js", "v1/chat"),
         ("/index.html", 'id="settings-panel"'),
@@ -1186,8 +1190,10 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
         "pois",
         "segment_downloads",
         "chat",
+        "optimizer",
         "engines",
     }
+    assert isinstance(off["optimizer"], bool)
     assert off["segment_downloads"] is False  # needs BROUTER_SEGMENTS_DIR
     assert isinstance(off["engines"], list) and off["engines"]
     monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())

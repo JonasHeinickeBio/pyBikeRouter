@@ -79,6 +79,19 @@ const els = {
   chatForm: $("chat-form"),
   chatInput: $("chat-input"),
   chatSend: $("chat-send"),
+  modeTabs: $("mode-tabs"),
+  optimizePresets: $("optimize-presets"),
+  optimizeGoals: $("optimize-goals"),
+  optimizeDetour: $("optimize-detour"),
+  optimizeEffort: $("optimize-effort"),
+  optimizePoiOptions: $("optimize-poi-options"),
+  optimizePoiCorridor: $("optimize-poi-corridor"),
+  optimizePoiFame: $("optimize-poi-fame"),
+  optimizeHint: $("optimize-hint"),
+  optimizeBtn: $("optimize-btn"),
+  optimizeResetBtn: $("optimize-reset-btn"),
+  optimizationPanel: $("optimization-panel"),
+  optimizationReport: $("optimization-report"),
 };
 
 const COORD_RE = /^\s*(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)\s*$/;
@@ -111,6 +124,10 @@ const state = {
   renderedGeneration: 0, // generation of the plan on the map
   deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
+  tab: "plan", // "plan" | "optimize" (the Optimize tab exists when capabilities.optimizer)
+  optimizeGoals: {}, // metric -> "high" | "medium" | "low" for the goals that are ticked
+  optimizeCaps: { pois: false },
+  optimizing: null, // the timer of a running optimisation
   pickingTarget: null, // "origin" | "destination" | { viaRow: element }
   lastResponse: null,
   aborted: null,
@@ -613,6 +630,8 @@ function clearResults() {
   els.errorsPanel.hidden = true;
   els.clarificationPanel.hidden = true;
   els.clarificationList.innerHTML = "";
+  els.optimizationPanel.hidden = true;
+  els.optimizationReport.innerHTML = "";
 }
 
 function renderResponse(data, secs) {
@@ -1634,6 +1653,232 @@ async function initChat() {
   });
 }
 
+/* ------------------------------ optimiser tab ------------------------------ */
+
+const TAB_KEY = "pybikerouter.tab";
+
+function setTab(name) {
+  state.tab = name === "optimize" ? "optimize" : "plan";
+  document.body.dataset.tab = state.tab;
+  for (const btn of els.modeTabs.querySelectorAll("[data-tab-btn]")) {
+    btn.setAttribute("aria-selected", String(btn.dataset.tabBtn === state.tab));
+  }
+  try {
+    window.localStorage.setItem(TAB_KEY, state.tab);
+  } catch {
+    // private window or blocked storage: the tab just is not remembered
+  }
+}
+
+function applyGoalState() {
+  const picked = Object.keys(state.optimizeGoals);
+  for (const def of BikeOptimize.GOALS) {
+    const row = els.optimizeGoals.querySelector(`[data-goal="${def.metric}"]`);
+    if (!row) continue;
+    const on = def.metric in state.optimizeGoals;
+    const box = row.querySelector("input[type=checkbox]");
+    const level = row.querySelector("select");
+    const unavailable = def.needs && !state.optimizeCaps[def.needs];
+    box.checked = on;
+    level.value = state.optimizeGoals[def.metric] || "medium";
+    level.disabled = !on;
+    row.classList.toggle("on", on);
+    row.classList.toggle("off", Boolean(unavailable));
+    // At most four goals, and no goal beside its opposite.
+    const full = !on && picked.length >= BikeOptimize.MAX_GOALS;
+    box.disabled = Boolean(unavailable) || full;
+  }
+  els.optimizePoiOptions.hidden = !("pois" in state.optimizeGoals);
+}
+
+function renderGoals() {
+  els.optimizeGoals.innerHTML = BikeOptimize.GOALS.map((g) => {
+    const levels = BikeOptimize.LEVELS.map(
+      (l) => `<option value="${l.level}">${BikeOptimize.escapeHtml(l.label)}</option>`,
+    ).join("");
+    const unavailable = g.needs && !state.optimizeCaps[g.needs];
+    const hint = unavailable ? "not available on this server" : g.hint;
+    return (
+      `<div class="opt-goal" data-goal="${g.metric}">` +
+      `<label><input type="checkbox" /><span>${BikeOptimize.escapeHtml(g.label)}` +
+      `<span class="goal-hint">${BikeOptimize.escapeHtml(hint)}</span></span></label>` +
+      `<select aria-label="How much ${BikeOptimize.escapeHtml(g.label.toLowerCase())} matters">${levels}</select>` +
+      "</div>"
+    );
+  }).join("");
+  applyGoalState();
+}
+
+function setGoals(goals) {
+  state.optimizeGoals = {};
+  for (const g of goals) {
+    const def = BikeOptimize.GOALS.find((d) => d.metric === g.metric);
+    if (!def || (def.needs && !state.optimizeCaps[def.needs])) continue;
+    state.optimizeGoals[g.metric] = g.level;
+  }
+  applyGoalState();
+}
+
+function optimizeChoice() {
+  return {
+    goals: BikeOptimize.GOALS.filter((d) => d.metric in state.optimizeGoals).map((d) => ({
+      metric: d.metric,
+      level: state.optimizeGoals[d.metric],
+    })),
+    maxDetourPct: els.optimizeDetour.value,
+    effort: els.optimizeEffort.value,
+    poi: { corridorM: els.optimizePoiCorridor.value, minFame: els.optimizePoiFame.value },
+  };
+}
+
+function renderOptimization(report) {
+  const html = BikeOptimize.reportHtml(report);
+  els.optimizationPanel.hidden = html === "";
+  els.optimizationReport.innerHTML = html;
+}
+
+async function runOptimize() {
+  stopPicking();
+  const payload = buildRequest();
+  delete payload.poi_stops; // sights are a goal here, not stops
+  if (typeof payload.origin !== "object" && payload.origin === "") {
+    setStatus("error", "Please enter an origin.");
+    return;
+  }
+  if (!payload.constraints.return_to_origin && typeof payload.destination !== "object" && payload.destination === "") {
+    setStatus("error", "Please enter a destination (or tick \"Return to origin\" for a loop).");
+    return;
+  }
+  const choice = optimizeChoice();
+  const built = BikeOptimize.buildSpec(choice);
+  if (built.error) {
+    setStatus("error", escapeHtml(built.error));
+    return;
+  }
+  payload.optimize = built.spec;
+
+  els.optimizeBtn.disabled = true;
+  clearResults();
+  if (state.aborted) state.aborted.abort();
+  const controller = new AbortController();
+  state.aborted = controller;
+  const generation = ++state.planGeneration;
+  state.planPending = generation;
+  let drawn = false;
+  const startedAt = performance.now();
+  const wait = BikeOptimize.waitText(built.spec.effort);
+  const tick = () => {
+    const s = Math.round((performance.now() - startedAt) / 1000);
+    setStatus(
+      "loading",
+      `Fetching and comparing several routes&hellip; <em>${escapeHtml(wait)}</em> (${s}&nbsp;s)`,
+    );
+  };
+  tick();
+  clearInterval(state.optimizing);
+  state.optimizing = setInterval(tick, 1000);
+
+  try {
+    const resp = await fetch(`${API_BASE}/v1/route/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const detail = await safeErrorText(resp);
+      setStatus("error", `Request failed (HTTP ${resp.status}): ${escapeHtml(detail)}`);
+      return;
+    }
+    const data = await resp.json();
+    if (generation !== state.planGeneration) return; // a newer plan took over
+    state.lastResponse = data;
+    const secs = ((performance.now() - startedAt) / 1000).toFixed(0);
+    renderResponse(data, secs);
+    drawn = true;
+    if (data.status === "ready") {
+      renderOptimization(data.optimization);
+      if (!data.optimization) {
+        setStatus("info", "The route is ready, but the server returned no comparison (the optimiser is not available for this setup).");
+      } else {
+        revealOnPhone(els.optimizationPanel);
+      }
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    setStatus("error", `Network error: ${escapeHtml(String(err))}`);
+  } finally {
+    clearInterval(state.optimizing);
+    state.optimizing = null;
+    els.optimizeBtn.disabled = false;
+    settlePlan(generation, drawn);
+  }
+}
+
+/** The Optimize tab exists only when the server has an engine that can return many routes. */
+async function initOptimizer() {
+  const caps = await getCapabilities();
+  if (!caps.optimizer) return;
+  state.optimizeCaps = { pois: Boolean(caps.pois) };
+  els.modeTabs.hidden = false;
+  els.optimizePresets.innerHTML = BikeOptimize.PRESETS.map(
+    (p) => `<button type="button" class="ghost" data-preset="${p.id}">${BikeOptimize.escapeHtml(p.label)}</button>`,
+  ).join("");
+  renderGoals();
+  setGoals(BikeOptimize.PRESETS[0].goals);
+  els.optimizeHint.textContent = caps.pois
+    ? ""
+    : "Sights along the track need the point-of-interest service, which is off on this server.";
+
+  els.modeTabs.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-tab-btn]");
+    if (btn) setTab(btn.dataset.tabBtn);
+  });
+  els.optimizePresets.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-preset]");
+    const preset = btn && BikeOptimize.PRESETS.find((p) => p.id === btn.dataset.preset);
+    if (preset) setGoals(preset.goals);
+  });
+  els.optimizeGoals.addEventListener("change", (ev) => {
+    const row = ev.target.closest("[data-goal]");
+    if (!row) return;
+    const metric = row.dataset.goal;
+    const def = BikeOptimize.GOALS.find((d) => d.metric === metric);
+    if (ev.target.type === "checkbox") {
+      if (ev.target.checked) {
+        state.optimizeGoals[metric] = row.querySelector("select").value;
+        if (def.opposite) delete state.optimizeGoals[def.opposite];
+      } else {
+        delete state.optimizeGoals[metric];
+      }
+    } else if (metric in state.optimizeGoals) {
+      state.optimizeGoals[metric] = ev.target.value;
+    }
+    applyGoalState();
+  });
+  els.optimizeBtn.addEventListener("click", runOptimize);
+  els.optimizeResetBtn.addEventListener("click", resetAll);
+  const open = (ev) => {
+    const row = ev.target.closest("tr.cmp-row");
+    if (row) activateCandidate(Number(row.dataset.index));
+  };
+  els.optimizationReport.addEventListener("click", open);
+  els.optimizationReport.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      open(ev);
+    }
+  });
+
+  let remembered = "plan";
+  try {
+    remembered = window.localStorage.getItem(TAB_KEY) || "plan";
+  } catch {
+    // storage blocked: start on the Plan tab
+  }
+  setTab(remembered);
+}
+
 /* --------------------------- settings panel (right) --------------------------- */
 
 function updateSettingsEmpty() {
@@ -1676,4 +1921,5 @@ document.addEventListener("DOMContentLoaded", () => {
   initSettingsPanel();
   initPois();
   initChat();
+  initOptimizer();
 });
