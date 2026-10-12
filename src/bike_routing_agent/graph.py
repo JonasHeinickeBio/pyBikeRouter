@@ -25,6 +25,7 @@ from bike_routing_agent.nodes.compare import build_compare_node
 from bike_routing_agent.nodes.enrich import build_enrich_node
 from bike_routing_agent.nodes.export import build_export_node
 from bike_routing_agent.nodes.geocode import build_geocode_node
+from bike_routing_agent.nodes.optimize import build_optimize_node
 from bike_routing_agent.nodes.parse import LLMParser, build_parse_node
 from bike_routing_agent.nodes.poi_stops import build_poi_stops_node
 from bike_routing_agent.nodes.route import build_route_node
@@ -62,7 +63,7 @@ def _after_route(state: RouteAgentState) -> str:
 
 
 def _after_score(state: RouteAgentState) -> str:
-    return END if state.get("status") in _TERMINAL_AFTER_SCORE else "weather_candidates"
+    return END if state.get("status") in _TERMINAL_AFTER_SCORE else "optimize_candidates"
 
 
 def build_graph(
@@ -110,6 +111,9 @@ def build_graph(
     graph.add_node(
         "score_candidates", build_score_node(dedup_threshold_m=alternative_dedup_threshold_m)
     )
+    # With an optimisation request: orders the candidates by the goals and selects the best fit;
+    # a pass-through otherwise (nodes/optimize.py, docs/optimizer.md).
+    graph.add_node("optimize_candidates", build_optimize_node())
     # Best effort and informational: a no-op without a weather service, and it
     # never changes the plan's outcome (nodes/weather.py).
     graph.add_node(
@@ -136,7 +140,8 @@ def build_graph(
     graph.add_edge("select_poi_stops", "route_with_provider")
     graph.add_conditional_edges("route_with_provider", _after_route, ["enrich_candidates", END])
     graph.add_edge("enrich_candidates", "score_candidates")
-    graph.add_conditional_edges("score_candidates", _after_score, ["weather_candidates", END])
+    graph.add_conditional_edges("score_candidates", _after_score, ["optimize_candidates", END])
+    graph.add_edge("optimize_candidates", "weather_candidates")
     graph.add_edge("weather_candidates", "annotate_alternatives")
     graph.add_edge("annotate_alternatives", "explain_and_export")
     graph.add_edge("explain_and_export", END)

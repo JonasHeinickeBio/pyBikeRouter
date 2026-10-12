@@ -41,12 +41,13 @@ from bike_routing_agent.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingRequest
+from bike_routing_agent.models import OptimizeSpec, RouteCandidate, RouteMetrics, RoutingRequest
+from bike_routing_agent.providers.brouter_optimize import plan_variants
 from bike_routing_agent.providers.brouter_segments import missing_segment
 from bike_routing_agent.providers.brouter_tags import (
     main_road_share,
     surface_shares,
-    traffic_shares,
+    traffic_summary,
 )
 
 # Fragments BRouter puts in its plain-text 400 body when the request was
@@ -91,6 +92,8 @@ class BRouterAdapter:
         alternatives_timeout_s: float = 8.0,
         alternatives_timeout_per_km_s: float = 0.0,
         alternatives_timeout_max_s: float = 120.0,
+        optimize_timeout_per_km_s: float = 1.2,
+        optimize_timeout_max_s: float = 300.0,
         max_concurrency: int = 1,
         client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -105,6 +108,8 @@ class BRouterAdapter:
         self._alternatives_timeout_s = alternatives_timeout_s
         self._alternatives_per_km_s = alternatives_timeout_per_km_s
         self._alternatives_max_s = max(alternatives_timeout_max_s, alternatives_timeout_s)
+        self._optimize_per_km_s = optimize_timeout_per_km_s
+        self._optimize_max_s = optimize_timeout_max_s
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._max_retries = max_retries
@@ -241,6 +246,61 @@ class BRouterAdapter:
         wanted = self._alternatives_timeout_s + self._alternatives_per_km_s * km
         return min(wanted, self._alternatives_max_s)
 
+    def optimization_deadline_s(self, request: RoutingRequest) -> float:
+        """How long an optimisation may spend fetching routes: 20 s plus
+        ``optimize_timeout_per_km_s`` per km between the places, up to ``optimize_timeout_max_s``
+        (the requests queue behind each other)."""
+        points = [request.origin, *request.via, request.destination]
+        km = sum(_straight_km(a, b) for a, b in zip(points, points[1:], strict=False))
+        return min(20.0 + self._optimize_per_km_s * km, max(self._optimize_max_s, 20.0))
+
+    async def optimization_candidates(
+        self, request: RoutingRequest, spec: OptimizeSpec
+    ) -> list[RouteCandidate]:
+        """Many routes for the same trip, for the optimiser: other profiles, BRouter's own
+        second and third routes, and a traffic variant (``brouter_optimize.plan_variants``).
+
+        Best effort within :meth:`optimization_deadline_s`; whatever has finished is returned,
+        in plan order, and a variant that fails or finds no route is simply absent.
+        """
+        own = self._profile_for(request.constraints.bike_type.value)
+        variants = plan_variants(spec, own)
+        if not variants:
+            return []
+        deadline = self.optimization_deadline_s(request)
+        tasks = {
+            asyncio.ensure_future(
+                self._route_with_profile(
+                    request,
+                    v.profile,
+                    timeout_s=deadline,
+                    alternative_index=v.alternative_index,
+                    extra_overrides=v.overrides,
+                )
+            ): v
+            for v in variants
+        }
+        done, pending = await asyncio.wait(tasks, timeout=deadline)
+        for task in pending:
+            task.cancel()
+            logger.info("brouter optimisation variant %s timed out", tasks[task].source)
+        found: list[RouteCandidate] = []
+        for task, variant in tasks.items():  # plan order
+            if task not in done:
+                continue
+            try:
+                result = task.result()
+            except Exception as exc:
+                logger.info("brouter optimisation variant %s unavailable: %s", variant.source, exc)
+                continue
+            provenance = {
+                **result.provenance,
+                "alternative_of": own,
+                "optimizer_source": variant.source,
+            }
+            found.append(result.model_copy(update={"provenance": provenance}))
+        return found
+
     async def alternatives(self, request: RoutingRequest) -> list[RouteCandidate]:
         """The same trip under the other profiles suggested for this bike type.
 
@@ -283,14 +343,20 @@ class BRouterAdapter:
         return found
 
     async def _route_with_profile(
-        self, request: RoutingRequest, profile: str, *, timeout_s: float | None = None
+        self,
+        request: RoutingRequest,
+        profile: str,
+        *,
+        timeout_s: float | None = None,
+        alternative_index: int = 0,
+        extra_overrides: dict[str, int] | None = None,
     ) -> RouteCandidate:
-        overrides = self._profile_overrides(request, profile)
+        overrides = {**self._profile_overrides(request, profile), **(extra_overrides or {})}
         response = await self._get(
             {
                 "lonlats": self._lonlats(request),
                 "profile": profile,
-                "alternativeidx": "0",
+                "alternativeidx": str(alternative_index),
                 "format": "geojson",
                 **{f"profile:{name}": str(value) for name, value in overrides.items()},
             },
@@ -394,7 +460,8 @@ class BRouterAdapter:
             ascent_m=_as_float(properties.get("filtered ascend")),
             # BRouter reports no descent; leave it None rather than guess.
             main_road_share=main_road_share(properties.get("messages")),
-            traffic_shares=traffic_shares(properties.get("messages")),
+            traffic_shares=traffic_summary(properties.get("messages"))[0],
+            traffic_index=traffic_summary(properties.get("messages"))[1],
             engine_surface_shares=surface_shares(properties.get("messages")),
         )
 

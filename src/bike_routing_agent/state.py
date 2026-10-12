@@ -45,6 +45,10 @@ class RouteAgentState(TypedDict, total=False):
     # Famous-POI route stops (issue #55): the request (validated PoiStopsRequest as a dict),
     # the POIs chosen as extra via points, and how the selection went.
     poi_stops_request: dict[str, Any] | None
+    # Optimisation (docs/optimizer.md): the request's OptimizeSpec as a dict, and the report
+    # the optimize node produced (what was compared, why this route won).
+    optimize: dict[str, Any] | None
+    optimization: dict[str, Any] | None
     # Engines to use for this request instead of the configured ones (None = configured).
     routing_engines: list[str] | None
     poi_stops: list[dict[str, Any]] | None

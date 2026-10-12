@@ -237,6 +237,8 @@ def build_optional_routing_providers(
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
                 alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
                 alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
+                optimize_timeout_per_km_s=cfg.brouter_optimize_timeout_per_km_s,
+                optimize_timeout_max_s=cfg.brouter_optimize_timeout_max_s,
                 max_concurrency=cfg.brouter_max_concurrency,
             )
         )
@@ -342,6 +344,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
                 alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
                 alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
+                optimize_timeout_per_km_s=cfg.brouter_optimize_timeout_per_km_s,
+                optimize_timeout_max_s=cfg.brouter_optimize_timeout_max_s,
                 max_concurrency=cfg.brouter_max_concurrency,
             )
         ]
@@ -371,6 +375,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
             alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
             alternatives_timeout_per_km_s=cfg.brouter_alternatives_timeout_per_km_s,
             alternatives_timeout_max_s=cfg.brouter_alternatives_timeout_max_s,
+            optimize_timeout_per_km_s=cfg.brouter_optimize_timeout_per_km_s,
+            optimize_timeout_max_s=cfg.brouter_optimize_timeout_max_s,
             max_concurrency=cfg.brouter_max_concurrency,
         ),
         ValhallaAdapter(
@@ -541,6 +547,7 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
             request.poi_stops.model_dump(mode="json") if request.poi_stops is not None else None
         ),
         "routing_engines": request.routing_engines,
+        "optimize": request.optimize.model_dump(mode="json") if request.optimize else None,
     }
 
     final_state = await _graph.ainvoke({"raw_input": raw_input})
@@ -774,6 +781,7 @@ async def _plan_response(final_state: dict[str, Any]) -> RoutePlanResponse:
             if final_state.get("interpretation")
             else None
         ),
+        optimization=final_state.get("optimization") if status == "ready" else None,
     )
 
 

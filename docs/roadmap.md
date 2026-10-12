@@ -65,6 +65,11 @@ decisions still open.
   metrics. Anthropic structured outputs behind the `llm` extra, with a
   labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
   benchmark against a live model in CI, and more languages in the benchmark.
+- **Route optimiser** -- done for BRouter: several routes fetched (profiles, its own 2nd/3rd routes,
+  a traffic variant), measured, and the best fit for weighted goals selected with the numbers shown
+  ([optimizer.md](optimizer.md)). Open: candidates from other engines (they give no road tags), via
+  point detours to find routes no profile produces, a web-form control (it is reachable from the
+  chat panel today), and learning the weights from what people pick.
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer) ([chat.md](chat.md)). Open follow-ups: a model-based intent step for follow-ups, free

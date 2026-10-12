@@ -24,7 +24,12 @@ from typing import Any
 
 from bike_routing_agent.errors import ProviderCoverageError, ProviderError, ProviderNoRouteError
 from bike_routing_agent.loops import synthesize_loop_vias
-from bike_routing_agent.models import Coordinate, RouteConstraints, RoutingRequest
+from bike_routing_agent.models import (
+    Coordinate,
+    OptimizeSpec,
+    RouteConstraints,
+    RoutingRequest,
+)
 from bike_routing_agent.providers.base import RoutingProvider
 from bike_routing_agent.providers.brouter_segments import SEGMENTS_BASE_URL, segments_for_points
 from bike_routing_agent.state import RouteAgentState
@@ -34,6 +39,20 @@ NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 # Hard cap on any provider's alternatives, whatever it does internally: they are a
 # bonus and must never hold back a route that already came back.
 ALTERNATIVES_DEADLINE_S = 12.0
+
+
+async def _optimization_candidates(
+    provider: Any, request: RoutingRequest, spec: OptimizeSpec
+) -> list[Any]:
+    """The provider's many routes for an optimisation (best effort, own deadline)."""
+    cap = ALTERNATIVES_DEADLINE_S
+    own = getattr(provider, "optimization_deadline_s", None)
+    if callable(own):
+        cap = max(cap, float(own(request)) + 5.0)
+    try:
+        return list(await asyncio.wait_for(provider.optimization_candidates(request, spec), cap))
+    except Exception:  # best effort, like the alternatives
+        return []
 
 
 async def _bounded_alternatives(provider: Any, request: RoutingRequest) -> list[Any]:
@@ -124,7 +143,15 @@ def build_route_node(
 
         # Engines that can price the same trip differently (BRouter profiles) add
         # alternatives; they run alongside the main requests, are best effort and
-        # never turn into errors.
+        # never turn into errors. An optimisation asks for many more routes instead.
+        raw_spec = state.get("optimize")
+        spec = OptimizeSpec.model_validate(raw_spec) if raw_spec else None
+
+        def extra_routes(provider: Any) -> Any:
+            if spec is not None and hasattr(provider, "optimization_candidates"):
+                return _optimization_candidates(provider, request, spec)
+            return _bounded_alternatives(provider, request)
+
         results, extras = await asyncio.gather(
             asyncio.gather(
                 *(provider.route(request) for provider in routing_providers),
@@ -132,9 +159,10 @@ def build_route_node(
             ),
             asyncio.gather(
                 *(
-                    _bounded_alternatives(provider, request)
+                    extra_routes(provider)
                     for provider in routing_providers
                     if hasattr(provider, "alternatives")
+                    or (spec is not None and hasattr(provider, "optimization_candidates"))
                 ),
             ),
         )
