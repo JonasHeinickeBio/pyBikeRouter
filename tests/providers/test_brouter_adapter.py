@@ -868,3 +868,28 @@ async def test_the_queue_slot_is_free_while_a_cancelled_request_waits_to_retry(
 def test_the_concurrency_must_be_at_least_one() -> None:
     with pytest.raises(ValueError):
         BRouterAdapter(base_url=BROUTER_BASE, max_concurrency=0)
+
+
+def test_the_main_route_may_take_longer_on_a_longer_trip_up_to_a_maximum() -> None:
+    plain = BRouterAdapter(base_url=BROUTER_BASE, timeout_s=30.0)
+    scaled = BRouterAdapter(
+        base_url=BROUTER_BASE, timeout_s=30.0, timeout_per_km_s=0.5, timeout_max_s=120.0
+    )
+    assert plain.route_timeout_s(_trip(300)) == 30.0  # no per-km allowance: as before
+    assert scaled.route_timeout_s(_trip(10)) == 30.0  # never less than the setting
+    assert scaled.route_timeout_s(_trip(135)) == pytest.approx(15 + 0.5 * 135, abs=1.0)
+    assert scaled.route_timeout_s(_trip(900)) == 120.0  # capped
+
+
+@respx.mock
+async def test_the_http_call_of_the_main_route_gets_the_longer_timeout() -> None:
+    seen: list[float] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"]["read"])
+        return httpx.Response(200, json=ROUTE_FIXTURE)
+
+    respx.get(BROUTER_URL).mock(side_effect=record)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, timeout_s=30.0, timeout_per_km_s=0.5)
+    await adapter.route(_trip(135))
+    assert seen and seen[0] == pytest.approx(82.5, abs=1.0)  # 15 s + 0.5 s * 135 km

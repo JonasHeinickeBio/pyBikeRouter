@@ -104,6 +104,8 @@ class BRouterAdapter:
         alternatives_timeout_s: float = 8.0,
         alternatives_timeout_per_km_s: float = 0.0,
         alternatives_timeout_max_s: float = 120.0,
+        timeout_per_km_s: float = 0.0,
+        timeout_max_s: float = 180.0,
         optimize_timeout_per_km_s: float = 1.2,
         optimize_timeout_max_s: float = 300.0,
         max_concurrency: int = 1,
@@ -120,6 +122,8 @@ class BRouterAdapter:
         self._alternatives_timeout_s = alternatives_timeout_s
         self._alternatives_per_km_s = alternatives_timeout_per_km_s
         self._alternatives_max_s = max(alternatives_timeout_max_s, alternatives_timeout_s)
+        self._timeout_per_km_s = timeout_per_km_s
+        self._timeout_max_s = max(timeout_max_s, timeout_s)
         self._optimize_per_km_s = optimize_timeout_per_km_s
         self._optimize_max_s = optimize_timeout_max_s
         self._base_url = base_url.rstrip("/")
@@ -240,9 +244,19 @@ class BRouterAdapter:
                 continue
             return response
 
+    def route_timeout_s(self, request: RoutingRequest) -> float:
+        """How long the main route may take: the configured timeout, or 15 s plus
+        ``timeout_per_km_s`` per km between the places when that is more (up to the maximum)."""
+        points = [request.origin, *request.via, request.destination]
+        km = sum(_straight_km(a, b) for a, b in zip(points, points[1:], strict=False))
+        scaled = 15.0 + self._timeout_per_km_s * km if self._timeout_per_km_s else 0.0
+        return min(max(self._timeout_s, scaled), self._timeout_max_s)
+
     async def route(self, request: RoutingRequest) -> RouteCandidate:
         return await self._route_with_profile(
-            request, self._profile_for(request.constraints.bike_type.value)
+            request,
+            self._profile_for(request.constraints.bike_type.value),
+            timeout_s=self.route_timeout_s(request),
         )
 
     def alternatives_deadline_s(self, request: RoutingRequest) -> float:

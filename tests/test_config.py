@@ -655,3 +655,11 @@ def test_brouter_concurrency_defaults_to_one_and_must_be_positive():
     assert Settings(_env_file=None).brouter_max_concurrency == 1
     with pytest.raises(ValueError):
         Settings(_env_file=None, brouter_max_concurrency=0)
+
+
+def test_the_main_route_timeout_settings_are_checked() -> None:
+    assert Settings(_env_file=None).brouter_timeout_per_km_s == 0.5
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, brouter_timeout_per_km_s=-1)
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, brouter_timeout_s=60, brouter_timeout_max_s=30)
