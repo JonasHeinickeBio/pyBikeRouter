@@ -126,6 +126,9 @@ class RouteMetrics(BaseModel):
     # The length-weighted mean of the same per-segment exposure (0 = nothing motorised, 1 = a main
     # road all the way): one number to optimise or sort by. Same limits as ``traffic_shares``.
     traffic_index: float | None = Field(default=None, ge=0, le=1)
+    # Well-known places within the optimiser's corridor of the route; set only by an
+    # optimisation that has the "pois" goal and a POI service (docs/optimizer.md).
+    poi_count: int | None = Field(default=None, ge=0)
     # Shares of the route by the OSM ``surface`` tags the engine routed over
     # (BRouter): paved / unpaved (compacted, loose, natural soft) / cobbles
     # (masonry) / unknown, summing to 1; empty when the engine gives no tags.
@@ -216,8 +219,34 @@ class PoiStopsRequest(BaseModel):
 
 
 GoalMetric = Literal[
-    "traffic", "busy_roads", "paved", "unpaved", "cobbles", "distance", "duration", "ascent"
+    "traffic", "busy_roads", "paved", "unpaved", "cobbles", "distance", "duration", "ascent", "pois"
 ]
+
+
+class OptimizePoiOptions(BaseModel):
+    """What counts as a place "along the track" for the ``pois`` goal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Which kinds of sights count (services such as cafes are not "along the track" sights).
+    categories: list[str] = Field(default_factory=lambda: list(SIGHT_KEYS))
+    # How close to the route a place must be to count.
+    corridor_m: float = Field(default=300.0, ge=50, le=2000)
+    # Described in at least this many Wikipedia languages (Wikidata sitelinks).
+    min_fame: int = Field(default=5, ge=1, le=200)
+
+    @field_validator("categories")
+    @classmethod
+    def _sights_only(cls, value: list[str]) -> list[str]:
+        unknown = sorted(set(value) - set(ALL_KEYS))
+        if unknown:
+            raise ValueError(f"unknown POI categories {unknown}; known: {list(ALL_KEYS)}")
+        services = sorted(set(value) - set(SIGHT_KEYS))
+        if services:
+            raise ValueError(f"{services} are services, not sights: use {list(SIGHT_KEYS)}")
+        if not value:
+            raise ValueError("categories must not be empty")
+        return value
 
 
 class OptimizeGoal(BaseModel):
@@ -242,6 +271,8 @@ class OptimizeSpec(BaseModel):
     max_detour_pct: float = Field(default=30.0, ge=0, le=300)
     # How many extra routes are fetched: quick ~4, normal ~8, thorough ~12.
     effort: Literal["quick", "normal", "thorough"] = "normal"
+    # What counts for the "pois" goal (defaults: well-known sights within 300 m).
+    poi: OptimizePoiOptions = Field(default_factory=OptimizePoiOptions)
 
     @field_validator("goals")
     @classmethod

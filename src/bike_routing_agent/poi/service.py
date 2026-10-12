@@ -39,6 +39,13 @@ class PoiSearchResult:
     fame_status: FameStatus
 
 
+@dataclass(frozen=True)
+class RoutesPoiResult:
+    per_route: list[list[Poi]]
+    truncated: bool
+    fame_status: FameStatus
+
+
 class PoiService:
     def __init__(
         self,
@@ -86,6 +93,50 @@ class PoiService:
                 )
             )
         return await self._finish(located, categories, per_category_limit, linked_only)
+
+    async def along_routes(
+        self,
+        lines: Sequence[Sequence[LonLat]],
+        category_keys: Sequence[str] | None,
+        *,
+        buffer_m: float,
+        linked_only: bool = False,
+        per_category_limit: int = 400,
+    ) -> RoutesPoiResult:
+        """POIs near each of several routes from ONE search over their merged corridors.
+
+        ``per_route[i]`` holds the places within ``buffer_m`` of ``lines[i]`` (with
+        ``distance_from_route_m`` and ``along_route_km`` measured against that route), most
+        famous first. Used to compare alternative routes by what they pass.
+        """
+        categories = resolve_categories(list(category_keys) if category_keys else None)
+        found = await self._fetcher.along_many(
+            lines, categories, buffer_m=buffer_m, linked_only=linked_only
+        )
+        finished = await self._finish(found, categories, per_category_limit, linked_only)
+        per_route: list[list[Poi]] = []
+        for line in lines:
+            if len(line) < 2:
+                per_route.append([])
+                continue
+            cumulative = cumulative_lengths_m(line)
+            near: list[Poi] = []
+            for poi in finished.pois:
+                offset, along = project_onto_line((poi.lon, poi.lat), line, cumulative)
+                limit = min(buffer_m, SERVICE_MAX_OFFSET_M) if poi.kind == "service" else buffer_m
+                if offset <= limit:
+                    near.append(
+                        poi.model_copy(
+                            update={
+                                "distance_from_route_m": round(offset, 1),
+                                "along_route_km": round(along / 1000, 3),
+                            }
+                        )
+                    )
+            per_route.append(near)
+        return RoutesPoiResult(
+            per_route=per_route, truncated=finished.truncated, fame_status=finished.fame_status
+        )
 
     async def in_bbox(
         self,

@@ -25,6 +25,7 @@ import asyncio
 import json
 import logging
 import math
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -41,8 +42,19 @@ from bike_routing_agent.errors import (
     ProviderTimeoutError,
     ProviderUnavailableError,
 )
-from bike_routing_agent.models import OptimizeSpec, RouteCandidate, RouteMetrics, RoutingRequest
-from bike_routing_agent.providers.brouter_optimize import plan_variants
+from bike_routing_agent.models import (
+    MAX_VIA_POINTS,
+    OptimizeSpec,
+    RouteCandidate,
+    RouteMetrics,
+    RoutingRequest,
+)
+from bike_routing_agent.providers.brouter_optimize import (
+    EFFORT_REQUESTS,
+    PoiVia,
+    plan_variants,
+    poi_via_sets,
+)
 from bike_routing_agent.providers.brouter_segments import missing_segment
 from bike_routing_agent.providers.brouter_tags import (
     main_road_share,
@@ -255,7 +267,11 @@ class BRouterAdapter:
         return min(20.0 + self._optimize_per_km_s * km, max(self._optimize_max_s, 20.0))
 
     async def optimization_candidates(
-        self, request: RoutingRequest, spec: OptimizeSpec
+        self,
+        request: RoutingRequest,
+        spec: OptimizeSpec,
+        *,
+        poi_vias: Sequence[PoiVia] = (),
     ) -> list[RouteCandidate]:
         """Many routes for the same trip, for the optimiser: other profiles, BRouter's own
         second and third routes, and a traffic variant (``brouter_optimize.plan_variants``).
@@ -264,10 +280,25 @@ class BRouterAdapter:
         in plan order, and a variant that fails or finds no route is simply absent.
         """
         own = self._profile_for(request.constraints.bike_type.value)
+        # Routes sent through well-known places (the "pois" goal): the own profile with one or
+        # two sights as via points; only when the person gave no via points of their own.
+        through = poi_via_sets(poi_vias, room=MAX_VIA_POINTS) if not request.via else []
         variants = plan_variants(spec, own)
-        if not variants:
+        budget = max(2, EFFORT_REQUESTS[spec.effort] - len(through))
+        variants = variants[:budget]
+        if not variants and not through:
             return []
         deadline = self.optimization_deadline_s(request)
+        via_tasks = {
+            asyncio.ensure_future(
+                self._route_with_profile(
+                    request.model_copy(update={"via": [v.coordinate for v in stops]}),
+                    own,
+                    timeout_s=deadline,
+                )
+            ): stops
+            for stops in through
+        }
         tasks = {
             asyncio.ensure_future(
                 self._route_with_profile(
@@ -280,11 +311,32 @@ class BRouterAdapter:
             ): v
             for v in variants
         }
-        done, pending = await asyncio.wait(tasks, timeout=deadline)
+        done, pending = await asyncio.wait([*tasks, *via_tasks], timeout=deadline)
         for task in pending:
             task.cancel()
-            logger.info("brouter optimisation variant %s timed out", tasks[task].source)
+            what = (
+                tasks[task].source
+                if task in tasks
+                else "via " + ", ".join(v.name for v in via_tasks[task])
+            )
+            logger.info("brouter optimisation variant %s timed out", what)
         found: list[RouteCandidate] = []
+        for task, stops in via_tasks.items():
+            if task not in done:
+                continue
+            try:
+                result = task.result()
+            except Exception as exc:
+                logger.info("brouter route via %s unavailable: %s", [v.name for v in stops], exc)
+                continue
+            names = [v.name for v in stops]
+            provenance = {
+                **result.provenance,
+                "alternative_of": own,
+                "optimizer_source": "via " + ", ".join(names),
+                "optimizer_via": names,
+            }
+            found.append(result.model_copy(update={"provenance": provenance}))
         for task, variant in tasks.items():  # plan order
             if task not in done:
                 continue

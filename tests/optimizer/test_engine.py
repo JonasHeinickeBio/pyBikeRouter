@@ -190,3 +190,41 @@ def test_the_spec_is_validated():
         spec(("paved", 1.0), ("unpaved", 1.0))  # opposite goals
     with pytest.raises(ValueError):
         OptimizeGoal(metric="traffic", weight=0)
+
+
+# --------------------------------------------------------------------------- the pois goal
+
+
+def with_pois(c: RouteCandidate, n: int | None) -> RouteCandidate:
+    return c.model_copy(update={"metrics": c.metrics.model_copy(update={"poi_count": n})})
+
+
+def test_more_well_known_places_along_the_route_wins_within_the_detour_cap():
+    routes = [
+        with_pois(cand("direct", 50, traffic=0.1), 2),
+        with_pois(cand("via_castle", 54, traffic=0.1), 7),
+        with_pois(cand("grand_tour", 80, traffic=0.1), 12),  # +60 %: over the cap
+    ]
+    got = optimize(routes, spec(("pois", 1.0)))
+    assert winner(got) == "via_castle"
+    row = got.report["table"][0]
+    assert row["values"] == {"pois": 7.0} and row["shown"]["pois"] == "7 well-known places nearby"
+    assert "more sights along the route" in got.report["summary"]
+    assert [r["feasible"] for r in got.report["table"]] == [True, True, False]
+
+
+def test_sights_and_quiet_roads_are_traded_against_each_other_by_weight():
+    routes = [
+        with_pois(cand("quiet", 50, traffic=0.05), 1),
+        with_pois(cand("sights", 52, traffic=0.30), 9),
+    ]
+    assert winner(optimize(routes, spec(("traffic", 1.0), ("pois", 0.3)))) == "quiet"
+    assert winner(optimize(routes, spec(("traffic", 0.3), ("pois", 1.0)))) == "sights"
+
+
+def test_without_a_poi_count_the_goal_is_dropped_with_its_own_reason():
+    routes = [cand("a", 50, traffic=0.1), cand("b", 52, traffic=0.2)]
+    got = optimize(routes, spec(("traffic", 1.0), ("pois", 1.0)))
+    assert winner(got) == "a"
+    [dropped] = got.report["dropped_goals"]
+    assert dropped["metric"] == "pois" and "POI lookup was not available" in dropped["reason"]

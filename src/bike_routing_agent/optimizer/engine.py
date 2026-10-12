@@ -87,6 +87,11 @@ METRICS: dict[str, Metric] = {
             lambda best: max(900.0, 0.25 * best), lambda v: f"{v / 3600:.1f} h",
         ),
         Metric(
+            "pois", "max", "more sights along the route", lambda c: c.metrics.poi_count,
+            lambda best: max(3.0, 0.5 * best),
+            lambda v: f"{round(v)} well-known place{'s' if round(v) != 1 else ''} nearby",
+        ),
+        Metric(
             "ascent", "min", "less climbing", lambda c: c.metrics.ascent_m,
             lambda best: max(100.0, 0.5 * best), lambda v: f"{v:.0f} m of climbing",
         ),
@@ -150,9 +155,12 @@ def optimize(
         metric = METRICS[goal.metric]
         values = {i: metric.value(c) for i, c in pool.items()}
         if all(v is None for v in values.values()):
-            dropped.append(
-                {"metric": goal.metric, "reason": "no candidate has data for it (engine gave none)"}
+            reason = (
+                "the POI lookup was not available, so nothing could be counted"
+                if goal.metric == "pois"
+                else "no candidate has data for it (engine gave none)"
             )
+            dropped.append({"metric": goal.metric, "reason": reason})
             continue
         active.append((goal, metric, values, _goodness(values, metric)))
 

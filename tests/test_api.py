@@ -1250,3 +1250,51 @@ async def test_without_optimize_the_response_has_no_report(client, monkeypatch) 
         "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"}
     )
     assert response.json()["optimization"] is None
+
+
+@pytest.mark.parametrize(
+    "poi",
+    [
+        {"categories": ["water"]},  # a service
+        {"categories": ["castle_not"]},
+        {"categories": []},
+        {"corridor_m": 10},
+        {"corridor_m": 5000},
+        {"min_fame": 0},
+        {"extra": 1},
+    ],
+)
+async def test_bad_poi_options_of_the_optimizer_are_a_422(client, poi) -> None:
+    response = await client.post(
+        "/v1/route/plan",
+        json={
+            "origin": "1.0, 2.0",
+            "destination": "3.0, 4.0",
+            "optimize": {"goals": [{"metric": "pois"}], "poi": poi},
+        },
+    )
+    assert response.status_code == 422
+
+
+async def test_the_pois_goal_is_accepted_with_defaults(client, monkeypatch) -> None:
+    import bike_routing_agent.api as api_module
+
+    seen: dict = {}
+
+    class Recording(_StubGraph):
+        async def ainvoke(self, initial_state: dict) -> dict:
+            seen.update(initial_state)
+            return self._final_state
+
+    monkeypatch.setattr(api_module, "_graph", Recording(_ready_state([("brouter", 0.9)])))
+    response = await client.post(
+        "/v1/route/plan",
+        json={
+            "origin": "1.0, 2.0",
+            "destination": "3.0, 4.0",
+            "optimize": {"goals": [{"metric": "pois"}]},
+        },
+    )
+    assert response.status_code == 200
+    poi = seen["raw_input"]["optimize"]["poi"]
+    assert poi["corridor_m"] == 300.0 and poi["min_fame"] == 5 and "historic" in poi["categories"]

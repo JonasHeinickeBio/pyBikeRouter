@@ -142,6 +142,24 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         "found may win (default 30)",
     )
     plan.add_argument(
+        "--optimize-poi-categories",
+        default=None,
+        metavar="KEYS",
+        help="with --optimize pois: which sights count (comma separated; default all sights)",
+    )
+    plan.add_argument(
+        "--optimize-poi-corridor-m",
+        type=float,
+        default=None,
+        help="with --optimize pois: how close to the route a place must be (default 300 m)",
+    )
+    plan.add_argument(
+        "--optimize-poi-min-fame",
+        type=int,
+        default=None,
+        help="with --optimize pois: described in at least this many languages (default 5)",
+    )
+    plan.add_argument(
         "--effort",
         choices=("quick", "normal", "thorough"),
         default=None,
@@ -293,6 +311,15 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
             spec["max_detour_pct"] = args.max_detour_pct
         if args.effort is not None:
             spec["effort"] = args.effort
+        poi: dict[str, Any] = {}
+        if args.optimize_poi_categories:
+            poi["categories"] = _csv(args.optimize_poi_categories)
+        if args.optimize_poi_corridor_m is not None:
+            poi["corridor_m"] = args.optimize_poi_corridor_m
+        if args.optimize_poi_min_fame is not None:
+            poi["min_fame"] = args.optimize_poi_min_fame
+        if poi:
+            spec["poi"] = poi
         request["optimize"] = spec
     if args.poi_stops is not None:
         stops: dict[str, Any] = {"count": args.poi_stops}
@@ -380,6 +407,16 @@ def run(
         and not args.optimize
     ):
         usage_error = "--max-detour-pct and --effort belong to --optimize"
+    if (
+        usage_error is None
+        and not args.optimize
+        and (
+            args.optimize_poi_categories
+            or args.optimize_poi_corridor_m is not None
+            or args.optimize_poi_min_fame is not None
+        )
+    ):
+        usage_error = "--optimize-poi-* options belong to --optimize pois"
     if usage_error is None and (args.candidate is not None) and not (args.gpx or args.geojson):
         usage_error = "--candidate only selects what --gpx / --geojson write"
     request: dict[str, Any] = {}

@@ -161,3 +161,73 @@ def test_the_deadline_grows_with_the_trip_up_to_its_maximum():
     assert short == pytest.approx(30.0, abs=1.0)
     assert long_ == pytest.approx(80.0, abs=1.5)
     assert huge == 100.0
+
+
+# ------------------------------------------------------------------ routes through places
+
+
+def poi_via(name: str, along_km: float, lon: float = 10.3, lat: float = 52.01):
+    from bike_routing_agent.providers.brouter_optimize import PoiVia
+
+    return PoiVia(name=name, coordinate=Coordinate(lon=lon, lat=lat), along_km=along_km)
+
+
+def test_places_become_via_sets_each_alone_and_the_best_two_together_in_travel_order():
+    from bike_routing_agent.providers.brouter_optimize import poi_via_sets
+
+    vias = [poi_via("Burg", 40.0), poi_via("Kloster", 12.0), poi_via("Turm", 25.0), poi_via("x", 1)]
+    sets = poi_via_sets(vias)
+    assert [[v.name for v in s] for s in sets] == [
+        ["Burg"],
+        ["Kloster"],
+        ["Turm"],
+        ["Kloster", "Burg"],
+    ]
+    assert poi_via_sets([]) == [] and [[v.name for v in s] for s in poi_via_sets(vias, room=1)] == [
+        ["Burg"], ["Kloster"], ["Turm"],
+    ]  # fmt: skip
+
+
+@respx.mock
+async def test_routes_through_the_places_are_requested_with_them_as_via_points():
+    seen: list[str] = []
+
+    def answer(req: httpx.Request) -> httpx.Response:
+        seen.append(req.url.params["lonlats"])
+        return httpx.Response(200, json=payload())
+
+    respx.get(URL).mock(side_effect=answer)
+    adapter = BRouterAdapter(base_url=BASE)
+    got = await adapter.optimization_candidates(
+        request(), spec("pois", effort="quick"), poi_vias=[poi_via("Burg", 20, 10.4, 52.02)]
+    )
+    through = [c for c in got if c.provenance.get("optimizer_via")]
+    assert [c.provenance["optimizer_via"] for c in through] == [["Burg"]]
+    assert through[0].provenance["optimizer_source"] == "via Burg"
+    assert any("10.4000000,52.0200000" in lonlats for lonlats in seen)  # the place is on the way
+    # the quick budget (4) is shared: one route through the place, the rest are profile variants
+    assert len(got) <= 4 + 1
+
+
+@respx.mock
+async def test_the_persons_own_via_points_are_never_reordered_by_places():
+    respx.get(URL).mock(return_value=httpx.Response(200, json=payload()))
+    own = request().model_copy(update={"via": [Coordinate(lon=10.2, lat=52.0)]})
+    got = await BRouterAdapter(base_url=BASE).optimization_candidates(
+        own, spec("pois", effort="quick"), poi_vias=[poi_via("Burg", 20)]
+    )
+    assert not any(c.provenance.get("optimizer_via") for c in got)
+
+
+@respx.mock
+async def test_a_place_that_cannot_be_routed_through_is_simply_absent():
+    def answer(req: httpx.Request) -> httpx.Response:
+        if "10.4000000,52.0200000" in req.url.params["lonlats"]:
+            return httpx.Response(400, text="via point not mappable")
+        return httpx.Response(200, json=payload())
+
+    respx.get(URL).mock(side_effect=answer)
+    got = await BRouterAdapter(base_url=BASE).optimization_candidates(
+        request(), spec("pois", effort="quick"), poi_vias=[poi_via("Gipfel", 20, 10.4, 52.02)]
+    )
+    assert got and not any(c.provenance.get("optimizer_via") for c in got)

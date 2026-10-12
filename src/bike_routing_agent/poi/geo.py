@@ -105,6 +105,40 @@ def corridor_boxes(
     return boxes
 
 
+def merge_boxes(boxes: Sequence[BBox], *, overlap: float = 0.5) -> list[BBox]:
+    """Fewer boxes covering the same ground: a box inside another is dropped, and two that
+    overlap by at least ``overlap`` of the smaller one become their union. Used when several
+    near-parallel routes ask for the same places, which a single query can then answer."""
+
+    def area(b: BBox) -> float:
+        return max(b[2] - b[0], 0.0) * max(b[3] - b[1], 0.0)
+
+    def inside(a: BBox, b: BBox) -> bool:
+        return a[0] >= b[0] and a[1] >= b[1] and a[2] <= b[2] and a[3] <= b[3]
+
+    merged: list[BBox] = []
+    for box in sorted(boxes, key=lambda b: -area(b)):
+        placed = False
+        for i, other in enumerate(merged):
+            if inside(box, other):
+                placed = True
+                break
+            w = min(box[2], other[2]) - max(box[0], other[0])
+            h = min(box[3], other[3]) - max(box[1], other[1])
+            if w > 0 and h > 0 and w * h >= overlap * min(area(box), area(other)):
+                merged[i] = (
+                    min(box[0], other[0]),
+                    min(box[1], other[1]),
+                    max(box[2], other[2]),
+                    max(box[3], other[3]),
+                )
+                placed = True
+                break
+        if not placed:
+            merged.append(box)
+    return merged
+
+
 def _chunks(line: Sequence[LonLat], size_km: float) -> list[list[LonLat]]:
     """Consecutive pieces of the line whose own extent stays within ~``size_km``."""
     limit_m = size_km * 1000
