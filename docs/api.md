@@ -101,6 +101,22 @@ alternative, and the better-scored one is kept.
   `bicycle=designated`: a proxy for exposure to motor traffic, not a measurement. Segments
   without way tags are not counted as quiet road: with fewer than 80 % of the length tagged
   the share is `null`.
+- **Traffic estimate** (`metrics.traffic_shares`: `busy` / `some` / `quiet` / `off_road`, summing
+  to 1; BRouter only; never feeds the score). Every way segment gets an exposure from what is
+  mapped, then the length is split into bands. The base is the road class (motorway/trunk 1.0,
+  primary 0.9, secondary 0.75, tertiary 0.5, unclassified 0.25, residential 0.15, service and
+  living street 0.05; paths, tracks and cycleways 0). It is then scaled: a separate cycle track
+  beside the road x0.15, a painted lane x0.5, a way closed to cars (`access` / `motor_vehicle` =
+  no, agricultural, forestry ...) x0.1, a speed limit of 30 km/h or less x0.6, 60-79 km/h x1.2,
+  80+ x1.4; a way designated for bikes is 0; `bicycle=use_sidepath` is not discounted because the
+  route is on the road itself. Bands: `busy` from 0.6, `some` from 0.2, `quiet` above 0,
+  `off_road` = 0. The weights are judgement, not measurement: there are no traffic counts in OSM,
+  so this is an estimate and is worded as one everywhere ("Traffic (estimate): ..."). On
+  Braunschweig - Hamburg (195 km) the gravel route came out at 0 % busy, 9 % some traffic, 19 %
+  quiet streets, 72 % paths and tracks; BRouter's `fastbike` route over the same trip at 27 %
+  busy, 54 % some traffic, 12 % quiet, 8 % paths and tracks (where the older main-road share
+  said 72 %, because it did not tell a secondary road with a cycle track from one without).
+  With fewer than 80 % of the length tagged the field is empty.
 - **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
   paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;
   never feeds the score). Paved counts as a pro for `road`, `city`, `commuter` and

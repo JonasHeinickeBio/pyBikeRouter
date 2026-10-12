@@ -268,10 +268,22 @@ def explain(question: str, plan: dict[str, Any]) -> str:
         asked = True
         traffic = traffic_text(metrics)
         if traffic:
-            parts.append(
-                f"Traffic: {traffic} (trunk to tertiary roads; a proxy from the road tags for "
-                "exposure to cars, not a measurement)."
-            )
+            if metrics.get("traffic_shares"):
+                main = metrics.get("main_road_share")
+                parts.append(
+                    f"Traffic, estimated from the mapped road class, cycle lanes and speed limits "
+                    f"(not a count of cars): {traffic}."
+                    + (
+                        f" {round(main * 100)} % is on main roads without a bike lane."
+                        if main is not None
+                        else ""
+                    )
+                )
+            else:
+                parts.append(
+                    f"Traffic: {traffic} (trunk to tertiary roads; a proxy from the road tags "
+                    "for exposure to cars, not a measurement)."
+                )
         else:
             parts.append("The engine gave no road data, so I cannot say how much traffic it has.")
         if re.search(r"safe|safety", q):

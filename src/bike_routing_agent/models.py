@@ -118,6 +118,11 @@ class RouteMetrics(BaseModel):
     # the engine routed over (BRouter provides them). A proxy for exposure to
     # motor traffic, not a measurement of it; None when the engine gives no tags.
     main_road_share: float | None = Field(default=None, ge=0, le=1)
+    # A finer estimate from the same tags (providers/brouter_tags.py): length shares by traffic
+    # band -- busy / some / quiet / off_road, summing to 1 -- weighing road class, cycle
+    # infrastructure, speed limit and access. An estimate from what is mapped, not a count of
+    # cars; empty when the engine gives no tags.
+    traffic_shares: dict[str, float] = Field(default_factory=dict)
     # Shares of the route by the OSM ``surface`` tags the engine routed over
     # (BRouter): paved / unpaved (compacted, loose, natural soft) / cobbles
     # (masonry) / unknown, summing to 1; empty when the engine gives no tags.
