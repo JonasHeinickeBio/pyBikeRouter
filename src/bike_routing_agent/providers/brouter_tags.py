@@ -55,6 +55,103 @@ def main_road_share(messages: Any) -> float | None:
     return round(unprotected / tagged, 4)
 
 
+# --- traffic exposure ------------------------------------------------------------------------
+# OSM has no traffic counts, so exposure is *estimated* per segment from what is mapped: the road
+# class sets a base weight (0 = nothing motorised to speak of, 1 = a main road), then the tags
+# change it -- a separate cycle track, a low speed limit, or a way closed to cars lowers it, a
+# high limit raises it. The weights are judgement, not measurement; the result is reported in four
+# bands and always worded as an estimate (see docs/api.md).
+HIGHWAY_WEIGHT = {
+    "motorway": 1.0, "motorway_link": 1.0, "trunk": 1.0, "trunk_link": 0.95,
+    "primary": 0.9, "primary_link": 0.85, "secondary": 0.75, "secondary_link": 0.7,
+    "tertiary": 0.5, "tertiary_link": 0.45, "unclassified": 0.25, "residential": 0.15,
+    "road": 0.25, "living_street": 0.05, "service": 0.05,
+    "track": 0.0, "path": 0.0, "cycleway": 0.0, "footway": 0.0, "pedestrian": 0.0,
+    "bridleway": 0.0, "steps": 0.0, "corridor": 0.0,
+}  # fmt: skip
+UNKNOWN_HIGHWAY_WEIGHT = 0.2  # a road class that is not listed: some traffic, not none
+SEPARATE_BIKE_WAY = frozenset({"track", "separate", "opposite_track"})
+PAINTED_LANE = frozenset({"lane", "opposite_lane", "shared_busway"})
+CLOSED_TO_CARS = frozenset({"no", "agricultural", "forestry", "private", "delivery", "destination"})
+# Band edges on the per-segment weight: busy >= 0.6 > some >= 0.2 > quiet > 0 = off_road.
+BUSY_FROM, SOME_FROM = 0.6, 0.2
+TRAFFIC_BANDS = ("busy", "some", "quiet", "off_road")
+
+
+def _speed(raw: str | None) -> float | None:
+    """A ``maxspeed`` value in km/h; ``None`` when it is not a plain number (``walk``, ``none``,
+    ``DE:urban`` ...). Miles are converted."""
+    if not raw:
+        return None
+    text = raw.strip().lower()
+    mph = text.endswith("mph")
+    digits = text.removesuffix("mph").strip()
+    try:
+        value = float(digits)
+    except ValueError:
+        return None
+    return value * 1.609 if mph else value
+
+
+def segment_exposure(tags: dict[str, str]) -> float | None:
+    """The estimated exposure (0..1) of one way segment; ``None`` when it has no ``highway`` tag
+    (no evidence either way)."""
+    highway = tags.get("highway")
+    if not highway:
+        return None
+    weight = HIGHWAY_WEIGHT.get(highway, UNKNOWN_HIGHWAY_WEIGHT)
+    if weight == 0:
+        return 0.0
+    if tags.get("bicycle") == "designated" or tags.get("highway") == "cycleway":
+        return 0.0  # a way made for bikes, even where cars may also use it (rare): not a road
+    if tags.get("motor_vehicle") in CLOSED_TO_CARS or tags.get("access") in CLOSED_TO_CARS:
+        weight *= 0.1
+    lanes = [tags.get(key) for key in _LANE_KEYS]
+    if any(value in SEPARATE_BIKE_WAY for value in lanes):
+        weight *= 0.15  # a cycle track beside the road: the road's cars are on the other side
+    elif any(value in PAINTED_LANE for value in lanes):
+        weight *= 0.5
+    speed = _speed(tags.get("maxspeed"))
+    if speed is not None:
+        if speed <= 30:
+            weight *= 0.6
+        elif speed >= 80:
+            weight *= 1.4
+        elif speed >= 60:
+            weight *= 1.2
+    return min(weight, 1.0)
+
+
+def traffic_shares(messages: Any) -> dict[str, float]:
+    """Length shares by traffic band (``busy`` / ``some`` / ``quiet`` / ``off_road``), summing to
+    1, or ``{}`` when too little of the route carries way tags (unknown, not "no traffic")."""
+    if not isinstance(messages, list) or len(messages) < 2:
+        return {}
+    total = tagged = 0.0
+    bands = dict.fromkeys(TRAFFIC_BANDS, 0.0)
+    for row in messages[1:]:
+        try:
+            length, tags = float(row[_DISTANCE]), _tags(str(row[_WAY_TAGS] or ""))
+        except (IndexError, TypeError, ValueError):
+            continue
+        total += length
+        exposure = segment_exposure(tags)
+        if exposure is None:
+            continue
+        tagged += length
+        if exposure >= BUSY_FROM:
+            bands["busy"] += length
+        elif exposure >= SOME_FROM:
+            bands["some"] += length
+        elif exposure > 0:
+            bands["quiet"] += length
+        else:
+            bands["off_road"] += length
+    if total <= 0 or tagged / total < MIN_TAGGED_SHARE:
+        return {}
+    return {band: round(length / tagged, 4) for band, length in bands.items()}
+
+
 _UNPAVED = frozenset({"compacted", "loose", "natural_soft"})
 
 

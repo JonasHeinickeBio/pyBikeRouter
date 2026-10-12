@@ -43,7 +43,11 @@ from bike_routing_agent.errors import (
 )
 from bike_routing_agent.models import RouteCandidate, RouteMetrics, RoutingRequest
 from bike_routing_agent.providers.brouter_segments import missing_segment
-from bike_routing_agent.providers.brouter_tags import main_road_share, surface_shares
+from bike_routing_agent.providers.brouter_tags import (
+    main_road_share,
+    surface_shares,
+    traffic_shares,
+)
 
 # Fragments BRouter puts in its plain-text 400 body when the request was
 # well-formed but no path exists (as opposed to a bad profile/coordinates).
@@ -390,6 +394,7 @@ class BRouterAdapter:
             ascent_m=_as_float(properties.get("filtered ascend")),
             # BRouter reports no descent; leave it None rather than guess.
             main_road_share=main_road_share(properties.get("messages")),
+            traffic_shares=traffic_shares(properties.get("messages")),
             engine_surface_shares=surface_shares(properties.get("messages")),
         )
 

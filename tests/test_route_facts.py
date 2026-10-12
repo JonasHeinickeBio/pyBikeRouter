@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from bike_routing_agent.route_facts import (
+    busy_share,
     facts_line,
     facts_short,
     surface_shares,
@@ -38,6 +39,26 @@ def test_traffic_is_the_main_road_share_and_absent_data_is_not_zero():
     assert traffic_text(BRouter) == "19 % on main roads without a bike lane"
     assert traffic_text({"main_road_share": 0.0}) == "0 % on main roads without a bike lane"
     assert traffic_text({}) is None  # an engine without tags: unknown, not "no traffic"
+
+
+BANDS = {**BRouter, "traffic_shares": {"busy": 0.27, "some": 0.54, "quiet": 0.12, "off_road": 0.07}}
+
+
+def test_traffic_is_reported_by_band_when_the_engine_gave_enough_tags():
+    assert traffic_text(BANDS) == (
+        "27 % busy roads, 54 % some traffic, 12 % quiet streets, 7 % paths and tracks"
+    )
+    assert busy_share(BANDS) == 0.27
+    assert facts_short(BANDS) == "27 % busy roads, 71 % paved"
+    assert facts_line(BANDS).startswith(
+        "Surface: 71 % paved, 24 % unpaved, 5 % unknown. Traffic (estimate): 27 %"
+    )
+    # A band under half a percent is left out rather than shown as "0 %".
+    tiny = {"traffic_shares": {"busy": 0.001, "some": 0.0, "quiet": 0.2, "off_road": 0.799}}
+    assert traffic_text(tiny) == "20 % quiet streets, 80 % paths and tracks"
+    assert busy_share(tiny) == 0.001
+    # Without the estimate the older main-road number is used, as before.
+    assert busy_share(BRouter) == 0.19 and busy_share({}) is None
 
 
 def test_the_sentence_says_when_the_engine_gave_nothing():
@@ -74,6 +95,8 @@ def js(name: str, *args):
     "metrics",
     [
         BRouter,
+        BANDS,
+        {"traffic_shares": {"busy": 0.001, "some": 0.0, "quiet": 0.2, "off_road": 0.799}},
         {},
         {"main_road_share": 0.0},
         {"surface_coverage": {"asphalt": 0.5, "gravel": 0.2}, "unknown_surface_fraction": 0.3},
@@ -85,3 +108,4 @@ def test_facts_js_says_what_route_facts_py_says(metrics):
     assert js("trafficText", metrics) == traffic_text(metrics)
     paved = surface_shares(metrics).get("paved")
     assert js("pavedShare", metrics) == paved
+    assert js("busyShare", metrics) == busy_share(metrics)

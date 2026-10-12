@@ -949,7 +949,7 @@ function renderCandidatesTable() {
   const head =
     "<tr><th class='num'>Rank</th><th>Provider</th><th>Profile</th><th class='num'>Distance</th><th class='num'>Time</th>" +
     "<th class='num'>Ascent</th>" +
-    "<th class='num' title='Share on main roads (trunk to tertiary) without a mapped bike lane: a proxy for motor traffic'>Main roads</th>" +
+    "<th class='num' title='Share on busy roads: an estimate from the mapped road class, cycle lanes and speed limits, not a count of cars'>Busy roads</th>" +
     "<th class='num' title='Share on paved surfaces, from the OSM tags the engine routed over'>Paved</th>" +
     "<th class='num' title='Average wind against (&#9650;) or with (&#9660;) the direction of travel, km/h'>Wind</th>" +
     "<th class='num'>Score</th><th class='num'>Warnings</th></tr>";
@@ -980,7 +980,7 @@ function renderCandidatesTable() {
         `<td class="num">${fmtKm(m.distance_m)}</td>` +
         `<td class="num">${fmtDuration(m.duration_s)}</td>` +
         `<td class="num">${fmtM(m.ascent_m)}</td>` +
-        `<td class="num">${shareCell(m.main_road_share)}</td>` +
+        `<td class="num">${shareCell(BikeFacts.busyShare(m))}</td>` +
         `<td class="num">${shareCell(BikeFacts.pavedShare(m))}</td>` +
         `<td class="num">${windCellHtml(cand)}</td>` +
         `<td class="num">${cand.score != null ? cand.score.toFixed(2) : "—"}</td>` +
@@ -1015,7 +1015,10 @@ function updateActiveView() {
     metric(fmtDuration(m.duration_s), "Time") +
     metric(fmtM(m.ascent_m), "Ascent") +
     metric(fmtM(m.descent_m), "Descent") +
-    metric(m.main_road_share == null ? "&mdash;" : BikeFacts.pct(m.main_road_share), "On main roads") +
+    metric(
+      BikeFacts.busyShare(m) == null ? "&mdash;" : BikeFacts.pct(BikeFacts.busyShare(m)),
+      "Busy roads"
+    ) +
     metric(
       BikeFacts.pavedShare(m) == null ? "&mdash;" : BikeFacts.pct(BikeFacts.pavedShare(m)),
       "Paved"

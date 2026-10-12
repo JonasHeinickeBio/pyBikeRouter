@@ -63,9 +63,12 @@ any distance caps the distance at 75 % of the current route; "flatter" caps the 
 current one; "longer" needs a distance to aim for and says so.
 
 Every route reply reports **surface** and **traffic**, from the same numbers the web form and the CLI
-show: *"Surface: 71 % paved, 24 % unpaved, 5 % unknown. Traffic: 19 % on main roads without a bike lane."*
-Traffic is the share of the route on trunk to tertiary roads without a mapped cycle lane or track --
-a proxy for exposure to cars taken from the road tags, not a measurement of it; surface is the OSM
+show: *"Surface: 71 % paved, 24 % unpaved, 5 % unknown. Traffic (estimate): 5 % busy roads, ..."*
+Traffic is an **estimate** from the road tags, in four bands -- busy roads, some traffic, quiet
+streets, paths and tracks (class of road, cycle track or lane beside it, speed limit, access; see
+[api.md](api.md)) -- not a count of cars: *"Traffic (estimate): 27 % busy roads, 54 % some traffic,
+12 % quiet streets, 7 % paths and tracks."* Asked, the chat also gives the older figure (the share on
+main roads without a bike lane). Surface is the OSM
 `surface` tags the engine routed over, and "unknown" is never counted as paved. When the engine gave
 no tags the reply says so ("the engine gave no road data") instead of staying silent. Alternatives
 list their main-road and paved shares side by side, and `how much traffic is there?`, `is it busy?`,

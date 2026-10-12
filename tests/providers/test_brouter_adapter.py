@@ -427,6 +427,59 @@ async def test_main_road_share_comes_from_the_way_tags_and_ignores_bike_lanes() 
 
 
 @respx.mock
+async def test_traffic_bands_come_from_road_class_cycle_infrastructure_and_speed() -> None:
+    rows = [
+        (1000, "highway=secondary maxspeed=100"),  # busy
+        (1000, "highway=secondary cycleway:right=track"),  # a cycle track beside it: quiet
+        (1000, "highway=tertiary"),  # some traffic
+        (1000, "highway=residential maxspeed=30"),  # quiet
+        (1000, "highway=track tracktype=grade1"),  # off road
+        (1000, "highway=residential bicycle=designated"),  # a bike street: off road
+    ]
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=_payload_with_tags(rows)))
+    got = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())
+    shares = got.metrics.traffic_shares
+    assert shares == {"busy": 0.1667, "some": 0.1667, "quiet": 0.3333, "off_road": 0.3333}
+    assert got.metrics.main_road_share == pytest.approx(0.3333, abs=0.001)  # the older number stays
+
+
+def test_segment_exposure_weighs_what_is_mapped() -> None:
+    from bike_routing_agent.providers.brouter_tags import segment_exposure as e
+
+    assert e({}) is None  # no highway tag: no evidence either way
+    assert e({"highway": "motorway"}) == 1.0
+    assert e({"highway": "path"}) == 0.0 and e({"highway": "track"}) == 0.0
+    assert e({"highway": "cycleway"}) == 0.0
+    assert e({"highway": "primary", "bicycle": "designated"}) == 0.0
+    assert e({"highway": "primary"}) == 0.9
+    assert e({"highway": "primary", "maxspeed": "100"}) == 1.0  # raised, never above 1
+    assert e({"highway": "tertiary", "maxspeed": "30"}) == pytest.approx(0.3)
+    assert e({"highway": "tertiary", "maxspeed": "30 mph"}) == 0.5  # 48 km/h: nothing special
+    assert e({"highway": "tertiary", "maxspeed": "45 mph"}) == pytest.approx(0.5 * 1.2)  # 72 km/h
+    assert e({"highway": "tertiary", "maxspeed": "walk"}) == 0.5  # not a number: ignored
+    assert e({"highway": "secondary", "cycleway": "track"}) == pytest.approx(0.75 * 0.15)
+    assert e({"highway": "secondary", "cycleway:left": "lane"}) == pytest.approx(0.75 * 0.5)
+    assert e({"highway": "secondary", "bicycle": "use_sidepath"}) == 0.75  # the route is on it
+    assert e({"highway": "unclassified", "access": "agricultural"}) == pytest.approx(0.025)
+    assert e({"highway": "bus_guideway"}) == 0.2  # an unlisted class: some traffic, not none
+
+
+def test_traffic_shares_need_enough_tagged_length_and_never_invent_quiet() -> None:
+    from bike_routing_agent.providers.brouter_tags import traffic_shares
+
+    header = ["lon", "lat", "ele", "dist", "c", "e", "t", "n", "i", "WayTags"]
+
+    def rows(*items):
+        return [header] + [[0, 0, 0, length, 0, 0, 0, 0, 0, tags] for length, tags in items]
+
+    assert traffic_shares(None) == {} and traffic_shares([header]) == {}
+    # Most of the length untagged: unknown, not "all quiet".
+    assert traffic_shares(rows((100, "highway=path"), (900, ""))) == {}
+    full = traffic_shares(rows((500, "highway=primary"), (500, "highway=path")))
+    assert full == {"busy": 0.5, "some": 0.0, "quiet": 0.0, "off_road": 0.5}
+
+
+@respx.mock
 async def test_without_way_tags_the_share_is_unknown_not_zero(brouter_route_response: dict) -> None:
     respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
     candidate = await BRouterAdapter(base_url=BROUTER_BASE).route(make_request())

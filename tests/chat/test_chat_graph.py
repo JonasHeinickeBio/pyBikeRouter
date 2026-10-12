@@ -1002,3 +1002,25 @@ async def test_asking_for_less_traffic_or_other_surfaces_changes_the_route_not_e
     await t.say("Braunschweig to Goslar")
     r = await t.say(text)
     assert r.intent == "refine" and len(planner.requests) == 2
+
+
+async def test_traffic_is_reported_by_band_and_explained_as_an_estimate():
+    def banded(request):
+        plan = with_facts(ready_plan())
+        for c in plan["candidates"]:
+            c["metrics"]["traffic_shares"] = {
+                "busy": 0.05, "some": 0.2, "quiet": 0.3, "off_road": 0.45,
+            }  # fmt: skip
+        plan["route"] = plan["candidates"][0]
+        return plan
+
+    service, _ = chat(FakePlanner(banded))
+    t = Talk(service)
+    r = await t.say("Braunschweig to Goslar")
+    assert "Traffic (estimate): 5 % busy roads, 20 % some traffic, 30 % quiet streets" in r.reply
+    asked = await t.say("how much traffic is there?")
+    assert "estimated from the mapped road class, cycle lanes and speed limits" in asked.reply
+    assert "not a count of cars" in asked.reply
+    assert "19 % is on main roads without a bike lane" in asked.reply
+    alts = await t.say("alternatives")
+    assert "(5 % busy roads, 71 % paved)" in alts.reply
