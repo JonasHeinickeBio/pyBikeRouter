@@ -92,7 +92,8 @@ and more asphalt"), what was compared, why this route won (with the numbers), wh
 goal had instead and what it cost, and the next best routes; `alternatives` lists all of them. Goals
 come in the order said, with weights 1.0, 0.7, 0.5, 0.4. One mild wish ("quieter", "paved only") stays
 an ordinary change; two goals, "optimise", or a superlative ("the quietest, smoothest route") make it
-an optimisation -- except a single superlative that names one of the routes already found ("the
+an optimisation (sights: "as many sights as possible", "with the most sights along the way";
+"past the most famous sights" stays a request for stops, [pois.md](pois.md)) -- except a single superlative that names one of the routes already found ("the
 fastest", "the quietest"), which just picks it. It takes 30-60 s, because many routes are computed.
 
 ## How it works

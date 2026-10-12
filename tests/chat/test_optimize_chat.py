@@ -140,3 +140,62 @@ async def test_without_a_route_the_optimiser_says_what_to_do_first():
     service, planner = chat()
     r = await Talk(service).say("optimise for less traffic and more asphalt")
     assert planner.requests == [] and r.plan is None
+
+
+# ------------------------------------------------------------------------------- sights
+
+
+@pytest.mark.parametrize(
+    ("text", "metrics"),
+    [
+        ("with as many sights as possible", ["pois"]),
+        ("with less traffic and the most sights along the way", ["traffic", "pois"]),
+        ("optimise for quiet roads and as many viewpoints as possible", ["traffic", "pois"]),
+        ("more sights", ["pois"]),
+        ("past as many castles as possible", ["pois"]),
+    ],
+)
+def test_sights_along_the_track_are_a_goal(text, metrics):
+    found = goals.detect(text)
+    assert found is not None and found.metrics == metrics
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Goslar to Hannover past the most famous sights",
+        "Goslar to Hannover along the most famous sights",
+        "Goslar to Hannover past 2 castles",
+        "Goslar to Hannover via 3 castles",
+    ],
+)
+def test_a_request_for_stops_stays_a_request_for_stops(text):
+    assert goals.detect(text) is None
+    line = parse_one_line(text)
+    assert line.sight_stops and not line.optimize
+    assert (line.origin, line.destination) == ("Goslar", "Hannover")
+
+
+async def test_the_reply_names_the_places_the_chosen_route_passes():
+    def sights(request: dict[str, Any]) -> dict[str, Any]:
+        plan = with_report(request)
+        plan["optimization"]["pois"] = ["Burg Dankwarderode", "Kloster Riddagshausen", "Okerturm"]
+        plan["optimization"]["goals"] = [{"metric": "pois"}]
+        return plan
+
+    service, planner = chat(FakePlanner(sights))
+    r = await Talk(service).say("Braunschweig to Wernigerode with as many sights as possible")
+    assert planner.requests[0]["optimize"]["goals"] == [{"metric": "pois", "weight": 1.0}]
+    assert "optimised for more sights along the route" in r.reply
+    assert "It passes: Burg Dankwarderode, Kloster Riddagshausen, Okerturm." in r.reply
+
+
+async def test_a_missing_sight_lookup_is_said():
+    def none(request: dict[str, Any]) -> dict[str, Any]:
+        plan = with_report(request)
+        plan["optimization"]["poi_status"] = "unavailable"
+        return plan
+
+    service, _ = chat(FakePlanner(none))
+    r = await Talk(service).say("Braunschweig to Wernigerode with as many sights as possible")
+    assert "sight lookup was not available" in r.reply

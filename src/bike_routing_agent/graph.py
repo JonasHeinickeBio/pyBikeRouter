@@ -102,7 +102,9 @@ def build_graph(
     graph.add_node(
         "route_with_provider",
         build_route_node(
-            routing_providers=routing_providers, optional_providers=optional_routing_providers
+            routing_providers=routing_providers,
+            optional_providers=optional_routing_providers,
+            poi_service=poi_service,
         ),
     )
     # Always present so routing never talks to scoring's surface assumptions
@@ -113,7 +115,7 @@ def build_graph(
     )
     # With an optimisation request: orders the candidates by the goals and selects the best fit;
     # a pass-through otherwise (nodes/optimize.py, docs/optimizer.md).
-    graph.add_node("optimize_candidates", build_optimize_node())
+    graph.add_node("optimize_candidates", build_optimize_node(poi_service=poi_service))
     # Best effort and informational: a no-op without a weather service, and it
     # never changes the plan's outcome (nodes/weather.py).
     graph.add_node(

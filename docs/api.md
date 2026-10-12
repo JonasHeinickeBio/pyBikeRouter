@@ -122,7 +122,9 @@ alternative, and the better-scored one is kept.
   best fit for goals such as `traffic` and `paved` instead of the best fit for one bike type;
   `optimization` carries the goals, how many routes were compared, the choice with its numbers and
   the trade-offs, and a table of every route. `candidates` are then ranked by the fit and `route`
-  is the best one ([optimizer.md](optimizer.md)). A bad spec (unknown metric, a metric twice,
+  is the best one; the `pois` goal counts well-known places near each route (`optimize.poi`:
+  `categories`, `corridor_m`, `min_fame`) and names the ones the winner passes
+  ([optimizer.md](optimizer.md)). A bad spec (unknown metric, a metric twice,
   `paved` with `unpaved`, weight outside 0..10, unknown field) is a `422`.
 - **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
   paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;

@@ -26,6 +26,12 @@ extra field, `optimize`. Without it nothing changes.
 | `unpaved` | the largest unpaved share (off-road riding); not with `paved` | `engine_surface_shares.unpaved` |
 | `cobbles` | the smallest cobble share | `engine_surface_shares.cobbles` |
 | `distance` / `duration` / `ascent` | the shortest / fastest / least climbing | `metrics.distance_m` / `duration_s` / `ascent_m` |
+| `pois` | the most well-known places along the track | `metrics.poi_count`: sights within `poi.corridor_m` (default 300 m) of the route with a Wikipedia/Wikidata fame of at least `poi.min_fame` (default 5 languages); see [pois.md](pois.md) |
+
+`optimize.poi` (only for the `pois` goal): `categories` (sights only, default all of them),
+`corridor_m` (50-2000, default 300), `min_fame` (default 5). The POI service must be on
+(`POI_ENABLED`); without it, or when Overpass does not answer, the goal has no data and is dropped
+and reported (`poi_status: "unavailable"`).
 
 Each goal has a `weight` (0 < w <= 10, default 1): the first goal in the chat counts 1.0, the next
 0.7, 0.5, 0.4 ("less traffic **but** ..." is what to get as well, not instead). `max_detour_pct`
@@ -43,12 +49,21 @@ requests below, most useful first and cut by `effort` (`quick` 4, `normal` 8, `t
    included as the baseline the detour is measured against;
 2. BRouter's own **second and third routes** (`alternativeidx` 1 and 2) for the leading profiles;
 3. when traffic is not a goal, the traffic-avoidance switch turned **off** for one profile (it may be
-   more direct).
+   more direct);
+4. for the `pois` goal: routes **through well-known places**. One search finds the best-known sights
+   within 3 km of the direct line (1.5 km if that search fails; public Overpass often answers a wide
+   one with 504); the best three become via points, alone and the best two together, routed with the
+   bike type's own profile. Not when you gave via points yourself (their order would be ambiguous) or
+   for a loop. They share the effort budget and are labelled `via <place>` in the table.
 
 BRouter answers one request at a time, so they queue; the allowance is 20 s plus
 `BROUTER_OPTIMIZE_TIMEOUT_PER_KM_S` (default 1.2) per km between the places, at most
 `BROUTER_OPTIMIZE_TIMEOUT_MAX_S` (default 300). What has finished by then is used, the rest is
 dropped. Near-identical routes (the same geometry within 50 m) are collapsed.
+
+Places are counted from **one** Overpass search over the merged corridors of all candidates
+(`PoiService.along_routes`), then measured against each route's own line: eight routes cost one
+search, not eight.
 
 ## How the choice is made
 
@@ -93,7 +108,31 @@ paved and a slightly higher traffic index -- and the table says so. With `durati
 0.7 the same trip selects the 65.1 km route that takes 2.7 h (the usual gravel route needs 2.9 h, the
 commuter route 3.2 h).
 
+### Example with sights (live, 2026-10-12)
+
+Goslar -> Quedlinburg, gravel bike, `pois` 1.0 + `traffic` 0.5, 77 s, 9 routes (7 distinct, four of
+them through places):
+
+| Route | km | detour | places nearby | traffic index | fit |
+| --- | --- | --- | --- | --- | --- |
+| **commuter profile** | 66.9 | +15 % | 8 | 0.15 | 0.89 |
+| gravel via Kaiserhaus + Stiftskirche St. Servatius | 73.2 | +26 % | 5 | 0.04 | 0.50 |
+| gravel via Klosterkirche St. Vitus | 73.9 | +27 % | 5 | 0.05 | 0.49 |
+| gravel (the usual route) | 73.9 | +27 % | 2 | 0.04 | 0.33 |
+| shortest | 58.1 | 0 % | 5 | 0.41 | 0.17 |
+
+The winner passes eight well-known places (Stiftskirche St. Servatius, Klosterkirche St. Vitus,
+Schloss Ilsenburg, ...) -- the reply and the response name them -- against two for the usual gravel
+route. Sending the gravel route through a place raised its count from 2 to 3-5 at the price of
+1-2 km; another profile found a corridor with more.
+
 ## Limits
+
+- **Sights are a count, not a taste.** A well-known place is one with a Wikipedia/Wikidata link and
+  `min_fame` languages; nothing here knows whether *you* would enjoy it, whether it is open, or
+  whether the path actually passes its entrance (300 m is "near").
+- **Overpass.** The counting search and the via-place search use the public Overpass instance; when
+  it is down the goal is dropped (said in the response) and the other goals still decide.
 
 - **An estimate of an estimate.** The traffic index comes from OSM tags and judgement weights, not
   from counts ([api.md](api.md)); "as much asphalt as possible" is as good as the

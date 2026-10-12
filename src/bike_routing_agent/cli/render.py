@@ -137,6 +137,8 @@ def plan_text(payload: dict[str, Any]) -> str:
         optimization = payload.get("optimization") or {}
         if optimization.get("summary"):
             lines.append(str(optimization["summary"]))
+        if optimization.get("pois"):
+            lines.append("It passes: " + ", ".join(str(p) for p in optimization["pois"][:8]) + ".")
         if payload.get("explanation"):
             lines.append(str(payload["explanation"]))
         candidates = payload.get("candidates") or []

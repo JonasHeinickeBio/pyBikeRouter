@@ -12,10 +12,11 @@ measurement decides.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from bike_routing_agent.config import BROUTER_TRAFFIC_SWITCHES
-from bike_routing_agent.models import OptimizeSpec
+from bike_routing_agent.models import MAX_VIA_POINTS, Coordinate, OptimizeSpec
 
 # Profiles that tend to serve a goal, best guess first.
 _FOR_GOAL: dict[str, tuple[str, ...]] = {
@@ -27,6 +28,9 @@ _FOR_GOAL: dict[str, tuple[str, ...]] = {
     "distance": ("shortest", "fastbike", "trekking"),
     "duration": ("fastbike", "trekking", "shortest"),
     "ascent": ("custom_touring-v1", "trekking", "custom_commuter-v1"),
+    # The places passed depend on the corridor more than on the profile; the profiles differ
+    # in how far they stray from the direct line, which is what varies the count.
+    "pois": ("trekking", "custom_touring-v1", "custom_gravel-v2"),
 }
 EFFORT_REQUESTS = {"quick": 4, "normal": 8, "thorough": 12}
 
@@ -74,3 +78,22 @@ def plan_variants(spec: OptimizeSpec, own_profile: str) -> list[Variant]:
                 break
     limit = EFFORT_REQUESTS[spec.effort]
     return variants[:limit]
+
+
+@dataclass(frozen=True)
+class PoiVia:
+    """A well-known place a candidate route may be sent through (the ``pois`` goal)."""
+
+    name: str
+    coordinate: Coordinate
+    along_km: float  # position along the direct line origin -> destination
+
+
+def poi_via_sets(vias: Sequence[PoiVia], *, room: int = MAX_VIA_POINTS) -> list[list[PoiVia]]:
+    """Which places to try as via points, one set per extra route: each of the leading ones
+    alone, and the two best together -- in travel order, at most ``room`` per set."""
+    top = list(vias)[:3]
+    sets: list[list[PoiVia]] = [[v] for v in top]
+    if len(top) >= 2 and room >= 2:
+        sets.append(top[:2])
+    return [sorted(s, key=lambda v: v.along_km) for s in sets if len(s) <= room]

@@ -711,3 +711,30 @@ def test_the_optimisation_is_part_of_the_cli_output():
     _, out, _, _ = plan("--format", "json", "--optimize", "traffic",
                         state=ready_state(optimization=report))  # fmt: skip
     assert json.loads(out)["optimization"]["table"][0]["label"] == "brouter/trekking"
+
+
+def test_the_sights_goal_and_its_options_reach_the_request():
+    _, _, _, graph = plan(
+        "--optimize", "traffic", "--optimize", "pois=0.7", "--optimize-poi-categories",
+        "historic,museum", "--optimize-poi-corridor-m", "500", "--optimize-poi-min-fame", "10",
+    )  # fmt: skip
+    spec = (graph.invoked_with or {})["raw_input"]["optimize"]
+    assert spec["goals"] == [{"metric": "traffic"}, {"metric": "pois", "weight": 0.7}]
+    assert spec["poi"] == {
+        "categories": ["historic", "museum"],
+        "corridor_m": 500.0,
+        "min_fame": 10,
+    }
+    code, _, _, graph = plan("--optimize", "pois", "--optimize-poi-categories", "water")
+    assert code == 2 and graph.invoked_with is None  # a service, not a sight
+    code, _, _, graph = plan("--optimize-poi-corridor-m", "500")
+    assert code == 2 and graph.invoked_with is None  # needs --optimize
+
+
+def test_the_places_the_route_passes_are_printed():
+    report = {"summary": "Compared 4 routes", "goals": [{"metric": "pois"}], "table": [],
+              "pois": ["Burg", "Kloster"]}  # fmt: skip
+    _, out, _, _ = plan(
+        "--format", "text", "--optimize", "pois", state=ready_state(optimization=report)
+    )
+    assert "It passes: Burg, Kloster." in out

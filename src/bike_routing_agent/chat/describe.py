@@ -176,6 +176,13 @@ def optimization_lines(plan: dict[str, Any]) -> list[str]:
                 f"{r['label']} ({r['distance_km']:.1f} km{', ' + values if values else ''})"
             )
         lines.append("Next best: " + "; ".join(shown) + ".")
+    passes = report.get("pois") or []
+    if passes:
+        lines.append("It passes: " + ", ".join(str(p) for p in passes[:8]) + ".")
+    elif report.get("poi_status") == "unavailable":
+        lines.append(
+            "The sight lookup was not available, so places along the way were not counted."
+        )
     for line in (report.get("tradeoffs") or [])[:2]:
         lines.append(line + ".")
     lines.append(

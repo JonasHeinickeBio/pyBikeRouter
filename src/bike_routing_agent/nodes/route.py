@@ -30,7 +30,9 @@ from bike_routing_agent.models import (
     RouteConstraints,
     RoutingRequest,
 )
+from bike_routing_agent.poi.service import PoiService
 from bike_routing_agent.providers.base import RoutingProvider
+from bike_routing_agent.providers.brouter_optimize import PoiVia
 from bike_routing_agent.providers.brouter_segments import SEGMENTS_BASE_URL, segments_for_points
 from bike_routing_agent.state import RouteAgentState
 
@@ -41,8 +43,53 @@ NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 ALTERNATIVES_DEADLINE_S = 12.0
 
 
+POI_VIA_CORRIDORS_M = (3000.0, 1500.0)  # how far off the direct line a place may be; a smaller
+# corridor is the retry when the first search failed (public Overpass answers big ones with 504)
+MAX_POI_VIA_CANDIDATES = 3
+
+
+async def _poi_vias(
+    service: PoiService | None, request: RoutingRequest, spec: OptimizeSpec
+) -> list[PoiVia]:
+    """Well-known places near the direct line, most famous first: routes through them are what
+    makes the ``pois`` goal reachable (the profiles alone follow nearly the same corridor)."""
+    if service is None or request.constraints.return_to_origin or request.via:
+        return []
+    if not any(goal.metric == "pois" for goal in spec.goals):
+        return []
+    line = [
+        (request.origin.lon, request.origin.lat),
+        (request.destination.lon, request.destination.lat),
+    ]
+    if line[0] == line[1]:
+        return []
+    found = None
+    for buffer_m in POI_VIA_CORRIDORS_M:
+        try:
+            found = await service.along_route(
+                line, spec.poi.categories, buffer_m=buffer_m, linked_only=True
+            )
+            break
+        except Exception:  # best effort: try the smaller corridor, then give up quietly
+            continue
+    if found is None:
+        return []
+    famous = [p for p in found.pois if p.fame is not None and p.fame >= spec.poi.min_fame]
+    return [
+        PoiVia(
+            name=p.name or p.category,
+            coordinate=Coordinate(lon=p.lon, lat=p.lat),
+            along_km=p.along_route_km or 0.0,
+        )
+        for p in famous[:MAX_POI_VIA_CANDIDATES]
+    ]
+
+
 async def _optimization_candidates(
-    provider: Any, request: RoutingRequest, spec: OptimizeSpec
+    provider: Any,
+    request: RoutingRequest,
+    spec: OptimizeSpec,
+    poi_vias: Sequence[PoiVia] = (),
 ) -> list[Any]:
     """The provider's many routes for an optimisation (best effort, own deadline)."""
     cap = ALTERNATIVES_DEADLINE_S
@@ -50,7 +97,10 @@ async def _optimization_candidates(
     if callable(own):
         cap = max(cap, float(own(request)) + 5.0)
     try:
-        return list(await asyncio.wait_for(provider.optimization_candidates(request, spec), cap))
+        kwargs = {"poi_vias": poi_vias} if poi_vias else {}
+        return list(
+            await asyncio.wait_for(provider.optimization_candidates(request, spec, **kwargs), cap)
+        )
     except Exception:  # best effort, like the alternatives
         return []
 
@@ -104,6 +154,7 @@ def build_route_node(
     *,
     routing_providers: Sequence[RoutingProvider],
     optional_providers: Sequence[RoutingProvider] = (),
+    poi_service: PoiService | None = None,
 ) -> NodeFn:
     if not routing_providers:
         raise ValueError("build_route_node requires at least one routing provider")
@@ -147,9 +198,13 @@ def build_route_node(
         raw_spec = state.get("optimize")
         spec = OptimizeSpec.model_validate(raw_spec) if raw_spec else None
 
+        poi_vias: list[PoiVia] = (
+            await _poi_vias(poi_service, request, spec) if spec is not None else []
+        )
+
         def extra_routes(provider: Any) -> Any:
             if spec is not None and hasattr(provider, "optimization_candidates"):
-                return _optimization_candidates(provider, request, spec)
+                return _optimization_candidates(provider, request, spec, poi_vias)
             return _bounded_alternatives(provider, request)
 
         results, extras = await asyncio.gather(

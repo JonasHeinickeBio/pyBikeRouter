@@ -29,7 +29,7 @@ from bike_routing_agent.poi.categories import (
     PoiCategory,
     category_for_tags,
 )
-from bike_routing_agent.poi.geo import BBox, LonLat, corridor_boxes, decimate
+from bike_routing_agent.poi.geo import BBox, LonLat, corridor_boxes, decimate, merge_boxes
 from bike_routing_agent.poi.models import QID_RE, WIKIPEDIA_TAG_RE, Poi
 from bike_routing_agent.providers.base import CacheBackend
 
@@ -103,6 +103,50 @@ class OverpassPoiFetcher:
             categories,
             key,
         )
+
+    async def along_many(
+        self,
+        lines: Sequence[Sequence[LonLat]],
+        categories: Sequence[PoiCategory],
+        *,
+        buffer_m: float,
+        linked_only: bool = False,
+    ) -> list[Poi]:
+        """POIs near any of several polylines with ONE search: the corridors are merged, so
+        near-parallel routes do not repeat the same lookup."""
+        usable = [decimate(line, MAX_QUERY_POINTS) for line in lines if len(line) >= 2]
+        if not usable:
+            raise ValueError("a route needs at least two points")
+        per_line = max(6, 80 // len(usable))
+        sight_boxes = merge_boxes(
+            [b for line in usable for b in corridor_boxes(line, buffer_m, max_boxes=per_line)]
+        )
+        service_boxes = (
+            []
+            if linked_only
+            else merge_boxes(
+                [
+                    b
+                    for line in usable
+                    for b in corridor_boxes(
+                        line, min(buffer_m, SERVICE_MAX_OFFSET_M), max_boxes=per_line
+                    )
+                ]
+            )
+        )
+        key = _cache_key(
+            "many-linked" if linked_only else "many",
+            categories,
+            buffer_m,
+            [
+                f"{b[0]:.3f},{b[1]:.3f},{b[2]:.3f},{b[3]:.3f}"
+                for b in [*sight_boxes, *service_boxes]
+            ],
+        )
+        query = build_boxes_query(
+            sight_boxes, service_boxes, categories, self._timeout_s, linked_only
+        )
+        return await self._search(query, categories, key)
 
     async def in_bbox(
         self, bbox: tuple[float, float, float, float], categories: Sequence[PoiCategory]
@@ -233,9 +277,22 @@ def build_along_query(
     measured afterwards by the caller.
     """
     sight_boxes = corridor_boxes(points, buffer_m)
+    service_boxes = (
+        [] if linked_only else corridor_boxes(points, min(buffer_m, SERVICE_MAX_OFFSET_M))
+    )
+    return build_boxes_query(sight_boxes, service_boxes, categories, timeout_s, linked_only)
+
+
+def build_boxes_query(
+    sight_boxes: Sequence[tuple[float, float, float, float]],
+    service_boxes: Sequence[tuple[float, float, float, float]],
+    categories: Sequence[PoiCategory],
+    timeout_s: float,
+    linked_only: bool = False,
+) -> str:
+    """One query for the sights in ``sight_boxes`` and the services in ``service_boxes``."""
     if linked_only:
-        return _linked_query(categories, sight_boxes, timeout_s)
-    service_boxes = corridor_boxes(points, min(buffer_m, SERVICE_MAX_OFFSET_M))
+        return _linked_query(categories, list(sight_boxes), timeout_s)
     sights = [
         f"nwr{selector}{_box(box)};"
         for c in categories

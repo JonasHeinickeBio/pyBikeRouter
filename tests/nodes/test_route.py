@@ -522,3 +522,89 @@ async def test_without_a_choice_or_with_an_unknown_one_the_configured_engines_ru
     odd = await node({**base_state(), "routing_engines": ["valhalla"]})  # not offered
     assert [c["provider"] for c in odd["candidates"]] == ["brouter"]
     assert ors.last_request is None
+
+
+async def test_places_near_the_direct_line_become_via_candidates_for_the_pois_goal():
+    from bike_routing_agent.models import OptimizeSpec
+    from bike_routing_agent.poi.models import Poi
+    from bike_routing_agent.poi.service import PoiSearchResult
+
+    asked = {}
+
+    class Pois:
+        async def along_route(self, line, categories, *, buffer_m, linked_only=False, **_):
+            asked.update(line=line, buffer_m=buffer_m, linked_only=linked_only)
+            return PoiSearchResult(
+                [
+                    Poi(id="n/1", name="Burg", category="historic", kind="sight", lon=10.55,
+                        lat=52.35, fame=40, along_route_km=3.0),
+                    Poi(id="n/2", name="Kapelle", category="historic", kind="sight", lon=10.56,
+                        lat=52.36, fame=2, along_route_km=4.0),
+                ],
+                truncated=False,
+                fame_status="ok",
+            )  # fmt: skip
+
+    class Optimizing(CapturingRouter):
+        def __init__(self):
+            super().__init__(name="brouter")
+            self.vias = None
+
+        async def optimization_candidates(self, request, spec, *, poi_vias=()):
+            self.vias = [v.name for v in poi_vias]
+            return []
+
+        async def alternatives(self, request):
+            return []
+
+    router = Optimizing()
+    state = base_state()
+    state["resolved_via"] = []
+    state["constraints"] = {"bike_type": "gravel"}
+    state["optimize"] = OptimizeSpec(goals=[{"metric": "pois"}]).model_dump(mode="json")
+    await build_route_node(routing_providers=[router], poi_service=Pois())(state)  # type: ignore[arg-type]
+    assert router.vias == ["Burg"]  # the 2-language chapel is not "well known"
+    assert asked["linked_only"] is True and asked["buffer_m"] == 3000.0
+    assert router.vias == ["Burg"]
+
+    # not for other goals, and not when the person drew the way with via points
+    other = Optimizing()
+    state["optimize"] = OptimizeSpec(goals=[{"metric": "traffic"}]).model_dump(mode="json")
+    await build_route_node(routing_providers=[other], poi_service=Pois())(state)  # type: ignore[arg-type]
+    assert other.vias is None or other.vias == []
+
+
+async def test_a_failed_wide_search_is_retried_with_a_narrower_corridor():
+    from bike_routing_agent.errors import ProviderUnavailableError
+    from bike_routing_agent.models import OptimizeSpec
+    from bike_routing_agent.poi.models import Poi
+    from bike_routing_agent.poi.service import PoiSearchResult
+
+    sizes = []
+
+    class Flaky:
+        async def along_route(self, line, categories, *, buffer_m, linked_only=False, **_):
+            sizes.append(buffer_m)
+            if buffer_m > 2000:
+                raise ProviderUnavailableError("Overpass returned HTTP 504", provider="overpass")
+            return PoiSearchResult(
+                [Poi(id="n/1", name="Burg", category="historic", kind="sight", lon=10.55,
+                     lat=52.35, fame=40, along_route_km=3.0)],
+                truncated=False,
+                fame_status="ok",
+            )  # fmt: skip
+
+    class Optimizing(CapturingRouter):
+        vias = None
+
+        async def optimization_candidates(self, request, spec, *, poi_vias=()):
+            Optimizing.vias = [v.name for v in poi_vias]
+            return []
+
+    state = base_state()
+    state["resolved_via"] = []
+    state["optimize"] = OptimizeSpec(goals=[{"metric": "pois"}]).model_dump(mode="json")
+    await build_route_node(routing_providers=[Optimizing(name="brouter")], poi_service=Flaky())(
+        state  # type: ignore[arg-type]
+    )
+    assert sizes == [3000.0, 1500.0] and Optimizing.vias == ["Burg"]
