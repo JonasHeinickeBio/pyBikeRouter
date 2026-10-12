@@ -60,6 +60,7 @@ async def test_frontend_static_assets_are_served(client):
         ("/index.html", 'src="coverage.js"'),
         ("/settings.js", "BikeSettings"),
         ("/chat.js", "BikeChat"),
+        ("/facts.js", "BikeFacts"),
         ("/index.html", 'id="chat-panel"'),
         ("/app.js", "v1/chat"),
         ("/index.html", 'id="settings-panel"'),

@@ -10,6 +10,8 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+from bike_routing_agent.route_facts import facts_line, facts_short, surface_text, traffic_text
+
 STYLE_NAMES = {
     "custom_gravel-v2": "gravel",
     "custom_gravel-v1": "gravel",
@@ -151,6 +153,7 @@ def describe_plan(plan: dict[str, Any]) -> str:
     """The reply for a finished plan."""
     route = plan.get("route") or {}
     lines = [f"Here is your route: {facts(route)}, {style(route)} profile."]
+    lines.append(facts_line(route.get("metrics") or {}))
     stops = plan.get("poi_stops") or []
     if stops:
         names = ", ".join(str(s.get("name") or s.get("category")) for s in stops)
@@ -210,7 +213,8 @@ def describe_alternatives(plan: dict[str, Any]) -> str:
         return "There are no alternatives for this route."
     lines = ["Alternatives (best first):"]
     for c in candidates:
-        lines.append(f"{c.get('rank')}. {style(c)}: {facts(c)}")
+        extra = facts_short(c.get("metrics") or {})
+        lines.append(f"{c.get('rank')}. {style(c)}: {facts(c)}" + (f" ({extra})" if extra else ""))
         lines.extend(f"   + {p}" for p in c.get("pros") or [])
         lines.extend(f"   - {p}" for p in c.get("cons") or [])
     return "\n".join(lines)
@@ -218,6 +222,7 @@ def describe_alternatives(plan: dict[str, Any]) -> str:
 
 def describe_candidate(candidate: dict[str, Any]) -> str:
     lines = [f"Showing the {style(candidate)} route: {facts(candidate)}."]
+    lines.append(facts_line(candidate.get("metrics") or {}))
     lines.extend(f"+ {p}" for p in candidate.get("pros") or [])
     lines.extend(f"- {p}" for p in candidate.get("cons") or [])
     return "\n".join(lines)
@@ -251,17 +256,26 @@ def explain(question: str, plan: dict[str, Any]) -> str:
             if up is not None
             else "The engine did not report the climb for this route."
         )
-    if re.search(r"surface|paved|unpaved|gravel|asphalt", q):
+    if re.search(r"surface|paved|unpaved|gravel|asphalt|cobble|road quality", q):
         asked = True
-        coverage = metrics.get("engine_surface_shares") or metrics.get("surface_coverage") or {}
-        if coverage:
-            shown = ", ".join(
-                f"{round(100 * v)} % {k}"
-                for k, v in sorted(coverage.items(), key=lambda kv: -kv[1])[:4]
+        surface = surface_text(metrics)
+        parts.append(
+            f"Surface (as mapped): {surface}."
+            if surface
+            else "I have no surface data for this route."
+        )
+    if re.search(r"traffic|cars?\b|busy|main roads?|safe|safety|quiet|bike lanes?|cycle lanes?", q):
+        asked = True
+        traffic = traffic_text(metrics)
+        if traffic:
+            parts.append(
+                f"Traffic: {traffic} (trunk to tertiary roads; a proxy from the road tags for "
+                "exposure to cars, not a measurement)."
             )
-            parts.append(f"Surfaces (as mapped): {shown}.")
         else:
-            parts.append("I have no surface data for this route.")
+            parts.append("The engine gave no road data, so I cannot say how much traffic it has.")
+        if re.search(r"safe|safety", q):
+            parts.append("I cannot judge safety; those are the facts I have.")
     if re.search(r"why|explain|pros|cons|better|best", q) or not asked:
         if plan.get("explanation") and re.search(r"why|explain", q):
             parts.append(str(plan["explanation"]))

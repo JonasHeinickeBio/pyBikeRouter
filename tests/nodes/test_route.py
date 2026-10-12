@@ -439,6 +439,30 @@ async def test_a_provider_whose_alternatives_hang_cannot_hold_back_the_main_rout
     assert update["errors"] == []
 
 
+async def test_a_provider_that_names_its_own_deadline_may_use_it(monkeypatch):
+    class SlowButAllowed(StyleRouter):
+        def alternatives_deadline_s(self, request):
+            return 2.0  # a long trip: the provider asked for more than the plain cap
+
+        async def alternatives(self, request):
+            await asyncio.sleep(0.5)  # longer than the cap below, shorter than the deadline
+            return await super().alternatives(request)
+
+    class SlowAndUnannounced(StyleRouter):
+        async def alternatives(self, request):
+            await asyncio.sleep(0.5)
+            return await super().alternatives(request)
+
+    monkeypatch.setattr("bike_routing_agent.nodes.route.ALTERNATIVES_DEADLINE_S", 0.2)
+    allowed = await build_route_node(routing_providers=[SlowButAllowed(name="brouter")])(
+        base_state()
+    )
+    capped = await build_route_node(routing_providers=[SlowAndUnannounced(name="brouter")])(
+        base_state()
+    )
+    assert len(allowed["candidates"]) > len(capped["candidates"]) == 1
+
+
 def coverage_error():
     from bike_routing_agent.errors import ProviderCoverageError
 

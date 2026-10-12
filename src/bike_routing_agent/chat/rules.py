@@ -516,7 +516,8 @@ _PATTERNS: list[tuple[Intent, re.Pattern[str]]] = [
         re.compile(
             r"\b(?:weather|rain|raining|wind|windy|headwind|temperature|cold|warm|hot|sunset|sunrise|"
             r"dark|daylight|how (?:far|long|steep|hilly|much)|climb|climbing|ascent|elevation|"
-            r"surface|paved|why|explain|pros|cons|how fast|duration)\b",
+            r"surface|paved|why|explain|pros|cons|how fast|duration|traffic|cars?|busy|"
+            r"main roads?|safe|safety|bike lanes?|cycle lanes?)\b",
             re.I,
         ),
     ),
@@ -532,7 +533,8 @@ _REFINE_WHEN = re.compile(
 )
 _REFINE = re.compile(
     r"\b(?:shorter|longer|more km|fewer km|flatter|less (?:climb|climbing|hilly|elevation)|"
-    r"less hills?|no hills?|hillier|more climb|avoid|no ferr|allow|without|instead|"
+    r"less hills?|no hills?|hillier|more climb|avoid|no (?:ferr|gravel|unpaved|dirt|sand)|allow|"
+    r"without|instead|"
     r"change|make it|switch|"
     r"use (?:the )?(?:road|gravel|touring|mountain|city|e-?bike|commuter|recumbent)|"
     r"(?:use|try|using) (?:ors|openrouteservice|brouter|valhalla)|"
@@ -543,12 +545,26 @@ _REFINE = re.compile(
 )
 
 
+_IMPERATIVE = re.compile(
+    r"\b(?:avoid(?:ing)?|no|without|only|instead|prefer|more|less|allow|switch|change|"
+    r"make it|i want)\b",
+    re.I,
+)
+
+
 def classify(text: str, *, has_plan: bool) -> Intent | None:
     """What a follow-up (or a first) message wants, or ``None`` when no rule applies."""
+    # "avoid busy roads" / "paved only" change the route although they name a topic the
+    # question patterns also know; only a question ("?") is about the route.
+    changes_route = (
+        "?" not in text and bool(_IMPERATIVE.search(text)) and bool(_REFINE.search(text))
+    )
     for intent, pattern in _PATTERNS:
         if intent in ("reset", "help"):
             if pattern.search(text):
                 return intent
+            continue
+        if intent == "explain" and changes_route:
             continue
         if has_plan and pattern.search(text):
             return intent

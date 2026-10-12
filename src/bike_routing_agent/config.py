@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     brouter_alternatives: bool = True
     # How long the alternatives may take; whatever is done by then is used, the rest dropped.
     brouter_alternatives_timeout_s: float = 8.0
+    # ... plus this many seconds per km between the places (straight line), up to the maximum:
+    # BRouter's slowest profile needs ~40 s for a 195 km trip, and the alternatives queue behind
+    # the main route. 0 = the flat allowance above for every trip.
+    brouter_alternatives_timeout_per_km_s: float = 0.5
+    brouter_alternatives_timeout_max_s: float = 120.0
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
     # Requests sent to BRouter at the same time. 1 matches a stock server (one routing thread);
@@ -321,6 +326,16 @@ class Settings(BaseSettings):
     def _check_brouter_concurrency(self) -> Settings:
         if self.brouter_max_concurrency < 1:
             raise ValueError("brouter_max_concurrency must be >= 1")
+        return self
+
+    @model_validator(mode="after")
+    def _check_brouter_alternatives_deadline(self) -> Settings:
+        if self.brouter_alternatives_timeout_per_km_s < 0:
+            raise ValueError("brouter_alternatives_timeout_per_km_s must be >= 0")
+        if self.brouter_alternatives_timeout_max_s < self.brouter_alternatives_timeout_s:
+            raise ValueError(
+                "brouter_alternatives_timeout_max_s must be >= brouter_alternatives_timeout_s"
+            )
         return self
 
     @model_validator(mode="after")

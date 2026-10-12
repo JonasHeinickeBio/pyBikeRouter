@@ -916,3 +916,89 @@ async def test_the_departure_can_be_changed_after_the_route(text):
     assert r.intent == "refine" and r.plan is not None and r.reply.startswith("Okay: leaving ")
     assert "departure_time" in planner.requests[1]
     assert planner.requests[1]["origin"] == "Braunschweig"  # the rest of the request is kept
+
+
+# ------------------------------------------------------------- traffic and surface
+
+
+def with_facts(plan: dict[str, Any]) -> dict[str, Any]:
+    for c in plan["candidates"]:
+        c["metrics"].update(
+            main_road_share=0.19 if c["rank"] == 1 else 0.55,
+            engine_surface_shares={"paved": 0.71, "unpaved": 0.24, "unknown": 0.05},
+        )
+    plan["route"] = plan["candidates"][0]
+    return plan
+
+
+async def test_every_route_reply_reports_surface_and_traffic():
+    service, _ = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    r = await Talk(service).say("Braunschweig to Goslar")
+    assert "Surface: 71 % paved, 24 % unpaved, 5 % unknown." in r.reply
+    assert "Traffic: 19 % on main roads without a bike lane." in r.reply
+
+
+async def test_a_route_without_road_data_says_so_instead_of_staying_silent():
+    def bare(request):
+        plan = ready_plan()
+        for c in plan["candidates"]:
+            c["metrics"].pop("engine_surface_shares")
+        plan["route"] = plan["candidates"][0]
+        return plan
+
+    service, _ = chat(FakePlanner(bare))
+    t = Talk(service)
+    r = await t.say("Braunschweig to Goslar")
+    assert "Surface: the engine gave no surface data." in r.reply
+    assert "Traffic: the engine gave no road data." in r.reply
+    assert "no surface data" in (await t.say("is it paved?")).reply
+    assert "cannot say how much traffic" in (await t.say("how much traffic?")).reply
+
+
+async def test_alternatives_are_compared_by_traffic_and_surface():
+    service, _ = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say("alternatives")
+    assert "(19 % main roads, 71 % paved)" in r.reply and "(55 % main roads, 71 % paved)" in r.reply
+    shown = await t.say("the mtb version")
+    assert "Traffic: 55 % on main roads" in shown.reply
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["how much traffic is there?", "is it busy?", "are there many cars?", "any main roads?"],
+)
+async def test_traffic_questions_are_answered_with_the_number_and_what_it_is(question):
+    service, planner = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say(question)
+    assert r.intent == "explain" and len(planner.requests) == 1
+    assert "19 % on main roads without a bike lane" in r.reply and "not a measurement" in r.reply
+
+
+async def test_is_it_safe_gets_the_facts_and_no_safety_claim():
+    service, _ = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say("is it safe?")
+    assert "I cannot judge safety" in r.reply and "19 %" in r.reply
+    assert "safe to" not in r.reply.lower()
+
+
+async def test_surface_questions_use_the_same_numbers():
+    service, _ = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say("what is the surface like?")
+    assert r.reply == "Surface (as mapped): 71 % paved, 24 % unpaved, 5 % unknown."
+
+
+@pytest.mark.parametrize("text", ["avoid busy roads", "paved only", "less traffic", "no gravel"])
+async def test_asking_for_less_traffic_or_other_surfaces_changes_the_route_not_explains_it(text):
+    service, planner = chat(FakePlanner(lambda r: with_facts(ready_plan())))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    r = await t.say(text)
+    assert r.intent == "refine" and len(planner.requests) == 2

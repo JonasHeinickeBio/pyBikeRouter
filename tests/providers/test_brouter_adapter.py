@@ -509,6 +509,92 @@ async def test_a_slow_alternative_is_dropped_at_the_deadline_and_the_fast_one_is
     assert [c.provider_profile for c in found] == ["custom_touring-v1"]
 
 
+def _trip(km_east: float, via: int = 0) -> RoutingRequest:
+    """A trip of roughly ``km_east`` km (straight line, along 52 N)."""
+    lon = 10.0 + km_east / 68.0  # one degree of longitude is ~68 km at 52 N
+    return RoutingRequest(
+        origin=Coordinate(lon=10.0, lat=52.0),
+        destination=Coordinate(lon=lon, lat=52.0),
+        via=[Coordinate(lon=10.0 + (lon - 10.0) / 2, lat=52.0)] * via,
+        constraints=RouteConstraints(bike_type="gravel"),
+    )
+
+
+def test_the_alternatives_deadline_grows_with_the_trip_up_to_a_maximum() -> None:
+    adapter = BRouterAdapter(
+        base_url=BROUTER_BASE,
+        alternatives=True,
+        alternatives_timeout_s=8.0,
+        alternatives_timeout_per_km_s=0.5,
+        alternatives_timeout_max_s=100.0,
+    )
+    short = adapter.alternatives_deadline_s(_trip(10))
+    long_ = adapter.alternatives_deadline_s(_trip(150))  # Braunschweig - Hamburg as the crow flies
+    huge = adapter.alternatives_deadline_s(_trip(900))
+    assert short == pytest.approx(13.0, abs=0.5)  # 8 s + 10 km * 0.5 s
+    assert long_ == pytest.approx(83.0, abs=1.0)
+    assert huge == 100.0  # capped
+    # A via point on the line does not make the trip longer.
+    on_the_line = adapter.alternatives_deadline_s(_trip(60, via=1))
+    assert on_the_line == pytest.approx(adapter.alternatives_deadline_s(_trip(60)), abs=0.1)
+
+
+def test_without_a_per_km_allowance_every_trip_gets_the_flat_one() -> None:
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives_timeout_s=8.0)
+    assert adapter.alternatives_deadline_s(_trip(500)) == 8.0
+    capped = BRouterAdapter(
+        base_url=BROUTER_BASE, alternatives_timeout_s=8.0, alternatives_timeout_max_s=3.0
+    )
+    assert capped.alternatives_deadline_s(_trip(5)) == 8.0  # the maximum never lowers the base
+
+
+@respx.mock
+async def test_a_slow_alternative_of_a_long_trip_is_waited_for() -> None:
+    import asyncio
+
+    ok = httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+
+    async def slow_mtb(request: httpx.Request) -> httpx.Response:
+        if request.url.params["profile"] == "mtb":
+            await asyncio.sleep(0.6)
+        return ok
+
+    respx.get(BROUTER_URL).mock(side_effect=slow_mtb)
+    flat = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, alternatives_timeout_s=0.2)
+    scaled = BRouterAdapter(
+        base_url=BROUTER_BASE,
+        alternatives=True,
+        alternatives_timeout_s=0.2,
+        alternatives_timeout_per_km_s=0.01,  # 100 km -> 1.2 s
+    )
+    trip = _trip(100)
+    assert [c.provider_profile for c in await flat.alternatives(trip)] == ["custom_touring-v1"]
+    got = [c.provider_profile for c in await scaled.alternatives(trip)]
+    assert got == ["custom_touring-v1", "mtb"]
+
+
+@respx.mock
+async def test_the_http_timeout_of_an_alternative_is_raised_to_its_deadline() -> None:
+    seen: list[float] = []
+
+    async def record(request: httpx.Request) -> httpx.Response:
+        seen.append(request.extensions["timeout"]["read"])
+        return httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+
+    respx.get(BROUTER_URL).mock(side_effect=record)
+    adapter = BRouterAdapter(
+        base_url=BROUTER_BASE,
+        timeout_s=5.0,
+        alternatives=True,
+        alternatives_timeout_s=8.0,
+        alternatives_timeout_per_km_s=0.5,
+    )
+    await adapter.route(_trip(100))  # the main route keeps the plain setting
+    await adapter.alternatives(_trip(100))
+    assert len(seen) == 3 and seen[0] == 5.0
+    assert all(abs(t - 58.0) < 1.0 for t in seen[1:])  # 8 s + 0.5 s * ~100 km
+
+
 def test_way_tags_missing_on_some_rows_do_not_pass_for_quiet_roads() -> None:
     from bike_routing_agent.providers.brouter_tags import main_road_share, surface_shares
 

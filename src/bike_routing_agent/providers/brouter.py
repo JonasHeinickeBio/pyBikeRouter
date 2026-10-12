@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+from typing import Any
 
 import httpx
 
@@ -62,6 +64,14 @@ def _was_killed(body: str) -> bool:
 _MAX_ERROR_BODY_CHARS = 500
 
 
+def _straight_km(a: Any, b: Any) -> float:
+    """Straight-line distance between two coordinates (haversine), in km."""
+    lat1, lat2 = math.radians(a.lat), math.radians(b.lat)
+    dlat, dlon = lat2 - lat1, math.radians(b.lon - a.lon)
+    h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
 class BRouterAdapter:
     """RoutingProvider backed by a local/self-hosted BRouter RouteServer."""
 
@@ -75,6 +85,8 @@ class BRouterAdapter:
         max_retries: int = 0,
         alternatives: bool = False,
         alternatives_timeout_s: float = 8.0,
+        alternatives_timeout_per_km_s: float = 0.0,
+        alternatives_timeout_max_s: float = 120.0,
         max_concurrency: int = 1,
         client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -87,6 +99,8 @@ class BRouterAdapter:
         self._slots = asyncio.Semaphore(max_concurrency)
         self._alternatives = alternatives
         self._alternatives_timeout_s = alternatives_timeout_s
+        self._alternatives_per_km_s = alternatives_timeout_per_km_s
+        self._alternatives_max_s = max(alternatives_timeout_max_s, alternatives_timeout_s)
         self._base_url = base_url.rstrip("/")
         self._timeout_s = timeout_s
         self._max_retries = max_retries
@@ -142,7 +156,11 @@ class BRouterAdapter:
             return {}
         return {variable: 1 if request.constraints.avoid_high_traffic_roads else 0}
 
-    async def _get(self, params: dict[str, str]) -> httpx.Response:
+    async def _get(
+        self, params: dict[str, str], *, timeout_s: float | None = None
+    ) -> httpx.Response:
+        # One HTTP call may take as long as the caller allows (never less than the setting).
+        call_timeout = max(self._timeout_s, timeout_s or 0.0)
         attempt = 0
         while True:
             try:
@@ -151,10 +169,10 @@ class BRouterAdapter:
                 async with self._slots:
                     if self._client is not None:
                         response = await self._client.get(
-                            f"{self._base_url}/brouter", params=params, timeout=self._timeout_s
+                            f"{self._base_url}/brouter", params=params, timeout=call_timeout
                         )
                     else:
-                        async with httpx.AsyncClient(timeout=self._timeout_s) as client:
+                        async with httpx.AsyncClient(timeout=call_timeout) as client:
                             response = await client.get(f"{self._base_url}/brouter", params=params)
             except httpx.TimeoutException as exc:
                 if attempt >= self._max_retries:
@@ -206,6 +224,19 @@ class BRouterAdapter:
             request, self._profile_for(request.constraints.bike_type.value)
         )
 
+    def alternatives_deadline_s(self, request: RoutingRequest) -> float:
+        """How long the alternatives may take for this trip.
+
+        BRouter's time grows with the trip (the slowest profile took ~43 s for a 195 km route
+        and the requests queue behind the main route), so the base allowance is raised by
+        ``alternatives_timeout_per_km_s`` for every km between the places (straight line),
+        up to ``alternatives_timeout_max_s``.
+        """
+        points = [request.origin, *request.via, request.destination]
+        km = sum(_straight_km(a, b) for a, b in zip(points, points[1:], strict=False))
+        wanted = self._alternatives_timeout_s + self._alternatives_per_km_s * km
+        return min(wanted, self._alternatives_max_s)
+
     async def alternatives(self, request: RoutingRequest) -> list[RouteCandidate]:
         """The same trip under the other profiles suggested for this bike type.
 
@@ -225,8 +256,12 @@ class BRouterAdapter:
         # Best effort within a deadline: whatever has finished when it passes is kept,
         # the rest is cancelled (with its retries), so one slow profile cannot hold up
         # the plan.
-        tasks = {asyncio.ensure_future(self._route_with_profile(request, p)): p for p in profiles}
-        done, pending = await asyncio.wait(tasks, timeout=self._alternatives_timeout_s)
+        deadline = self.alternatives_deadline_s(request)
+        tasks = {
+            asyncio.ensure_future(self._route_with_profile(request, p, timeout_s=deadline)): p
+            for p in profiles
+        }
+        done, pending = await asyncio.wait(tasks, timeout=deadline)
         for task in pending:
             task.cancel()
             logger.info("brouter alternative profile %s timed out", tasks[task])
@@ -243,7 +278,9 @@ class BRouterAdapter:
             found.append(result.model_copy(update={"provenance": provenance}))
         return found
 
-    async def _route_with_profile(self, request: RoutingRequest, profile: str) -> RouteCandidate:
+    async def _route_with_profile(
+        self, request: RoutingRequest, profile: str, *, timeout_s: float | None = None
+    ) -> RouteCandidate:
         overrides = self._profile_overrides(request, profile)
         response = await self._get(
             {
@@ -252,7 +289,8 @@ class BRouterAdapter:
                 "alternativeidx": "0",
                 "format": "geojson",
                 **{f"profile:{name}": str(value) for name, value in overrides.items()},
-            }
+            },
+            timeout_s=timeout_s,
         )
 
         if response.status_code == 400:

@@ -206,6 +206,15 @@ two at once, and retries a request it did cancel (`BROUTER_MAX_RETRIES`) and rep
 succeeded 6 times out of 6 (2-3 candidates, 6-8 s). The price: the alternatives wait their turn, so on
 a long route the last alternative can miss `BROUTER_ALTERNATIVES_TIMEOUT_S` and be left out.
 
+BRouter's time also grows with the trip: Braunschweig -> Hamburg (195 km) took 17 s on the gravel
+profile, 12 s on touring and 43-77 s on `mtb`, one after the other. The allowance for alternatives
+therefore grows with the straight-line distance (`BROUTER_ALTERNATIVES_TIMEOUT_PER_KM_S`, default
+0.5 s per km, at most `BROUTER_ALTERNATIVES_TIMEOUT_MAX_S`, default 120 s), and so does the time one
+alternative's HTTP call may take. With the defaults that trip returns the touring alternative
+(176 km) after ~85 s; the `mtb` one still does not fit. A plan with alternatives takes as long as the
+allowance when one profile is slow: lower `BROUTER_ALTERNATIVES_TIMEOUT_PER_KM_S` to trade
+alternatives for speed.
+
 ## BRouter map coverage
 
 BRouter only routes where it has the map tiles (`.rd5`, one per 5x5 degree; the Braunschweig
