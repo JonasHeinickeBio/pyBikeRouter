@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 
+from bike_routing_agent.chat.goals import detect as detect_goals
 from bike_routing_agent.chat.when import parse_departure
 
 BIKE_WORDS: dict[str, str] = {
@@ -65,6 +66,7 @@ Intent = Literal[
     "reset",
     "help",
     "guided",  # start (or answer) the step-by-step dialogue
+    "optimize",  # fetch several routes and pick the best fit for goals
 ]
 
 _COORDINATE = re.compile(r"^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)\s*$")
@@ -101,6 +103,7 @@ class OneLine:
     # Numbers the chat had to assume ("2 hours at 18 km/h = 36 km") -- reported as well.
     assumed: list[str] = field(default_factory=list)
     explicit_separator: bool = False  # the line had an "A to B" shape
+    optimize: dict[str, Any] | None = None  # an OptimizeSpec: "less traffic but more asphalt"
 
     def complete(self) -> bool:
         if self.loop:
@@ -319,6 +322,13 @@ def parse_one_line(text: str, *, now: datetime | None = None) -> OneLine:
     t = " ".join(text.split())
     out = OneLine()
 
+    # "... with less traffic but as much asphalt as possible": goals to optimise for, taken out
+    # first so that their words do not turn into places or into plain avoid/prefer settings.
+    wanted = detect_goals(t)
+    if wanted is not None:
+        out.optimize = wanted.spec
+        t = wanted.rest
+
     if now is not None:
         out.departure, t = parse_departure(t, now)
 
@@ -327,6 +337,7 @@ def parse_one_line(text: str, *, now: datetime | None = None) -> OneLine:
     for key, value in meaning.constraints.items():
         if key not in ("bike_type", "target_distance_km", "max_distance_km", "max_ascent_m"):
             out.constraints[key] = value
+    out.constraints.pop("prefer_surfaces", None) if out.optimize else None
     out.engines = meaning.routing_engines
 
     engine = _ENGINE.search(t)
@@ -564,6 +575,8 @@ def classify(text: str, *, has_plan: bool) -> Intent | None:
             if pattern.search(text):
                 return intent
             continue
+        if has_plan and detect_goals(text) is not None:
+            return "optimize"  # "optimise for less traffic", "the quietest, smoothest route"
         if intent == "explain" and changes_route:
             continue
         if has_plan and pattern.search(text):
@@ -839,6 +852,22 @@ def pick_candidate(text: str, candidates: list[dict[str, Any]]) -> dict[str, Any
         if phrase in t:
             usable = [c for c in candidates if metric(key)(c) is not None]
             return chooser(usable, key=metric(key)) if usable else None
+
+    def nested(name: str, inner: str) -> Any:
+        return lambda c: ((c.get("metrics") or {}).get(name) or {}).get(inner)
+
+    by_tags = (  # what the engine's road tags say (BRouter only)
+        (("quietest", "least traffic", "calmest"), metric("traffic_index"), min),
+        (
+            ("smoothest", "most paved", "most asphalt"),
+            nested("engine_surface_shares", "paved"),
+            max,
+        ),
+    )
+    for phrases, getter, chooser in by_tags:
+        if any(p in t for p in phrases):
+            usable = [c for c in candidates if getter(c) is not None]
+            return chooser(usable, key=getter) if usable else None
     for c in candidates:
         profile = str(c.get("provider_profile") or "").lower().replace("custom_", "").split("-")[0]
         names = {profile, str(c.get("provider") or "").lower()}

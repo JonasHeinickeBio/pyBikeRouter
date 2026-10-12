@@ -123,6 +123,9 @@ class RouteMetrics(BaseModel):
     # infrastructure, speed limit and access. An estimate from what is mapped, not a count of
     # cars; empty when the engine gives no tags.
     traffic_shares: dict[str, float] = Field(default_factory=dict)
+    # The length-weighted mean of the same per-segment exposure (0 = nothing motorised, 1 = a main
+    # road all the way): one number to optimise or sort by. Same limits as ``traffic_shares``.
+    traffic_index: float | None = Field(default=None, ge=0, le=1)
     # Shares of the route by the OSM ``surface`` tags the engine routed over
     # (BRouter): paved / unpaved (compacted, loose, natural soft) / cobbles
     # (masonry) / unknown, summing to 1; empty when the engine gives no tags.
@@ -212,6 +215,45 @@ class PoiStopsRequest(BaseModel):
         return value
 
 
+GoalMetric = Literal[
+    "traffic", "busy_roads", "paved", "unpaved", "cobbles", "distance", "duration", "ascent"
+]
+
+
+class OptimizeGoal(BaseModel):
+    """One thing to optimise for: a metric, and how much it matters next to the others."""
+
+    metric: GoalMetric
+    weight: float = Field(default=1.0, gt=0, le=10)
+
+
+class OptimizeSpec(BaseModel):
+    """Ask for the best of several routes instead of the best fit for one bike type.
+
+    Several candidate routes are fetched (other profiles, BRouter's own alternatives, traffic
+    variants) and the one that serves the goals best is selected; the response's ``optimization``
+    says what was compared and what the choice costs (docs/optimizer.md).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    goals: list[OptimizeGoal] = Field(min_length=1, max_length=4)
+    # No route longer than this share above the shortest one found may win.
+    max_detour_pct: float = Field(default=30.0, ge=0, le=300)
+    # How many extra routes are fetched: quick ~4, normal ~8, thorough ~12.
+    effort: Literal["quick", "normal", "thorough"] = "normal"
+
+    @field_validator("goals")
+    @classmethod
+    def _unique_metrics(cls, value: list[OptimizeGoal]) -> list[OptimizeGoal]:
+        metrics = [g.metric for g in value]
+        if len(set(metrics)) != len(metrics):
+            raise ValueError("each metric may be a goal only once")
+        if "paved" in metrics and "unpaved" in metrics:
+            raise ValueError("paved and unpaved are opposite goals")
+        return value
+
+
 class RoutePlanAPIRequest(BaseModel):
     """Top-level request body for POST /v1/route/plan."""
 
@@ -236,6 +278,8 @@ class RoutePlanAPIRequest(BaseModel):
     routing_engines: list[Literal["ors", "brouter", "valhalla"]] | None = Field(
         default=None, min_length=1, max_length=3
     )
+    # Fetch several routes and pick the one that serves these goals best (docs/optimizer.md).
+    optimize: OptimizeSpec | None = None
 
     @field_validator("routing_engines")
     @classmethod
@@ -371,3 +415,5 @@ class RoutePlanResponse(BaseModel):
     poi_stops_status: str | None = None
     # Set by POST /v1/route/plan-text: the structured request the text was read as.
     interpretation: Interpretation | None = None
+    # Present when the request asked to optimise: what was compared and why this route won.
+    optimization: dict[str, Any] | None = None

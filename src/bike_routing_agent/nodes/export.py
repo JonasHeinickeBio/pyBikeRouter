@@ -142,6 +142,10 @@ def build_export_node(
             loop_plan=state.get("loop_plan"),
         )
 
+        optimization = state.get("optimization") or {}
+        if optimization.get("summary"):
+            explanation = f"{optimization['summary']} {explanation}"
+
         route_id = uuid.uuid4().hex
         geojson_name = f"{route_id}.geojson"
         gpx_name = f"{route_id}.gpx"

@@ -24,6 +24,7 @@ cp .env.example .env
 | `BROUTER_TIMEOUT_S` | per-request BRouter timeout (seconds) | `30.0` |
 | `BROUTER_MAX_RETRIES` | retries for BRouter timeouts/5xx | `1` |
 | `BROUTER_ALTERNATIVES_TIMEOUT_S` | the base allowance for the alternative profiles; those done by then are shown, the rest dropped (the route node caps a provider's alternatives at 12 s unless the provider names its own, longer deadline, as BRouter does) | `8.0` |
+| `BROUTER_OPTIMIZE_TIMEOUT_PER_KM_S` / `BROUTER_OPTIMIZE_TIMEOUT_MAX_S` | how long an optimisation ([optimizer.md](optimizer.md)) may spend fetching routes: 20 s plus this per km between the places, at most the maximum | `1.2` / `300` |
 | `BROUTER_ALTERNATIVES_TIMEOUT_PER_KM_S` / `BROUTER_ALTERNATIVES_TIMEOUT_MAX_S` | seconds added to the allowance per km between the places (straight line), and the most it may grow to; `0` per km = the flat allowance for every trip. A 150 km trip gets 8 + 0.5 x 150 = 83 s. The alternatives' HTTP calls may take that long as well | `0.5` / `120` |
 | `BROUTER_ALTERNATIVES` | also ask BRouter for the same trip under the other profiles suggested for the bike type (`config.BROUTER_ALTERNATIVE_PROFILES`), one extra request each, so the UI can compare real alternatives -- [api.md](api.md#alternatives) | `true` |
 | `GEOCODER_PROVIDER` | `nominatim` or `pelias` (see below and [geocoding.md](geocoding.md)) | `nominatim` |

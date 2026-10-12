@@ -82,6 +82,17 @@ is `--dir` or `BROUTER_SEGMENTS_DIR`.
 Route output (`route plan`, `route show`, `chat`) reports **surface** and **traffic** under the route
 line, and each alternative carries its main-road and paved shares (`19 % main roads, 71 % paved`).
 
+## Optimising a route
+
+```bash
+bike-router route plan --origin Braunschweig --destination Wernigerode \
+  --optimize traffic --optimize paved=0.7 --max-detour-pct 25 --effort thorough --format text
+```
+
+`--optimize GOAL[=WEIGHT]` (repeatable; `traffic`, `busy_roads`, `paved`, `unpaved`, `cobbles`,
+`distance`, `duration`, `ascent`), `--max-detour-pct`, `--effort quick|normal|thorough`. The text
+output adds what was compared and a table of the routes, best fit first ([optimizer.md](optimizer.md)).
+
 ## `chat`
 
 ```bash

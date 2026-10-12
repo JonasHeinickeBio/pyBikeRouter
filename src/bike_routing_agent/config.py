@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     # the main route. 0 = the flat allowance above for every trip.
     brouter_alternatives_timeout_per_km_s: float = 0.5
     brouter_alternatives_timeout_max_s: float = 120.0
+    # An optimisation fetches many routes: 20 s plus this per km between the places, at most the
+    # maximum (BRouter answers one request at a time; a 195 km trip's profiles take 6-77 s each).
+    brouter_optimize_timeout_per_km_s: float = 1.2
+    brouter_optimize_timeout_max_s: float = 300.0
     brouter_timeout_s: float = 30.0
     brouter_max_retries: int = 1
     # Requests sent to BRouter at the same time. 1 matches a stock server (one routing thread);

@@ -122,12 +122,13 @@ def segment_exposure(tags: dict[str, str]) -> float | None:
     return min(weight, 1.0)
 
 
-def traffic_shares(messages: Any) -> dict[str, float]:
-    """Length shares by traffic band (``busy`` / ``some`` / ``quiet`` / ``off_road``), summing to
-    1, or ``{}`` when too little of the route carries way tags (unknown, not "no traffic")."""
+def traffic_summary(messages: Any) -> tuple[dict[str, float], float | None]:
+    """``(length shares by traffic band, mean exposure)`` -- the bands are ``busy`` / ``some`` /
+    ``quiet`` / ``off_road``, summing to 1; ``({}, None)`` when too little of the route carries
+    way tags (unknown, not "no traffic")."""
     if not isinstance(messages, list) or len(messages) < 2:
-        return {}
-    total = tagged = 0.0
+        return {}, None
+    total = tagged = weighted = 0.0
     bands = dict.fromkeys(TRAFFIC_BANDS, 0.0)
     for row in messages[1:]:
         try:
@@ -139,6 +140,7 @@ def traffic_shares(messages: Any) -> dict[str, float]:
         if exposure is None:
             continue
         tagged += length
+        weighted += exposure * length
         if exposure >= BUSY_FROM:
             bands["busy"] += length
         elif exposure >= SOME_FROM:
@@ -148,8 +150,14 @@ def traffic_shares(messages: Any) -> dict[str, float]:
         else:
             bands["off_road"] += length
     if total <= 0 or tagged / total < MIN_TAGGED_SHARE:
-        return {}
-    return {band: round(length / tagged, 4) for band, length in bands.items()}
+        return {}, None
+    shares = {band: round(length / tagged, 4) for band, length in bands.items()}
+    return shares, round(weighted / tagged, 4)
+
+
+def traffic_shares(messages: Any) -> dict[str, float]:
+    """Just the band shares of :func:`traffic_summary` (``{}`` without enough way tags)."""
+    return traffic_summary(messages)[0]
 
 
 _UNPAVED = frozenset({"compacted", "loose", "natural_soft"})

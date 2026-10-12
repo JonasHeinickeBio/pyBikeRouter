@@ -116,7 +116,14 @@ alternative, and the better-scored one is kept.
   quiet streets, 72 % paths and tracks; BRouter's `fastbike` route over the same trip at 27 %
   busy, 54 % some traffic, 12 % quiet, 8 % paths and tracks (where the older main-road share
   said 72 %, because it did not tell a secondary road with a cycle track from one without).
-  With fewer than 80 % of the length tagged the field is empty.
+  With fewer than 80 % of the length tagged the field is empty. `metrics.traffic_index` is the
+  length-weighted mean of the same per-segment exposure (0..1), one number to sort or optimise by.
+- **`optimize`** (request) and **`optimization`** (response): fetch several routes and select the
+  best fit for goals such as `traffic` and `paved` instead of the best fit for one bike type;
+  `optimization` carries the goals, how many routes were compared, the choice with its numbers and
+  the trade-offs, and a table of every route. `candidates` are then ranked by the fit and `route`
+  is the best one ([optimizer.md](optimizer.md)). A bad spec (unknown metric, a metric twice,
+  `paved` with `unpaved`, weight outside 0..10, unknown field) is a `422`.
 - **Surface is a pro or a con depending on who rides** (`metrics.engine_surface_shares`:
   paved / unpaved / cobbles / unknown from the OSM `surface` tags BRouter routed over;
   never feeds the score). Paved counts as a pro for `road`, `city`, `commuter` and

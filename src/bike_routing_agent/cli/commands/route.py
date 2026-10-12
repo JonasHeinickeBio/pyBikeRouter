@@ -126,6 +126,28 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         "--poi-min-fame", type=int, default=None, help="at least this many Wikipedia languages"
     )
     plan.add_argument(
+        "--optimize",
+        action="append",
+        default=[],
+        metavar="GOAL[=WEIGHT]",
+        help="fetch several routes and pick the one that serves these goals best; repeat for "
+        "more (e.g. --optimize traffic --optimize paved=0.7). Goals: traffic, busy_roads, "
+        "paved, unpaved, cobbles, distance, duration, ascent (docs/optimizer.md)",
+    )
+    plan.add_argument(
+        "--max-detour-pct",
+        type=float,
+        default=None,
+        help="with --optimize: no route more than this many percent longer than the shortest "
+        "found may win (default 30)",
+    )
+    plan.add_argument(
+        "--effort",
+        choices=("quick", "normal", "thorough"),
+        default=None,
+        help="with --optimize: how many routes to fetch (about 4 / 8 / 12; default normal)",
+    )
+    plan.add_argument(
         "--format",
         choices=("json", "text"),
         default="json",
@@ -255,6 +277,23 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
         request["max_alternatives"] = args.max_alternatives
     if args.engine:
         request["routing_engines"] = list(args.engine)
+    if args.optimize:
+        goals = []
+        for item in args.optimize:
+            metric, _, weight = item.partition("=")
+            goal: dict[str, Any] = {"metric": metric.strip()}
+            if weight.strip():
+                try:
+                    goal["weight"] = float(weight)
+                except ValueError:
+                    goal["weight"] = weight  # the model rejects it with its own message
+            goals.append(goal)
+        spec: dict[str, Any] = {"goals": goals}
+        if args.max_detour_pct is not None:
+            spec["max_detour_pct"] = args.max_detour_pct
+        if args.effort is not None:
+            spec["effort"] = args.effort
+        request["optimize"] = spec
     if args.poi_stops is not None:
         stops: dict[str, Any] = {"count": args.poi_stops}
         if args.poi_categories:
@@ -323,13 +362,24 @@ def run(
     if (
         usage_error is None
         and args.text is not None
-        and (args.poi_stops is not None or args.engine or args.max_alternatives is not None)
+        and (
+            args.poi_stops is not None
+            or args.engine
+            or args.max_alternatives is not None
+            or args.optimize
+        )
     ):
         usage_error = (
-            "--poi-stops, --engine and --max-alternatives apply to --origin/--destination "
-            "plans; with --text, say it in the description (alternatives) or use the options "
-            "without --text"
+            "--poi-stops, --engine, --optimize and --max-alternatives apply to "
+            "--origin/--destination plans; with --text, say it in the description "
+            "(alternatives) or use the options without --text"
         )
+    if (
+        usage_error is None
+        and (args.max_detour_pct is not None or args.effort)
+        and not args.optimize
+    ):
+        usage_error = "--max-detour-pct and --effort belong to --optimize"
     if usage_error is None and (args.candidate is not None) and not (args.gpx or args.geojson):
         usage_error = "--candidate only selects what --gpx / --geojson write"
     request: dict[str, Any] = {}
@@ -458,6 +508,8 @@ def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
         payload["interpretation"] = final_state["interpretation"]
     if final_state.get("poi_stops_status") is not None:
         payload["poi_stops_status"] = final_state["poi_stops_status"]
+    if status == "ready" and final_state.get("optimization"):
+        payload["optimization"] = final_state["optimization"]
     if status == "ready":
         selected = dict(final_state.get("selected_candidate") or {})
         selected.pop("raw_provider_response", None)

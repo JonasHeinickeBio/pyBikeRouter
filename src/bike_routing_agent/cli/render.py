@@ -55,6 +55,30 @@ def _candidate_line(candidate: dict[str, Any], selected: bool) -> str:
     )
 
 
+def _optimization_table(optimization: dict[str, Any]) -> list[str]:
+    """The routes the optimiser compared, best first, with the numbers behind the choice."""
+    rows = optimization.get("table") or []
+    goals = [g["metric"] for g in optimization.get("goals") or []]
+    if not rows or not goals:
+        return []
+    body = [
+        [
+            ("* " if r.get("selected") else "  ") + str(r.get("label", "")),
+            f"{r.get('distance_km', 0):.1f} km",
+            f"+{r.get('detour_pct', 0):.0f} %",
+            *(
+                "-" if (r.get("values") or {}).get(m) is None else f"{(r['values'][m]):.2f}"
+                for m in goals
+            ),
+            f"{r.get('utility', 0):.2f}",
+            "ok" if r.get("feasible") else "over limit",
+        ]
+        for r in rows
+    ]
+    headers = ["route", "length", "detour", *goals, "fit", ""]
+    return ["", "Routes compared (best fit first):", table(body, headers)]
+
+
 def _weather_lines(weather: dict[str, Any] | None) -> list[str]:
     summary = (weather or {}).get("summary") or {}
     if not summary:
@@ -110,6 +134,9 @@ def plan_text(payload: dict[str, Any]) -> str:
             f"up {metres(m.get('ascent_m'))} / down {metres(m.get('descent_m'))}"
         )
         lines.append(facts_line(m))
+        optimization = payload.get("optimization") or {}
+        if optimization.get("summary"):
+            lines.append(str(optimization["summary"]))
         if payload.get("explanation"):
             lines.append(str(payload["explanation"]))
         candidates = payload.get("candidates") or []
@@ -120,6 +147,7 @@ def plan_text(payload: dict[str, Any]) -> str:
                 lines.append(_candidate_line(c, c.get("rank") == route.get("rank")))
                 lines.extend(f"       + {p}" for p in c.get("pros") or [])
                 lines.extend(f"       - {p}" for p in c.get("cons") or [])
+        lines.extend(_optimization_table(optimization))
         weather = _weather_lines(route.get("weather"))
         if weather:
             lines.extend(["", *weather])

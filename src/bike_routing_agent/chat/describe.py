@@ -90,6 +90,7 @@ def reading(
     *,
     ignored: Sequence[str] = (),
     assumed: Sequence[str] = (),
+    optimizing: bool = False,
 ) -> str:
     """How the request was understood, in a sentence -- so a misreading is visible at once."""
     c = request.get("constraints") or {}
@@ -125,6 +126,12 @@ def reading(
         details.append("avoid " + "/".join(c["avoid_surfaces"]))
     if c.get("return_to_origin") and c.get("loop_direction") == "counterclockwise":
         details.append("counter-clockwise")
+    spec = request.get("optimize") or {}
+    if spec.get("goals"):
+        from bike_routing_agent.optimizer.engine import METRICS
+
+        wanted = [METRICS[g["metric"]].label for g in spec["goals"] if g["metric"] in METRICS]
+        details.append("optimised for " + " and ".join(wanted))
     stops = (request.get("poi_stops") or {}).get("count")
     if stops:
         details.append(f"past {stops} well-known sight{'s' if stops != 1 else ''}")
@@ -133,6 +140,8 @@ def reading(
     if request.get("departure_time"):
         details.append("leaving " + _when(str(request["departure_time"])))
     text = head + (f" ({', '.join(details)})" if details else "") + "."
+    if request.get("optimize"):
+        text += " I am fetching several routes to compare, which can take a minute."
     if assumed:
         text += " Assumed: " + "; ".join(assumed) + "."
     if ignored:
@@ -147,6 +156,33 @@ def _when(iso: str) -> str:
         return datetime.fromisoformat(iso).strftime("%a %d %b, %H:%M")
     except ValueError:
         return iso
+
+
+def optimization_lines(plan: dict[str, Any]) -> list[str]:
+    """What the optimiser compared and chose, in plain sentences with the numbers."""
+    report = plan.get("optimization") or {}
+    if not report.get("summary"):
+        return []
+    lines = [str(report["summary"])]
+    rows = [r for r in report.get("table") or [] if not r.get("selected")][:3]
+    if rows:
+        goals = [g["metric"] for g in report.get("goals") or []]
+        shown = []
+        for r in rows:
+            values = ", ".join(
+                str((r.get("shown") or {}).get(m)) for m in goals if (r.get("shown") or {}).get(m)
+            )
+            shown.append(
+                f"{r['label']} ({r['distance_km']:.1f} km{', ' + values if values else ''})"
+            )
+        lines.append("Next best: " + "; ".join(shown) + ".")
+    for line in (report.get("tradeoffs") or [])[:2]:
+        lines.append(line + ".")
+    lines.append(
+        f"{len(plan.get('candidates') or [])} routes are listed; ask for 'alternatives' to see "
+        "them or pick one."
+    )
+    return lines
 
 
 def describe_plan(plan: dict[str, Any]) -> str:
@@ -166,8 +202,9 @@ def describe_plan(plan: dict[str, Any]) -> str:
             "unsupported": "sight stops do not work for loops",
         }
         lines.append(f"No sight stops: {reasons[plan['poi_stops_status']]}.")
+    lines.extend(optimization_lines(plan))
     candidates = plan.get("candidates") or []
-    if len(candidates) > 1:
+    if len(candidates) > 1 and not (plan.get("optimization") or {}).get("table"):
         lines.append(
             f"There are {len(candidates)} alternatives; ask me to compare them or pick one."
         )

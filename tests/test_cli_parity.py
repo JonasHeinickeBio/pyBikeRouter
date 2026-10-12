@@ -665,3 +665,49 @@ def test_the_parts_of_a_multilinestring_are_joined_only_when_they_connect(
     calls = len(pois.calls)
     code, _, err = cli("poi", "along", "--route", str(line_file(tmp_path, gap)))
     assert code == 2 and "not connected" in err and len(pois.calls) == calls  # nothing searched
+
+
+def test_optimize_goals_become_the_requests_optimize_spec():
+    _, _, _, graph = plan(
+        "--optimize", "traffic", "--optimize", "paved=0.7", "--max-detour-pct", "20",
+        "--effort", "quick",
+    )  # fmt: skip
+    spec = (graph.invoked_with or {})["raw_input"]["optimize"]
+    assert spec == {
+        "goals": [{"metric": "traffic"}, {"metric": "paved", "weight": 0.7}],
+        "max_detour_pct": 20.0,
+        "effort": "quick",
+    }
+
+
+def test_bad_optimize_options_are_usage_errors_before_any_routing():
+    for argv in (
+        ["--optimize", "beauty"],
+        ["--optimize", "traffic", "--optimize", "traffic"],
+        ["--optimize", "paved=heavy"],
+        ["--max-detour-pct", "20"],  # without --optimize
+        ["--effort", "quick"],
+    ):
+        code, _, err, graph = plan(*argv)
+        assert code == 2 and graph.invoked_with is None, argv
+
+
+def test_the_optimisation_is_part_of_the_cli_output():
+    report = {
+        "summary": "Compared 3 routes (3 distinct) for less traffic. Best fit: brouter/trekking.",
+        "goals": [{"metric": "traffic"}],
+        "table": [
+            {"selected": True, "label": "brouter/trekking", "distance_km": 61.3, "detour_pct": 5.6,
+             "values": {"traffic": 0.1}, "utility": 0.9, "feasible": True},
+            {"selected": False, "label": "brouter/shortest", "distance_km": 58.1, "detour_pct": 0.0,
+             "values": {"traffic": 0.41}, "utility": 0.1, "feasible": False},
+        ],
+    }  # fmt: skip
+    _, out, _, _ = plan(
+        "--format", "text", "--optimize", "traffic", state=ready_state(optimization=report)
+    )
+    assert "Compared 3 routes" in out and "Routes compared (best fit first):" in out
+    assert "* brouter/trekking" in out and "over limit" in out
+    _, out, _, _ = plan("--format", "json", "--optimize", "traffic",
+                        state=ready_state(optimization=report))  # fmt: skip
+    assert json.loads(out)["optimization"]["table"][0]["label"] == "brouter/trekking"

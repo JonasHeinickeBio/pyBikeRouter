@@ -1192,3 +1192,61 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
     assert isinstance(off["engines"], list) and off["engines"]
     monkeypatch.setattr(api_module, "_llm_parser", _scripted_parser())
     assert (await client.get("/v1/capabilities")).json()["text_planning"] is True
+
+
+async def test_plan_route_passes_the_optimize_spec_and_returns_the_report(
+    client, monkeypatch
+) -> None:
+    import bike_routing_agent.api as api_module
+
+    seen: dict = {}
+
+    class Recording(_StubGraph):
+        async def ainvoke(self, initial_state: dict) -> dict:
+            seen.update(initial_state)
+            return {
+                **self._final_state,
+                "optimization": {"summary": "Compared 3 routes", "table": [], "goals": []},
+            }
+
+    monkeypatch.setattr(api_module, "_graph", Recording(_ready_state([("brouter", 0.9)])))
+    spec = {"goals": [{"metric": "traffic"}, {"metric": "paved", "weight": 0.7}], "effort": "quick"}
+    response = await client.post(
+        "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "optimize": spec}
+    )
+    assert response.status_code == 200
+    assert response.json()["optimization"]["summary"] == "Compared 3 routes"
+    sent = seen["raw_input"]["optimize"]
+    assert [g["metric"] for g in sent["goals"]] == ["traffic", "paved"]
+    assert sent["effort"] == "quick" and sent["max_detour_pct"] == 30.0
+
+
+@pytest.mark.parametrize(
+    "optimize",
+    [
+        {"goals": []},
+        {"goals": [{"metric": "beauty"}]},
+        {"goals": [{"metric": "traffic"}, {"metric": "traffic"}]},
+        {"goals": [{"metric": "paved"}, {"metric": "unpaved"}]},
+        {"goals": [{"metric": "traffic", "weight": 0}]},
+        {"goals": [{"metric": "traffic"}], "effort": "forever"},
+        {"goals": [{"metric": "traffic"}], "max_detour_pct": -5},
+        {"goals": [{"metric": "traffic"}], "surprise": 1},
+    ],
+)
+async def test_a_bad_optimize_spec_is_a_422(client, optimize) -> None:
+    response = await client.post(
+        "/v1/route/plan",
+        json={"origin": "1.0, 2.0", "destination": "3.0, 4.0", "optimize": optimize},
+    )
+    assert response.status_code == 422
+
+
+async def test_without_optimize_the_response_has_no_report(client, monkeypatch) -> None:
+    import bike_routing_agent.api as api_module
+
+    monkeypatch.setattr(api_module, "_graph", _StubGraph(_ready_state([("brouter", 0.9)])))
+    response = await client.post(
+        "/v1/route/plan", json={"origin": "1.0, 2.0", "destination": "3.0, 4.0"}
+    )
+    assert response.json()["optimization"] is None

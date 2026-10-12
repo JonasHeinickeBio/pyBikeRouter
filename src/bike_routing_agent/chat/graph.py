@@ -29,6 +29,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from bike_routing_agent.chat import describe, rules
+from bike_routing_agent.chat import goals as goals_module
 from bike_routing_agent.chat.models import (
     ChatState,
     PlanError,
@@ -79,6 +80,19 @@ def decide_intent(text: str, state: ChatState, *, text_enabled: bool) -> str:
     line = rules.parse_one_line(text, now=_local_now(state.get("timezone")))
     if line.complete() and not _reads_as_followup(line, has_plan):
         return "plan"
+    if followup == "optimize":
+        # "the fastest" / "the quietest" name one of the routes already fetched: pick it
+        # instead of fetching more. Several goals, or "optimise", ask for a new search.
+        wanted = goals_module.detect(text)
+        shown = (state.get("last_plan") or {}).get("candidates") or []
+        if (
+            wanted is not None
+            and not wanted.explicit
+            and len(wanted.metrics) == 1
+            and len(shown) > 1
+            and rules.pick_candidate(text, shown) is not None
+        ):
+            followup = "alternatives"
     if state.get("asking") and not (has_plan and followup):
         return "guided"  # an open question: this message answers it (unless it is a follow-up
         # about the route on screen -- the person did not mean to answer)
@@ -123,6 +137,8 @@ def request_from_line(line: rules.OneLine) -> dict[str, Any]:
         request["departure_time"] = line.departure.isoformat()
     if line.engines:
         request["routing_engines"] = list(line.engines)
+    if line.optimize:
+        request["optimize"] = line.optimize
     return request
 
 
@@ -177,6 +193,7 @@ def build_chat_graph(
             "sights": "sights",
             "explain": "explain",
             "export": "export",
+            "optimize": "optimize",
             "reset": "reset",
             "help": "help",
         }.get(state.get("intent") or "", "help")
@@ -279,6 +296,23 @@ def build_chat_graph(
         return {
             "pending_request": rules.apply_refinement(previous, change),
             "change_note": "Okay: " + ", ".join(change.notes) + ". ",
+        }
+
+    async def optimize_node(state: ChatState) -> dict[str, Any]:
+        """Plan the route on screen again, this time fetching several routes and picking the
+        one that serves the goals said in the message."""
+        previous = state.get("last_request") or state.get("failed_request")
+        wanted = goals_module.detect(state["user_text"])
+        if not previous or wanted is None:
+            return {
+                "reply": "Plan a route first, then say what to optimise for -- for example "
+                "'less traffic but as much asphalt as possible'.",
+                "suggestions": ["Plan a route", "Help"],
+            }
+        request = {**previous, "optimize": wanted.spec}
+        return {
+            "pending_request": request,
+            "change_note": describe.reading(request, optimizing=True),
         }
 
     # ------------------------------------------------------------------------- planning
@@ -556,6 +590,7 @@ def build_chat_graph(
         "plan_text": plan_text,
         "guided": guided,
         "refine": refine,
+        "optimize": optimize_node,
         "plan_route": plan_route,
         "clarify": clarify,
         "alternatives": alternatives,
@@ -576,7 +611,7 @@ def build_chat_graph(
     graph.add_edge(START, "ingest")
     graph.add_edge("ingest", "router")
     intents = [
-        "plan_one_line", "plan_text", "guided", "refine", "alternatives",
+        "plan_one_line", "plan_text", "guided", "refine", "optimize", "alternatives",
         "sights", "explain", "export", "reset", "help",
     ]  # fmt: skip
     graph.add_conditional_edges("router", route_intent, intents)
@@ -584,7 +619,7 @@ def build_chat_graph(
     def after_request_step(state: ChatState) -> str:
         return "plan_route" if state.get("pending_request") else "finish"
 
-    for step in ("plan_one_line", "guided", "refine"):
+    for step in ("plan_one_line", "guided", "refine", "optimize"):
         graph.add_conditional_edges(step, after_request_step, ["plan_route", "finish"])
     graph.add_conditional_edges("plan_text", after_plan, ["clarify", "finish"])
     graph.add_conditional_edges("plan_route", after_plan, ["clarify", "finish"])

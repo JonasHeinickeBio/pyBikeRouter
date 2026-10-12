@@ -83,6 +83,18 @@ loop more than 20 % off its length likewise). When a service did not answer in t
 Candidates of an ambiguous place that are the same town (within 5 km, or a county named after it) are
 not asked about; "Springfield" in two states still is.
 
+## Optimising
+
+`Braunschweig to Wernigerode with less traffic but as much asphalt as possible` -- or, on the route on
+screen, `optimise for the quietest and smoothest` -- fetches several routes and picks the best fit for
+the goals ([optimizer.md](optimizer.md)). The reply says how it was read ("optimised for less traffic
+and more asphalt"), what was compared, why this route won (with the numbers), what the best of each
+goal had instead and what it cost, and the next best routes; `alternatives` lists all of them. Goals
+come in the order said, with weights 1.0, 0.7, 0.5, 0.4. One mild wish ("quieter", "paved only") stays
+an ordinary change; two goals, "optimise", or a superlative ("the quietest, smoothest route") make it
+an optimisation -- except a single superlative that names one of the routes already found ("the
+fastest", "the quietest"), which just picks it. It takes 30-60 s, because many routes are computed.
+
 ## How it works
 
 ```
