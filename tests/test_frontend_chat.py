@@ -89,9 +89,9 @@ def test_the_page_ships_the_chat_panel_hidden_until_the_server_has_a_chat():
     assert "v1/chat" in app and "caps.chat" in app  # shown only when capabilities say so
     # One generation counter for form, text and chat plans: an older response never replaces a
     # newer route on the map.
-    assert app.count("++state.planGeneration") == 2  # form and text plans
+    assert app.count("++state.planGeneration") == 3  # form, text and optimiser plans
     # A stale form/text response is dropped (2); a chat plan is held back only while a newer form
     # request runs and shown after all if that request fails.
-    assert app.count("if (generation !== state.planGeneration) return;") == 3  # form, text, settle
+    assert app.count("if (generation !== state.planGeneration) return;") == 4  # + optimiser, settle
     assert "generation !== state.planGeneration; // the form asked" in app
     assert "state.deferredChat = { plan: data.plan" in app and "drawChatPlan(held.plan" in app

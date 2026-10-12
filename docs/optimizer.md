@@ -14,6 +14,7 @@ extra field, `optimize`. Without it nothing changes.
 | --- | --- |
 | **API** | `"optimize": {"goals": [{"metric": "traffic"}, {"metric": "paved", "weight": 0.7}], "max_detour_pct": 30, "effort": "normal"}` on `POST /v1/route/plan` ([api.md](api.md)) |
 | **CLI** | `bike-router route plan --origin Braunschweig --destination Wernigerode --optimize traffic --optimize paved=0.7 --max-detour-pct 25 --effort thorough` |
+| **Web form** | the **Optimize** tab (next to *Plan*): tick goals and say how much each matters, then *Optimize route*; origin, destination, bike type and constraints are the ones of the form (see [The web form](#the-web-form)) |
 | **Chat** (also the web panel) | `Braunschweig to Wernigerode with less traffic but as much asphalt as possible` · on the route on screen: `optimise for the quietest and smoothest` ([chat.md](chat.md)) |
 
 ### Goals
@@ -37,6 +38,25 @@ Each goal has a `weight` (0 < w <= 10, default 1): the first goal in the chat co
 0.7, 0.5, 0.4 ("less traffic **but** ..." is what to get as well, not instead). `max_detour_pct`
 (default 30) bars any route more than that much longer than the shortest one found. The request's own
 `max_distance_km` / `max_ascent_m` also bar routes -- unless no route meets them, which is said.
+
+## The web form
+
+With an engine that can return many routes (BRouter; `capabilities.optimizer`), the sidebar gets a
+**Plan | Optimize** tab bar. The Optimize tab keeps the places, departure and constraints panels and
+swaps the plan buttons for:
+
+- **Goals**: tick up to four, say how much each matters (*Most important* 1.0, *Important* 0.7, *Nice
+  to have* 0.4); *More asphalt* and *More off-road* exclude each other; *More sights along the track*
+  is greyed out when the server has no POI service. Three starting points are one click away (*Quiet
+  and smooth*, *Sights, little traffic*, *Fast and flat*).
+- **Longest detour** and **Effort**; for sights also *within* (150 m - 1 km) and *well-known means*
+  (3 - 20+ languages).
+- **Optimize route** sends the form's request plus `optimize` to `POST /v1/route/plan` and shows
+  the elapsed seconds while it works (30 s - 2 min). The map gets every candidate; the **What was
+  compared** panel shows the summary, the places the winner passes, the trade-offs and a table of the
+  routes (click a row to see that route on the map); the usual result panel below belongs to the
+  selected route.
+- The tab is remembered in the browser; without BRouter the tab bar is not there at all.
 
 ## What is fetched
 

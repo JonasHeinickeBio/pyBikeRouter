@@ -51,15 +51,25 @@ async def count_pois(
     indices = [i for i, c in enumerate(candidates) if len(_line(c)) >= 2][:MAX_ROUTES_FOR_POIS]
     if not indices:
         return candidates, {"status": "unavailable"}
-    try:
-        result = await service.along_routes(
-            [_line(candidates[i]) for i in indices],
-            options.categories,
-            buffer_m=options.corridor_m,
-            linked_only=True,
-        )
-    except (ProviderError, ValueError) as exc:
-        logger.warning("optimizer POI lookup failed: %s", exc)
+    result = None
+    # A search over many corridors is a big one for the public Overpass instance (it answers
+    # with 504): when it fails, ask again for the leading routes only -- the rest get no count
+    # and are therefore at a disadvantage, which is said (``counted``).
+    for subset in (indices, indices[:4]):
+        try:
+            result = await service.along_routes(
+                [_line(candidates[i]) for i in subset],
+                options.categories,
+                buffer_m=options.corridor_m,
+                linked_only=True,
+            )
+            indices = subset
+            break
+        except (ProviderError, ValueError) as exc:
+            logger.warning("optimizer POI lookup over %d routes failed: %s", len(subset), exc)
+        if len(indices) <= 4:
+            break
+    if result is None:
         return candidates, {"status": "unavailable"}
     updated = list(candidates)
     for i, near in zip(indices, result.per_route, strict=True):
@@ -72,7 +82,12 @@ async def count_pois(
                 "provenance": {**c.provenance, "optimizer_pois": named},
             }
         )
-    return updated, {"status": result.fame_status, "truncated": result.truncated}
+    return updated, {
+        "status": result.fame_status,
+        "truncated": result.truncated,
+        "counted": len(indices),
+        "of": len([c for c in candidates if len(_line(c)) >= 2]),
+    }
 
 
 def build_optimize_node(*, poi_service: PoiService | None = None) -> OptimizeNodeFn:
@@ -101,6 +116,7 @@ def build_optimize_node(*, poi_service: PoiService | None = None) -> OptimizeNod
         if poi_info is not None:
             report["poi_status"] = poi_info.get("status")
             report["poi_corridor_m"] = spec.poi.corridor_m
+            report["poi_routes_counted"] = poi_info.get("counted")
             report["pois"] = outcome.ordered[0].provenance.get("optimizer_pois", [])
             report["via_place_routes"] = sum(
                 1 for c in outcome.ordered if c.provenance.get("optimizer_via")

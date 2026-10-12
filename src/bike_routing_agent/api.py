@@ -720,6 +720,8 @@ async def capabilities() -> dict[str, Any]:
         "pois": _poi_service is not None,
         "segment_downloads": _segment_downloader is not None,
         "chat": _chat_service is not None,
+        # The route optimiser needs an engine that can return many routes with road tags.
+        "optimizer": any(hasattr(p, "optimization_candidates") for p in _routing_providers),
         "engines": [p.name for p in [*_routing_providers, *_optional_routing_providers]],
     }
 

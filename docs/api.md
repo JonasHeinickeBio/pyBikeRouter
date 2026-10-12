@@ -352,7 +352,7 @@ and a `llm_parser_*` error code.
 ## GET /v1/capabilities
 
 `{"text_planning": bool, "weather": bool, "history": bool, "pois": bool, "segment_downloads":
-bool, "chat": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
+bool, "chat": bool, "optimizer": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
 web form to show or hide controls; `engines` are the names a plan request may give in
 `routing_engines` (the configured engines plus optional ones the server can use).
 
@@ -372,6 +372,9 @@ One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id
 `focus_rank` names the alternative that was asked for; `awaiting` is `place_choice` (an ambiguous place
 waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
 `CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
+
+`/v1/capabilities` also has `"optimizer": bool` -- true when a configured engine can return many routes
+with road tags (BRouter); the web form shows its Optimize tab only then ([optimizer.md](optimizer.md)).
 
 ## BRouter map tiles
 
