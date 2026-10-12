@@ -5,6 +5,7 @@ Documentation for the bike-routing-agent service.
 | Document | Covers |
 | --- | --- |
 | [architecture.md](architecture.md) | Layers, LangGraph workflow, state contract, terminal statuses, error model, design principles |
+| [easy-install.md](easy-install.md) | Install and run it without programming: Docker Desktop + one double-click; map data per area; troubleshooting; how the download is built |
 | [optimizer.md](optimizer.md) | Fetch several routes and pick the best fit for goals ("less traffic, as much asphalt as possible"): API, CLI, chat, method, evidence |
 | [chat.md](chat.md) | A conversation that plans, changes and explains routes: one line, free text, step by step; alternatives, sights, files; a LangGraph with pause/resume |
 | [cli.md](cli.md) | The `bike-router` command: plan (alternatives, sight stops, GPX/GeoJSON), points of interest, BRouter tiles, history, status |

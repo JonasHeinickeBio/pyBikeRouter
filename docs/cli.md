@@ -95,6 +95,22 @@ bike-router route plan --origin Braunschweig --destination Wernigerode \
 `--optimize-poi-min-fame 10`. The text
 output adds what was compared and a table of the routes, best fit first ([optimizer.md](optimizer.md)).
 
+## `setup`
+
+```bash
+bike-router setup start                       # asks where you ride, then downloads the map data
+bike-router setup start --region germany --yes
+bike-router setup start --around "Braunschweig" --radius-km 80 --yes
+bike-router setup start --tiles E10_N50,E5_N50 --yes
+bike-router setup regions                     # the ready-made areas and their tiles
+```
+
+The easy-install kit ([easy-install.md](easy-install.md)) runs this inside the container on the
+first start. `--region` names a ready-made area, `--around` finds a town and takes the 1-4 map
+tiles within `--radius-km` of it, `--tiles` names tiles directly, `--skip` downloads nothing. The
+sizes are shown and confirmed first (`--yes` skips the question); more than four tiles are
+fetched in turns.
+
 ## `chat`
 
 ```bash

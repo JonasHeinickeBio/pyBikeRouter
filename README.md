@@ -11,6 +11,15 @@ The LLM (where used) may parse free text, ask clarification questions, and
 explain a chosen route. It never invents coordinates, geometry, elevation,
 or route suitability -- all of that comes from OSM-derived routing engines.
 
+## Easy install (no programming needed)
+
+Download `pybikerouter-easy-<version>.zip` from the
+[Releases](https://github.com/JonasHeinickeBio/pyBikeRouter/releases) page, unzip it, install
+[Docker Desktop](https://www.docker.com/products/docker-desktop/), and double-click the **Start**
+file for your computer. The first start asks one question -- where you ride -- downloads that
+area's map data, and opens the planner in your browser. Step by step, in plain words:
+[docs/easy-install.md](docs/easy-install.md) (and `START-HERE.txt` in the download).
+
 ## Documentation
 
 The full documentation suite lives in [`docs/`](docs/README.md):

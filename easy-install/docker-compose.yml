@@ -1,0 +1,62 @@
+# pyBikeRouter -- easy install. You do not need to edit this file.
+# Start it with the Start script for your computer (see START-HERE.txt).
+
+name: pybikerouter
+
+services:
+  # The program you open in your browser.
+  app:
+    image: ${PYBIKEROUTER_IMAGE:-ghcr.io/jonasheinickebio/pybikerouter:latest}
+    restart: unless-stopped
+    # The scripts set PBR_UID/PBR_GID on Linux so the files you see in "data" are yours.
+    user: "${PBR_UID:-10001}:${PBR_GID:-10001}"
+    ports:
+      # Only this computer can open it, unless you change APP_BIND in settings.env.
+      - "${APP_BIND:-127.0.0.1}:${PORT:-8000}:8000"
+    env_file:
+      - path: settings.env
+        required: false
+    environment:
+      ROUTING_PROVIDER: brouter
+      BROUTER_BASE_URL: http://brouter:17777
+      BROUTER_SEGMENTS_DIR: /data/segments
+      EXPORT_DIR: /data/exports
+      APP_HOST: 0.0.0.0
+      APP_PORT: "8000"
+    volumes:
+      - ./data/segments:/data/segments
+      - ./data/exports:/data/exports
+    depends_on:
+      - brouter
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  # The routing engine. It reads the map data you downloaded into data/segments.
+  brouter:
+    # The exact BRouter build this program was tested with.
+    image: ghcr.io/abrensch/brouter@sha256:3c6c8a616f054f9237c900760add5fec6b88fc17108348fb2733a1dd62444165
+    restart: unless-stopped
+    environment:
+      JAVA_OPTS: "-Xmx1536m"
+    volumes:
+      - ./data/segments:/segments4:ro
+      - ./brouter/profiles:/customprofiles:ro
+      - ./brouter/lookups.dat:/profiles2/lookups.dat:ro
+
+  # Asks where you ride and downloads the map data (run by the Start script on the
+  # first start, and by the "Choose area" scripts).
+  setup:
+    image: ${PYBIKEROUTER_IMAGE:-ghcr.io/jonasheinickebio/pybikerouter:latest}
+    profiles: ["setup"]
+    user: "${PBR_UID:-10001}:${PBR_GID:-10001}"
+    entrypoint: ["bike-router", "setup", "start"]
+    stdin_open: true
+    tty: true
+    environment:
+      BROUTER_SEGMENTS_DIR: /data/segments
+    volumes:
+      - ./data/segments:/data/segments

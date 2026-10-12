@@ -1,0 +1,7 @@
+#!/bin/sh
+# Downloads the map data of another area. Start the program again afterwards.
+cd "$(dirname "$0")" || exit 1
+mkdir -p data/segments data/exports
+PBR_UID=$(id -u); PBR_GID=$(id -g); export PBR_UID PBR_GID
+docker compose --env-file settings.env --profile setup run --rm setup
+printf '\nDone. Run stop-linux.sh and start-linux.sh so the new area is used.\n'
