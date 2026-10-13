@@ -17,6 +17,7 @@ GROUP_MODULES: tuple[str, ...] = (
     "chat",
     "serve",
     "deploy",
+    "setup",
     "docker",
     "config",
     "providers",

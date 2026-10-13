@@ -17,3 +17,5 @@ docker/brouter/segments/*.rd5
 
 # backend comparison output (scripts/compare_backends.py)
 backend-compare.json
+# Map data and routes of an easy-install folder.
+easy-install/data/

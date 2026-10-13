@@ -1,0 +1,68 @@
+pyBikeRouter -- plan bike routes on your own computer
+======================================================
+
+What you get: a web page (on YOUR computer) where you type a start and a
+destination, and get a bike route -- with alternatives, weather, sights, the
+traffic and surface along the way, and a GPX file for your bike computer or phone.
+
+You do not need to know programming. You need two things:
+
+  1. Docker Desktop   (a free program that runs this app; one-time install)
+  2. About 1-3 GB of free disk space and an internet connection
+
+STEP 1 -- Install Docker Desktop (once)
+---------------------------------------
+  Windows / Mac:  https://www.docker.com/products/docker-desktop/
+  Linux:          https://docs.docker.com/engine/install/
+
+  Install it, start it, and wait until it says it is running.
+  (On Windows it may ask to restart the computer. That is normal.)
+
+STEP 2 -- Start the program
+---------------------------
+  Open this folder and double-click the file for your computer:
+
+     Windows :  Start-Windows.bat
+     Mac     :  Start-Mac.command     (first time: right-click it, choose "Open")
+     Linux   :  start-linux.sh        (run it from a terminal:  sh start-linux.sh)
+
+  The first start takes a few minutes: it downloads the program, then asks
+  ONE question -- where you ride -- and downloads the map data for that area
+  (100-250 MB per area). Type the number of your area and press Enter.
+
+  When it is ready your web browser opens. If it does not, open
+  http://localhost:8000 yourself.
+
+STEP 3 -- Plan a route
+----------------------
+  Type a start and a destination (for example "Braunschweig" and "Goslar"),
+  press "Plan route". Or open the "Chat" box and write "from Braunschweig to
+  Goslar by gravel bike". The "Optimize" tab picks the best of several routes
+  for what you care about (less traffic, more asphalt, more sights ...).
+
+DAILY USE
+---------
+  Start again:     double-click the Start script (it is quick after the first time)
+  Stop:            double-click Stop-Windows.bat / Stop-Mac.command / stop-linux.sh
+  Other area:      double-click Choose-area-Windows.bat / Choose-area-Mac.command /
+                   choose-area-linux.sh (then Start again)
+  Update:          double-click Update-Windows.bat / Update-Mac.command / update-linux.sh
+  Your routes:     the folder "data/exports" (GPX and GeoJSON files)
+
+SOMETHING WENT WRONG?
+---------------------
+  "Docker is not running"        Start Docker Desktop and wait until it says it is running.
+  "port is already allocated"    Another program uses port 8000. Open settings.env in a text
+                                 editor, change PORT=8000 to PORT=8001, then Start again
+                                 and open http://localhost:8001.
+  "no map data" / no route       Run the Choose-area script and pick (or add) your area.
+  The page is empty / slow       The first routes of a day can take a minute. Be patient.
+  Still stuck                    More help: docs/easy-install.md or
+                                 https://github.com/JonasHeinickeBio/pyBikeRouter
+
+PRIVACY
+-------
+  The program runs on your computer. To work it contacts these free services:
+  OpenStreetMap's Nominatim (find places), Overpass (sights), Open-Meteo / MET
+  Norway / DWD (weather) and brouter.de (map data, once per area). Your routes
+  are not sent anywhere else.
