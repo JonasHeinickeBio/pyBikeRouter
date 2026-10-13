@@ -49,7 +49,9 @@ Stock profiles shipped inside the image (`fastbike`, `mtb`, `trekking`) are
 used for the remaining bike types; the mapping lives in
 `config.BROUTER_PROFILE_MAP`. Profile files are versioned: never edit one
 in place, add `gravel-v3.brf` and update the map instead (exports must stay
-reproducible). Files are GPLv3 derivatives of BRouter's `misc/profiles2`.
+reproducible). Files are derivatives of BRouter's `misc/profiles2`; BRouter itself is MIT-licensed
+(`LICENSE` in this folder, the stock profile headers say GPLv3) -- see
+`THIRD_PARTY_LICENSES.md` at the repository root.
 
 ## Verification
 

@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
+from bike_routing_agent import __version__
 from bike_routing_agent.chat.models import (
     ChatRequest,
     PlanError,
@@ -104,7 +105,7 @@ _PLAN_ID = re.compile(r"^[0-9a-f]{32}$")
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="bike-routing-agent", version="0.1.0")
+app = FastAPI(title="bike-routing-agent", version=__version__)
 
 
 def build_cache(cfg: Settings) -> CacheBackend:
