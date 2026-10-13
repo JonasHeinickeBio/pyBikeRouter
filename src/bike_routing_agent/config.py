@@ -62,6 +62,11 @@ class Settings(BaseSettings):
     brouter_optimize_timeout_per_km_s: float = 1.2
     brouter_optimize_timeout_max_s: float = 300.0
     brouter_timeout_s: float = 30.0
+    # A long or hilly route takes BRouter longer (Freiburg -> Stuttgart, 135 km over the Black
+    # Forest: 42 s on the gravel profile): the main route may take this per km between the places
+    # on top of 15 s, never less than the setting above and never more than the maximum.
+    brouter_timeout_per_km_s: float = 0.5
+    brouter_timeout_max_s: float = 180.0
     brouter_max_retries: int = 1
     # Requests sent to BRouter at the same time. 1 matches a stock server (one routing thread);
     # raise it only if BRouter was started with more threads.
@@ -330,6 +335,14 @@ class Settings(BaseSettings):
     def _check_brouter_concurrency(self) -> Settings:
         if self.brouter_max_concurrency < 1:
             raise ValueError("brouter_max_concurrency must be >= 1")
+        return self
+
+    @model_validator(mode="after")
+    def _check_brouter_route_timeout(self) -> Settings:
+        if self.brouter_timeout_per_km_s < 0:
+            raise ValueError("brouter_timeout_per_km_s must be >= 0")
+        if self.brouter_timeout_max_s < self.brouter_timeout_s:
+            raise ValueError("brouter_timeout_max_s must be >= brouter_timeout_s")
         return self
 
     @model_validator(mode="after")

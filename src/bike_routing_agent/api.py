@@ -232,6 +232,8 @@ def build_optional_routing_providers(
             BRouterAdapter(
                 base_url=cfg.brouter_base_url,
                 timeout_s=cfg.brouter_timeout_s,
+                timeout_per_km_s=cfg.brouter_timeout_per_km_s,
+                timeout_max_s=cfg.brouter_timeout_max_s,
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
@@ -339,6 +341,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
             BRouterAdapter(
                 base_url=cfg.brouter_base_url,
                 timeout_s=cfg.brouter_timeout_s,
+                timeout_per_km_s=cfg.brouter_timeout_per_km_s,
+                timeout_max_s=cfg.brouter_timeout_max_s,
                 max_retries=cfg.brouter_max_retries,
                 alternatives=cfg.brouter_alternatives,
                 alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
@@ -370,6 +374,8 @@ def build_routing_providers(cfg: Settings) -> list[RoutingProvider]:
         BRouterAdapter(
             base_url=cfg.brouter_base_url,
             timeout_s=cfg.brouter_timeout_s,
+            timeout_per_km_s=cfg.brouter_timeout_per_km_s,
+            timeout_max_s=cfg.brouter_timeout_max_s,
             max_retries=cfg.brouter_max_retries,
             alternatives=cfg.brouter_alternatives,
             alternatives_timeout_s=cfg.brouter_alternatives_timeout_s,
