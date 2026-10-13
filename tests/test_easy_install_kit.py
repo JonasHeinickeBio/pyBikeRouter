@@ -199,23 +199,20 @@ def test_the_start_page_and_the_help_name_the_files_that_exist():
     assert "Start-Windows.bat" in help_text and "start-linux.sh" in help_text
 
 
-def test_the_bundle_holds_the_kit_and_nothing_else(tmp_path):
+def test_the_bundle_holds_the_kit_and_nothing_else(tmp_path, monkeypatch):
     sys.path.insert(0, str(ROOT / "scripts"))
     try:
         import make_easy_bundle
     finally:
         sys.path.pop(0)
-    data = KIT / "data"
-    existed = data.exists()  # a developer may run the kit from the checkout: keep their files
-    data.mkdir(exist_ok=True)
-    marker = data / "secret-route.gpx"
-    marker.write_text("not for the zip")
-    try:
-        built = make_easy_bundle.build(tmp_path)
-    finally:
-        marker.unlink(missing_ok=True)
-        if not existed:
-            shutil.rmtree(data, ignore_errors=True)
+    # Build from a copy of the kit with a "data" folder in it: the real folder (which may hold a
+    # developer's tiles and routes) is never touched.
+    kit = tmp_path / "kit"
+    shutil.copytree(KIT, kit, ignore=shutil.ignore_patterns("data"))
+    (kit / "data").mkdir()
+    (kit / "data" / "secret-route.gpx").write_text("not for the zip")
+    monkeypatch.setattr(make_easy_bundle, "KIT", kit)
+    built = make_easy_bundle.build(tmp_path / "out")
     version = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M)
     assert built.name == f"pybikerouter-easy-{version.group(1)}.zip"  # type: ignore[union-attr]
     with zipfile.ZipFile(built) as bundle:
