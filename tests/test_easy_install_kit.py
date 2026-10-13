@@ -205,12 +205,17 @@ def test_the_bundle_holds_the_kit_and_nothing_else(tmp_path):
         import make_easy_bundle
     finally:
         sys.path.pop(0)
-    (KIT / "data").mkdir(exist_ok=True)
-    (KIT / "data" / "secret-route.gpx").write_text("not for the zip")
+    data = KIT / "data"
+    existed = data.exists()  # a developer may run the kit from the checkout: keep their files
+    data.mkdir(exist_ok=True)
+    marker = data / "secret-route.gpx"
+    marker.write_text("not for the zip")
     try:
         built = make_easy_bundle.build(tmp_path)
     finally:
-        shutil.rmtree(KIT / "data", ignore_errors=True)
+        marker.unlink(missing_ok=True)
+        if not existed:
+            shutil.rmtree(data, ignore_errors=True)
     version = re.search(r'^version\s*=\s*"([^"]+)"', (ROOT / "pyproject.toml").read_text(), re.M)
     assert built.name == f"pybikerouter-easy-{version.group(1)}.zip"  # type: ignore[union-attr]
     with zipfile.ZipFile(built) as bundle:
@@ -231,7 +236,8 @@ def test_the_release_workflow_publishes_the_image_the_kit_pulls_and_attaches_the
     assert triggers["push"]["tags"] == ["v*"]
     assert set(workflow["jobs"]) == {"image", "bundle"}
     text = (ROOT / ".github" / "workflows" / "release.yml").read_text()
-    assert "linux/amd64,linux/arm64" in text and "ghcr.io/" in text
+    assert "linux/amd64,linux/arm64" in text
+    assert re.search(r"^\s*echo \"image=ghcr\.io/\$\{owner\}/pybikerouter\"", text, re.M)
     assert "make_easy_bundle.py" in text
     # the kit pulls exactly what the workflow pushes (the owner is lower-cased there)
     compose = (KIT / "docker-compose.yml").read_text()

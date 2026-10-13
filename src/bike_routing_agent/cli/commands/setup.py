@@ -325,6 +325,8 @@ def _resolve(
         if prompt is None or _yes(prompt("Is that the right place? [Y/n] "), default=True):
             break
         town = prompt("Please type the town again, with the country if you can: ")
+        if not town.strip():
+            raise ValueError("no town given")
     names = tiles_around(lon, lat, args.radius_km)
     print(
         f"Everything within about {args.radius_km:g} km is covered by "

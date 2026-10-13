@@ -21,7 +21,7 @@ PBR_UID=$(id -u)
 PBR_GID=$(id -g)
 export PBR_UID PBR_GID
 COMPOSE="docker compose --env-file settings.env"
-PORT=$(grep -E '^PORT=' settings.env 2>/dev/null | tail -n1 | cut -d= -f2)
+PORT=$(grep -E '^PORT=' settings.env 2>/dev/null | tail -n1 | cut -d= -f2 | tr -d '\r ')
 PORT=${PORT:-8000}
 
 IMAGE=${PYBIKEROUTER_IMAGE:-ghcr.io/jonasheinickebio/pybikerouter:latest}

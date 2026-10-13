@@ -89,9 +89,10 @@ def tiles_covering(lon_min: float, lat_min: float, lon_max: float, lat_max: floa
     if not (-180 <= lon_min <= lon_max <= 180 and -90 <= lat_min <= lat_max <= 90):
         raise ValueError("the bounding box is outside the world")
     west = math.floor(lon_min / TILE_DEGREES) * TILE_DEGREES
-    east = math.floor(lon_max / TILE_DEGREES) * TILE_DEGREES
+    # A box ending on the world's edge (180 E, 90 N) would name a tile that starts there: none does.
+    east = min(math.floor(lon_max / TILE_DEGREES) * TILE_DEGREES, 180 - TILE_DEGREES)
     south = math.floor(lat_min / TILE_DEGREES) * TILE_DEGREES
-    north = math.floor(lat_max / TILE_DEGREES) * TILE_DEGREES
+    north = min(math.floor(lat_max / TILE_DEGREES) * TILE_DEGREES, 90 - TILE_DEGREES)
     return [
         tile_name(lon, lat)
         for lat in range(south, north + 1, TILE_DEGREES)
