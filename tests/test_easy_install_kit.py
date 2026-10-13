@@ -222,6 +222,9 @@ def test_the_bundle_holds_the_kit_and_nothing_else(tmp_path, monkeypatch):
         assert all(name.startswith("pyBikeRouter/") for name in names)
         assert not any("secret-route" in name or name.endswith(".pyc") for name in names)
         assert "pyBikeRouter/data/README.txt" in names
+        # BRouter's own files travel in the zip, so its licence must too
+        assert "pyBikeRouter/THIRD_PARTY_LICENSES.md" in names
+        assert "pyBikeRouter/brouter/LICENSE" in names
         mode = bundle.getinfo("pyBikeRouter/start-linux.sh").external_attr >> 16
         assert mode & 0o111  # still executable after unzipping
         assert b"\r\n" in bundle.read("pyBikeRouter/Start-Windows.bat")
@@ -240,3 +243,12 @@ def test_the_release_workflow_publishes_the_image_the_kit_pulls_and_attaches_the
     compose = (KIT / "docker-compose.yml").read_text()
     assert "ghcr.io/jonasheinickebio/pybikerouter:latest" in compose
     assert "pybikerouter:latest" in text or ":latest" in text
+
+
+def test_brouters_licence_is_kept_next_to_the_files_copied_from_it():
+    upstream = (ROOT / "docker" / "brouter" / "LICENSE").read_text()
+    assert upstream.startswith("The MIT License (MIT)") and "BRouter contributors" in upstream
+    assert (KIT / "brouter" / "LICENSE").read_text() == upstream
+    notices = (ROOT / "THIRD_PARTY_LICENSES.md").read_text()
+    assert upstream.strip() in notices  # the full text, not just a link
+    assert "OpenStreetMap" in notices

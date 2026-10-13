@@ -42,6 +42,7 @@ def files() -> list[tuple[Path, str]]:
         if (ROOT / extra).is_file():
             out.append((ROOT / extra, f"{TOP}/{extra}"))
             break
+    out.append((ROOT / "THIRD_PARTY_LICENSES.md", f"{TOP}/THIRD_PARTY_LICENSES.md"))
     out.append((ROOT / "docs" / "easy-install.md", f"{TOP}/HELP.md"))
     return out
 

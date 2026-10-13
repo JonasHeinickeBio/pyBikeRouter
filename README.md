@@ -340,3 +340,8 @@ tests/
 └── live/                Tests marked @pytest.mark.live
 docs/                   Documentation suite (see docs/README.md)
 ```
+
+## Third-party licences
+
+BRouter (MIT) and the OpenStreetMap data (ODbL) this project builds on are credited, with the
+full BRouter licence text, in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
