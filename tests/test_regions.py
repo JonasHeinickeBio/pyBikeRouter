@@ -76,3 +76,12 @@ def test_typed_tile_names_are_cleaned_and_checked():
 def test_a_box_outside_the_world_is_refused():
     with pytest.raises(ValueError):
         tiles_covering(190, 0, 200, 10)
+
+
+def test_a_box_that_ends_on_the_edge_of_the_world_names_no_tile_that_does_not_exist():
+    east = tiles_around(179.9, 10.0, 100)  # near the antimeridian: E175 is the last column
+    assert east and not any(t.startswith("E180") for t in east)
+    assert set(tiles_covering(170, 0, 180, 5)) == {"E170_N0", "E175_N0", "E170_N5", "E175_N5"}
+    north = tiles_around(10.0, 89.9, 200)  # next to the pole: N85 is the last row
+    assert north and not any(t.endswith("N90") for t in north)
+    assert tiles_covering(-180, -90, -170, -85)[0] == "W180_S90"

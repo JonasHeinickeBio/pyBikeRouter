@@ -162,3 +162,12 @@ def test_the_command_is_registered_in_the_cli():
     out, err = io.StringIO(), io.StringIO()
     assert main(["setup", "regions"], stdout=out, stderr=err) == 0
     assert "great_britain" in out.getvalue()
+
+
+def test_rejecting_the_town_and_typing_nothing_is_a_clear_error_not_a_blank_search(tmp_path):
+    ask = answers("n", "   ")  # "that is not the right place", then nothing typed
+    springfield = town("Springfield, Illinois", -89.6, 39.8)
+    code, _, err = run(
+        "start", "--around", "Springfield", ask=ask, geocoder=springfield, directory=tmp_path
+    )
+    assert code == 2 and "no town given" in err

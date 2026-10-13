@@ -3,3 +3,5 @@ easy-install/*.bat text eol=crlf
 easy-install/*.sh text eol=lf
 easy-install/*.command text eol=lf
 easy-install/*.yml text eol=lf
+
+easy-install/*.env text eol=lf
