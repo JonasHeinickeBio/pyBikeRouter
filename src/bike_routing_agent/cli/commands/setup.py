@@ -58,6 +58,25 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     start.add_argument("--yes", action="store_true", help="do not ask before downloading")
     start.add_argument("--dir", type=Path, default=None, help="BRouter's tile folder")
 
+    start.add_argument(
+        "--llm",
+        choices=("off", "openrouter", "ollama"),
+        default=None,
+        help="connect a language model for free-sentence planning (asked when omitted)",
+    )
+    start.add_argument(
+        "--llm-model",
+        default=None,
+        metavar="ID",
+        help="with --llm: the model (suggested if omitted)",
+    )
+    start.add_argument(
+        "--settings-file",
+        type=Path,
+        default=None,
+        help="the settings.env to write the model settings to (default: $PBR_SETTINGS_FILE)",
+    )
+
     sub.add_parser("regions", help="list the ready-made areas")
     return group
 
@@ -116,6 +135,32 @@ def _geocode(town: str, factory: Callable[[], Any]) -> tuple[float, float, str]:
 
 
 def run(
+    args: argparse.Namespace,
+    stdout: IO[str],
+    stderr: IO[str],
+    *,
+    ask: Callable[[str], str] | None = None,
+    secret: Callable[[str], str] | None = None,
+    geocoder_factory: Callable[[], Any] | None = None,
+    downloader_factory: Callable[[Path, Any], Any] | None = None,
+    poll_interval_s: float = 1.0,
+) -> int:
+    """The map data first, then (optionally) a language model."""
+    code = _run_map(
+        args,
+        stdout,
+        stderr,
+        ask=ask,
+        geocoder_factory=geocoder_factory,
+        downloader_factory=downloader_factory,
+        poll_interval_s=poll_interval_s,
+    )
+    if code != EXIT_OK or args.command != "start":
+        return code
+    return _llm_step(args, stdout, stderr, ask=ask, secret=secret)
+
+
+def _run_map(
     args: argparse.Namespace,
     stdout: IO[str],
     stderr: IO[str],
@@ -296,3 +341,190 @@ def _default_geocoder() -> Any:
     from bike_routing_agent.config import settings
 
     return build_providers(settings)[0]
+
+
+# ------------------------------------------------------------------ a language model
+
+LLM_INTRO = """\
+
+Describe a ride in your own words? (optional)
+
+The planner already understands one-line requests such as "from Goslar to Hannover by
+gravel bike". With a language model connected it also reads free sentences such as
+"a relaxed 50 km loop around Goslar tomorrow morning". Everything else works without it.
+"""
+
+
+def _llm_step(
+    args: argparse.Namespace,
+    stdout: IO[str],
+    stderr: IO[str],
+    *,
+    ask: Callable[[str], str] | None,
+    secret: Callable[[str], str] | None,
+) -> int:
+    """Offer OpenRouter or Ollama -- or leaving it off -- and write the settings."""
+    import getpass
+    import os
+
+    from bike_routing_agent import llm_setup
+
+    interactive = ask is not None or sys.stdin.isatty()
+    prompt = ask or (lambda q: _input(q, stdout))
+    hidden = secret or (lambda q: getpass.getpass(q))
+    choice = args.llm
+    if choice is None:
+        if not interactive:
+            return EXIT_OK  # nothing was asked for and nobody to ask: leave it as it is
+        print(LLM_INTRO, file=stdout)
+        print("  1) Leave it off for now (you can run this again later)", file=stdout)
+        print("  2) OpenRouter -- an online service; some models are free;", file=stdout)
+        print("     you need a free account and an API key", file=stdout)
+        print("  3) Ollama -- runs on your own computer; free, no account; downloads", file=stdout)
+        print("     about 4 GB for Ollama itself plus 2-5 GB for the model, once;", file=stdout)
+        print("     needs 4-8 GB of free memory and is slow without a graphics card\n", file=stdout)
+        try:
+            while True:
+                answer = prompt("Type 1, 2 or 3 and press Enter [1]: ").strip() or "1"
+                if answer in ("1", "2", "3"):
+                    choice = {"1": "off", "2": "openrouter", "3": "ollama"}[answer]
+                    break
+                print("Please type 1, 2 or 3.", file=stdout)
+        except (EOFError, KeyboardInterrupt):
+            print("\nLeft the language model off.", file=stdout)
+            return EXIT_OK
+
+    settings_file = args.settings_file or (
+        Path(os.environ["PBR_SETTINGS_FILE"]) if os.environ.get("PBR_SETTINGS_FILE") else None
+    )
+    try:
+        if choice == "off":
+            updates = llm_setup.settings_for("off")
+            note = (
+                "Left the language model off. Free sentences are not read; everything else works."
+            )
+        elif choice == "openrouter":
+            key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("LLM_API_KEY") or ""
+            if not key:
+                if not interactive:
+                    print(
+                        "error: set OPENROUTER_API_KEY in the environment (a key is never "
+                        "taken from the command line)",
+                        file=stderr,
+                    )
+                    return EXIT_USAGE
+                print(
+                    f"\nGet a key: open {llm_setup.OPENROUTER_KEYS_PAGE} (sign up first), "
+                    "choose 'Create key', and copy it.",
+                    file=stdout,
+                )
+                key = hidden("Paste the key here (it is not shown) and press Enter: ").strip()
+                if not key:
+                    print("No key given; left the language model off.", file=stdout)
+                    updates = llm_setup.settings_for("off")
+                    choice = "off"
+                    note = ""
+            if choice == "openrouter":
+                model = args.llm_model or _pick_openrouter_model(
+                    prompt if interactive else None, stdout
+                )
+                works = asyncio.run(_check_key(key))
+                if works is False:
+                    print(
+                        "OpenRouter did not accept that key. Check that you copied all of it; "
+                        "run this again to try another.",
+                        file=stderr,
+                    )
+                    return EXIT_FAILURE
+                if works is None:
+                    print(
+                        "(Could not reach OpenRouter to check the key; saving it anyway.)",
+                        file=stdout,
+                    )
+                updates = llm_setup.settings_for("openrouter", model, key)
+                note = f"Connected to OpenRouter with the model {model}."
+        else:  # ollama
+            model = args.llm_model or _pick_ollama_model(prompt if interactive else None, stdout)
+            updates = llm_setup.settings_for("ollama", model)
+            note = (
+                f"Ollama will run on your computer with the model {model}. The Start script "
+                "downloads it the first time (a few GB) and starts it with the program. "
+                "Answers take a while on a computer without a graphics card."
+            )
+    except (EOFError, KeyboardInterrupt):
+        print("\nLeft the language model as it was.", file=stdout)
+        return EXIT_OK
+    except ValueError as exc:
+        print(f"error: {exc}", file=stderr)
+        return EXIT_USAGE
+
+    if settings_file is not None:
+        try:
+            llm_setup.update_env_file(settings_file, updates)
+        except OSError as exc:
+            print(f"error: could not write {settings_file}: {exc}", file=stderr)
+            return EXIT_FAILURE
+        print(
+            f"\n{note}\nSaved to {settings_file}. Stop and Start the program to use it.",
+            file=stdout,
+        )
+    else:
+        print(f"\n{note}", file=stdout)
+        shown = {
+            k: ("<your key>" if k == "LLM_API_KEY" and v else v) for k, v in updates.items() if v
+        }
+        print("Add these lines to your settings (environment or .env file):", file=stdout)
+        for key_, value in shown.items():
+            print(f"  {key_}={value}", file=stdout)
+    return EXIT_OK
+
+
+async def _check_key(key: str) -> bool | None:
+    import httpx
+
+    from bike_routing_agent import llm_setup
+
+    async with httpx.AsyncClient() as client:
+        return await llm_setup.key_works(client, key)
+
+
+def _pick_openrouter_model(prompt: Callable[[str], str] | None, stdout: IO[str]) -> str:
+    import httpx
+
+    from bike_routing_agent import llm_setup
+
+    async def models() -> list[str]:
+        async with httpx.AsyncClient() as client:
+            return await llm_setup.list_free_models(client)
+
+    free = asyncio.run(models()) or [llm_setup.OPENROUTER_FALLBACK_MODEL]
+    if prompt is None:
+        return free[0]
+    print("\nFree models on OpenRouter right now (newest first):\n", file=stdout)
+    for i, model in enumerate(free, start=1):
+        print(f"  {i}) {model}", file=stdout)
+    print("  or type another model id from https://openrouter.ai/models\n", file=stdout)
+    answer = prompt("Pick a number, or type a model id [1]: ").strip() or "1"
+    if answer.isdigit() and 1 <= int(answer) <= len(free):
+        return free[int(answer) - 1]
+    return answer
+
+
+def _pick_ollama_model(prompt: Callable[[str], str] | None, stdout: IO[str]) -> str:
+    from bike_routing_agent import llm_setup
+
+    models = llm_setup.OLLAMA_MODELS
+    if prompt is None:
+        return models[0][0]
+    print("\nWhich model should run on your computer?\n", file=stdout)
+    for i, (name, note) in enumerate(models, start=1):
+        print(f"  {i}) {name} -- {note}", file=stdout)
+    print(
+        "\nSmaller models follow the format less reliably; if a sentence is misread, "
+        "the planner says what it understood so you can correct it.\n",
+        file=stdout,
+    )
+    answer = prompt("Type 1 or 2 and press Enter [1]: ").strip() or "1"
+    if answer.isdigit() and 1 <= int(answer) <= len(models):
+        return models[int(answer) - 1][0]
+    return answer

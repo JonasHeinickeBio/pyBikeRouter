@@ -40,8 +40,14 @@ if ! ls data/segments/*.rd5 >/dev/null 2>&1; then
   $COMPOSE --profile setup run --rm setup || { say "The map data was not downloaded. Run this again."; exit 1; }
 fi
 
+# A language model on this computer (chosen in the setup question): start it with the program.
+PROFILES=""
+if grep -Eq '^LLM_BASE_URL=http://ollama:' settings.env 2>/dev/null; then
+  PROFILES="--profile ollama"
+fi
+
 say "Starting ..."
-if ! $COMPOSE up -d; then
+if ! $COMPOSE $PROFILES up -d; then
   say "It did not start. If the message above says a port is already allocated,"
   say "open settings.env, change PORT=$PORT to another number (for example 8001) and run this again."
   exit 1
@@ -53,6 +59,19 @@ until curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; do
   [ "$i" -gt 90 ] && { say "It is taking long. Wait a minute and open http://localhost:$PORT"; exit 1; }
   sleep 2
 done
+
+if [ -n "$PROFILES" ]; then
+  MODEL=$(grep -E '^LLM_MODEL=' settings.env | tail -n1 | cut -d= -f2 | tr -d '\r ')
+  j=0
+  until $COMPOSE $PROFILES exec -T ollama ollama list >/dev/null 2>&1; do
+    j=$((j + 1)); [ "$j" -gt 30 ] && break; sleep 2
+  done
+  if ! $COMPOSE $PROFILES exec -T ollama ollama list 2>/dev/null | grep -q "^$MODEL"; then
+    say "Downloading the language model $MODEL (a few GB, only the first time) ..."
+    $COMPOSE $PROFILES exec -T ollama ollama pull "$MODEL" \
+      || say "The model could not be downloaded. Free sentences will not work until it is; start again to retry."
+  fi
+fi
 
 say "Ready:  http://localhost:$PORT"
 say "To stop it later run stop-linux.sh"

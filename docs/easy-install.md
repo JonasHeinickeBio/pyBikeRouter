@@ -29,6 +29,7 @@ these files:
 | `Stop-...` | stop it |
 | `Update-...` | get the newest version |
 | `Choose-area-...` | download the map data of another area |
+| `Choose-language-model-...` | connect, change or switch off the language model for free sentences |
 | `settings.env` | the few settings you may want to change (open it with a text editor) |
 | `data/` | your map data and your routes; created on the first start |
 
@@ -60,6 +61,35 @@ these files:
 
 Next time the same Start file starts it in a few seconds.
 
+## Free sentences: a language model (optional)
+
+The planner always understands one-line requests (`from Goslar to Hannover by gravel bike`), the
+chat's questions and the forms. With a **language model** connected it also reads free sentences
+such as `a relaxed 50 km loop around Goslar tomorrow morning`, in the chat and in a "Describe your
+ride" box. It only picks out what you wrote; places are still looked up on the map, never guessed.
+
+After the map question, the first start asks whether you want one. **Press Enter to leave it
+off** -- nothing else depends on it, and you can add it later with `Choose-language-model-...`.
+
+| Choice | What it is | What you need |
+| --- | --- | --- |
+| 1. Leave it off | free sentences are not read; everything else works | nothing |
+| 2. OpenRouter | an online service that runs the model for you; several models are free | a free account at [openrouter.ai](https://openrouter.ai) and a key (*Keys, Create key*); the program asks you to paste it (it is not shown) and checks it |
+| 3. Ollama | the model runs on your own computer; no account, nothing leaves your machine | 4-8 GB of free memory, about 4 GB download for Ollama plus 2-5 GB for the model (once); slow without a graphics card -- an answer can take a minute |
+
+Good to know:
+
+- The key you paste is saved in `settings.env` in your folder (only you can read it) and used for
+  requests to OpenRouter -- the text you write in the ride box goes to the model you chose, and to
+  nobody else. Do not share the folder with `settings.env` in it.
+- OpenRouter's free models change; the program lists the free ones available **now** and you
+  pick, or type another model id from <https://openrouter.ai/models>.
+- With Ollama, the Start script downloads the model on the first start and starts Ollama next to the
+  program; Stop stops it again. Small models misread more often: the planner always shows what it
+  understood so you can correct it.
+- To switch it off again: `Choose-language-model-...` and press Enter (the key is removed from
+  `settings.env`).
+
 ## Use it
 
 - **Plan route**: type a start and a destination and press the button. Several routes appear on
@@ -77,6 +107,7 @@ Next time the same Start file starts it in a few seconds.
 | I want to ... | Do this |
 | --- | --- |
 | ride in another area | double-click `Choose-area-...`, then Stop and Start |
+| add, change or remove the language model | double-click `Choose-language-model-...`, then Stop and Start |
 | use another port (8000 is taken) | open `settings.env`, change `PORT=8000`, Stop, Start; open `http://localhost:<new port>` |
 | open it from my phone (same Wi-Fi) | in `settings.env` set `APP_BIND=0.0.0.0`, Stop, Start; on the phone open `http://<this computer's address>:8000` |
 | get the newest version | double-click `Update-...` |

@@ -33,6 +33,14 @@ STEP 2 -- Start the program
   When it is ready your web browser opens. If it does not, open
   http://localhost:8000 yourself.
 
+  The second question (optional): "Describe a ride in your own words?"
+  Press Enter to leave it off -- everything else works without it. With it
+  you can write free sentences such as "a relaxed 50 km loop around Goslar
+  tomorrow morning". It needs a language model; you can pick one later.
+  Options: OpenRouter (an online service, free models exist, you need a free
+  account and a key) or Ollama (runs on your own computer, free, needs
+  4-8 GB of memory and a few GB of downloads).
+
 STEP 3 -- Plan a route
 ----------------------
   Type a start and a destination (for example "Braunschweig" and "Goslar"),
@@ -46,6 +54,9 @@ DAILY USE
   Stop:            double-click Stop-Windows.bat / Stop-Mac.command / stop-linux.sh
   Other area:      double-click Choose-area-Windows.bat / Choose-area-Mac.command /
                    choose-area-linux.sh (then Start again)
+  Language model:  double-click Choose-language-model-Windows.bat /
+                   Choose-language-model-Mac.command / choose-language-model-linux.sh
+                   (add, change or switch off; then Stop and Start again)
   Update:          double-click Update-Windows.bat / Update-Mac.command / update-linux.sh
   Your routes:     the folder "data/exports" (GPX and GeoJSON files)
 

@@ -103,11 +103,15 @@ bike-router setup start --region germany --yes
 bike-router setup start --around "Braunschweig" --radius-km 80 --yes
 bike-router setup start --tiles E10_N50,E5_N50 --yes
 bike-router setup regions                     # the ready-made areas and their tiles
+bike-router setup start --skip --llm ollama --llm-model llama3.2:3b --settings-file settings.env
+OPENROUTER_API_KEY=... bike-router setup start --skip --llm openrouter --settings-file settings.env
 ```
 
 The easy-install kit ([easy-install.md](easy-install.md)) runs this inside the container on the
 first start. `--region` names a ready-made area, `--around` finds a town and takes the 1-4 map
-tiles within `--radius-km` of it, `--tiles` names tiles directly, `--skip` downloads nothing. The
+tiles within `--radius-km` of it, `--tiles` names tiles directly, `--skip` downloads nothing.
+After the map the wizard asks whether to connect a language model for free sentences (leave it off,
+OpenRouter, or a local Ollama); `--llm` answers it ([llm-parser.md](llm-parser.md)). The
 sizes are shown and confirmed first (`--yes` skips the question); more than four tiles are
 fetched in turns.
 

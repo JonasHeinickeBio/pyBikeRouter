@@ -24,14 +24,22 @@ PLATFORMS = {
         "Stop-Windows.bat",
         "Update-Windows.bat",
         "Choose-area-Windows.bat",
+        "Choose-language-model-Windows.bat",
     ),
     "Mac": (
         "Start-Mac.command",
         "Stop-Mac.command",
         "Update-Mac.command",
         "Choose-area-Mac.command",
+        "Choose-language-model-Mac.command",
     ),
-    "Linux": ("start-linux.sh", "stop-linux.sh", "update-linux.sh", "choose-area-linux.sh"),
+    "Linux": (
+        "start-linux.sh",
+        "stop-linux.sh",
+        "update-linux.sh",
+        "choose-area-linux.sh",
+        "choose-language-model-linux.sh",
+    ),
 }
 ALL_LAUNCHERS = [name for names in PLATFORMS.values() for name in names]
 
@@ -47,10 +55,42 @@ def sha(path: Path) -> str:
 
 def test_the_compose_file_has_the_app_the_engine_and_the_one_time_setup(compose):
     services = compose["services"]
-    assert set(services) == {"app", "brouter", "setup"}
+    assert set(services) == {"app", "brouter", "setup", "ollama"}
     assert services["setup"]["profiles"] == ["setup"]  # never started by "up"
     assert services["setup"]["entrypoint"] == ["bike-router", "setup", "start"]
     assert services["setup"]["tty"] is True and services["setup"]["stdin_open"] is True
+
+
+def test_a_local_language_model_is_opt_in_and_the_wizard_can_save_the_answer(compose):
+    ollama = compose["services"]["ollama"]
+    assert ollama["profiles"] == ["ollama"]  # never started unless the person chose it
+    assert ollama["image"].startswith("ollama/ollama:") and ":latest" not in ollama["image"]
+    assert "ports" not in ollama  # only the app, inside the network, talks to it
+    assert "ollama-models" in compose["volumes"]
+    setup = compose["services"]["setup"]
+    assert "./settings.env:/config/settings.env" in setup["volumes"]
+    assert setup["environment"]["PBR_SETTINGS_FILE"] == "/config/settings.env"
+    # the base URL the wizard writes is the service name of this compose file
+    from bike_routing_agent.llm_setup import OLLAMA_BASE_URL
+
+    assert OLLAMA_BASE_URL == "http://ollama:11434/v1"
+
+
+@pytest.mark.parametrize("name", [n for n in ALL_LAUNCHERS if n.lower().startswith("start")])
+def test_the_start_scripts_start_and_fill_the_local_model_only_when_it_was_chosen(name):
+    text = (KIT / name).read_text()
+    assert "LLM_BASE_URL=http://ollama:" in text and "--profile ollama" in text
+    assert "ollama pull" in text and "LLM_MODEL" in text
+
+
+@pytest.mark.parametrize("name", [n for n in ALL_LAUNCHERS if n.lower().startswith("stop")])
+def test_the_stop_scripts_stop_the_local_model_too(name):
+    assert "--profile ollama" in (KIT / name).read_text()
+
+
+@pytest.mark.parametrize("name", [n for n in ALL_LAUNCHERS if "language-model" in n.lower()])
+def test_the_language_model_scripts_skip_the_map_question(name):
+    assert "--profile setup run --rm setup --skip" in (KIT / name).read_text()
 
 
 def test_the_app_is_only_reachable_from_this_computer_unless_the_person_says_otherwise(compose):

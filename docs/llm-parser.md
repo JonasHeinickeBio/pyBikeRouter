@@ -68,6 +68,22 @@ web form hides the description box. See
 The API key is read only from the environment (a `SecretStr`): it is not in
 `config show`, logs or errors.
 
+## Easy setup (OpenRouter or a local Ollama)
+
+`bike-router setup start` asks, after the map question, whether to connect a model and writes the
+settings for you; the easy-install kit ([easy-install.md](easy-install.md)) does the same from its
+first start, with a separate `Choose-language-model-...` script for later.
+
+| Choice | Writes | Notes |
+| --- | --- | --- |
+| leave it off (default) | `LLM_PARSER_ENABLED=false`, the other `LLM_*` keys commented out (a saved key is removed) | nothing else depends on it |
+| OpenRouter | `LLM_PROVIDER=openai`, `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_S=60` | the key is typed hidden (or read from `OPENROUTER_API_KEY`, never from a command-line argument), checked against OpenRouter, and only written to the settings file; the free models offered are fetched live from OpenRouter's public list |
+| Ollama (kit) | `LLM_BASE_URL=http://ollama:11434/v1`, `LLM_MODEL` (`llama3.2:3b` or `qwen2.5:7b`), `LLM_TIMEOUT_S=180` | the kit's `ollama` service (pinned image, profile `ollama`) starts with the program and the Start script pulls the model once |
+
+Scripts: `--llm off|openrouter|ollama`, `--llm-model ID`, `--settings-file PATH` (default
+`$PBR_SETTINGS_FILE`, set by the kit). Without a settings file the lines are printed with the key
+masked.
+
 ## Using it
 
 - **Web:** the "Describe your ride" box appears when
