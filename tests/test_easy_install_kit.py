@@ -224,6 +224,7 @@ def test_the_bundle_holds_the_kit_and_nothing_else(tmp_path, monkeypatch):
         assert "pyBikeRouter/data/README.txt" in names
         # BRouter's own files travel in the zip, so its licence must too
         assert "pyBikeRouter/THIRD_PARTY_LICENSES.md" in names
+        assert "pyBikeRouter/LICENSE" in names  # the project's own licence
         assert "pyBikeRouter/brouter/LICENSE" in names
         mode = bundle.getinfo("pyBikeRouter/start-linux.sh").external_attr >> 16
         assert mode & 0o111  # still executable after unzipping
@@ -252,3 +253,9 @@ def test_brouters_licence_is_kept_next_to_the_files_copied_from_it():
     notices = (ROOT / "THIRD_PARTY_LICENSES.md").read_text()
     assert upstream.strip() in notices  # the full text, not just a link
     assert "OpenStreetMap" in notices
+
+
+def test_the_project_is_mit_licensed_and_says_so_in_its_metadata():
+    text = (ROOT / "LICENSE").read_text()
+    assert text.startswith("MIT License") and "Jonas Heinicke" in text
+    assert re.search(r'^license\s*=\s*"MIT"', (ROOT / "pyproject.toml").read_text(), re.M)

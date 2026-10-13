@@ -3,6 +3,7 @@ name = "bike-routing-agent"
 version = "0.2.0"
 description = "OSM-based bike routing service with a LangGraph orchestration workflow"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.142.3",
