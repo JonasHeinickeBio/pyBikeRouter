@@ -208,16 +208,18 @@ def test_openrouter_asks_for_the_key_without_showing_it_and_saves_the_choice(set
     typed: list[str] = []
     ask = answers("2", "2")  # OpenRouter, then the second model of the list
     code, out, err = llm_run(
-        ask=ask, secret=lambda q: typed.append(q) or "sk-or-v1-secretsecret", settings=settings_file
+        ask=ask,
+        secret=lambda q: typed.append(q) or "FAKE-test-key-not-a-real-secret",
+        settings=settings_file,
     )
     assert code == 0, err
     assert "openrouter.ai/keys" in out and typed and "not shown" in typed[0]
-    assert "sk-or-v1-secretsecret" not in out + err  # never printed
+    assert "FAKE-test-key-not-a-real-secret" not in out + err  # never printed
     text = settings_file.read_text()
     assert "LLM_PARSER_ENABLED=true" in text and "LLM_PROVIDER=openai" in text
     assert "LLM_MODEL=google/gemma:free" in text  # 2 = the older one in newest-first order
     assert "LLM_BASE_URL=https://openrouter.ai/api/v1" in text
-    assert "LLM_API_KEY=sk-or-v1-secretsecret" in text
+    assert "LLM_API_KEY=FAKE-test-key-not-a-real-secret" in text
     assert settings_file.stat().st_mode & 0o777 == 0o600
 
 
@@ -264,11 +266,11 @@ def test_flags_answer_every_question_for_scripts(settings_file, monkeypatch):
 
 @respx.mock
 def test_a_key_in_the_environment_is_used_without_asking(settings_file, monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-env-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "FAKE-env-test-key")
     respx.get(KEY_URL).mock(return_value=httpx.Response(200))
     code, out, err = llm_run("--llm", "openrouter", "--llm-model", "m:free", settings=settings_file)
-    assert code == 0 and "sk-env-key" not in out + err
-    assert "LLM_API_KEY=sk-env-key" in settings_file.read_text()
+    assert code == 0 and "FAKE-env-test-key" not in out + err
+    assert "LLM_API_KEY=FAKE-env-test-key" in settings_file.read_text()
 
 
 def test_without_a_settings_file_the_lines_are_shown_and_the_key_is_not(monkeypatch):

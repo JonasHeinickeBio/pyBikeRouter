@@ -15,7 +15,7 @@ def test_every_choice_makes_settings_the_parser_accepts(monkeypatch):
     for name in list(llm_setup._KEYS):
         monkeypatch.delenv(name, raising=False)
     for choice, model, key in (
-        ("openrouter", "google/gemma:free", "sk-or-x"),
+        ("openrouter", "google/gemma:free", "FAKE-test-key-x"),
         ("ollama", "llama3.2:3b", None),
     ):
         values = llm_setup.settings_for(choice, model, key)
@@ -80,10 +80,12 @@ def test_the_settings_file_keeps_comments_and_order_and_replaces_or_appends(tmp_
 
 def test_switching_off_comments_the_live_keys_out(tmp_path):
     path = tmp_path / "settings.env"
-    path.write_text("LLM_PARSER_ENABLED=true\nLLM_MODEL=m\nLLM_API_KEY=sk-secret\nPORT=8000\n")
+    path.write_text(
+        "LLM_PARSER_ENABLED=true\nLLM_MODEL=m\nLLM_API_KEY=FAKE-secret-key\nPORT=8000\n"
+    )
     llm_setup.update_env_file(path, llm_setup.settings_for("off"))
     text = path.read_text()
-    assert "sk-secret" not in text  # the key does not stay behind
+    assert "FAKE-secret-key" not in text  # the key does not stay behind
     assert "LLM_PARSER_ENABLED=false" in text and "PORT=8000" in text
     assert llm_setup.read_env_file(path) == {"LLM_PARSER_ENABLED": "false", "PORT": "8000"}
 
@@ -134,8 +136,8 @@ async def test_an_unreachable_or_odd_list_is_an_empty_list():
 async def test_the_key_check_tells_accepted_rejected_and_unknown(status, expected):
     route = respx.get(llm_setup.OPENROUTER_KEY_URL).mock(return_value=httpx.Response(status))
     async with httpx.AsyncClient() as client:
-        assert await llm_setup.key_works(client, "sk-or-abc") is expected
-    assert route.calls[0].request.headers["authorization"] == "Bearer sk-or-abc"
+        assert await llm_setup.key_works(client, "FAKE-test-key-abc") is expected
+    assert route.calls[0].request.headers["authorization"] == "Bearer FAKE-test-key-abc"
 
 
 @respx.mock
