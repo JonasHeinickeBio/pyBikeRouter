@@ -58,5 +58,20 @@ services:
     tty: true
     environment:
       BROUTER_SEGMENTS_DIR: /data/segments
+      # Where the question about a language model saves the answer.
+      PBR_SETTINGS_FILE: /config/settings.env
     volumes:
       - ./data/segments:/data/segments
+      - ./settings.env:/config/settings.env
+
+  # A language model that runs on your own computer (free, no account). Only started when you
+  # chose it in the setup question; the Start script downloads the model the first time.
+  ollama:
+    image: ollama/ollama:0.40.3
+    profiles: ["ollama"]
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

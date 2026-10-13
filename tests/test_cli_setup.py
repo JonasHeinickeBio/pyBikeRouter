@@ -89,7 +89,8 @@ def test_the_menu_asks_one_question_and_confirms_before_downloading(tmp_path):
     mock_tiles("E10_N50", "E5_N50")
     # the menu numbers follow the preset order; "around a town" and tile names come after them
     around = str(len(setup_cmd.REGIONS) + 1)
-    ask = answers(around, "Braunschweig", "", "")  # town, "right place" -> yes, download -> yes
+    # town, "right place" -> yes, download -> yes, then the language-model question: leave it off
+    ask = answers(around, "Braunschweig", "", "", "")
     code, out, _ = run(
         "start",
         ask=ask,
@@ -162,3 +163,127 @@ def test_the_command_is_registered_in_the_cli():
     out, err = io.StringIO(), io.StringIO()
     assert main(["setup", "regions"], stdout=out, stderr=err) == 0
     assert "great_britain" in out.getvalue()
+
+
+# ------------------------------------------------------------------ a language model
+
+MODELS_URL = "https://openrouter.ai/api/v1/models"
+KEY_URL = "https://openrouter.ai/api/v1/auth/key"
+OLD_SETTINGS = "PORT=8000\nAPP_BIND=127.0.0.1\n"
+
+
+def llm_run(*argv: str, ask=None, secret=None, settings: Path | None = None):
+    out, err = io.StringIO(), io.StringIO()
+    args = ["start", "--skip", *argv]
+    if settings is not None:
+        args += ["--settings-file", str(settings)]
+    code = setup_cmd.run(parse(*args), out, err, ask=ask, secret=secret)
+    return code, out.getvalue(), err.getvalue()
+
+
+@pytest.fixture
+def settings_file(tmp_path) -> Path:
+    path = tmp_path / "settings.env"
+    path.write_text(OLD_SETTINGS)
+    return path
+
+
+def test_pressing_enter_leaves_the_language_model_off(settings_file):
+    code, out, _ = llm_run(ask=answers(""), settings=settings_file)
+    assert code == 0 and "Left the language model off" in out
+    assert "LLM_PARSER_ENABLED=false" in settings_file.read_text()
+    assert "PORT=8000" in settings_file.read_text()
+
+
+@respx.mock
+def test_openrouter_asks_for_the_key_without_showing_it_and_saves_the_choice(settings_file):
+    respx.get(MODELS_URL).mock(
+        return_value=httpx.Response(
+            200,
+            json={"data": [{"id": "google/gemma:free", "created": 5},
+                           {"id": "meta/llama:free", "created": 9}]},
+        )
+    )  # fmt: skip
+    respx.get(KEY_URL).mock(return_value=httpx.Response(200, json={"data": {}}))
+    typed: list[str] = []
+    ask = answers("2", "2")  # OpenRouter, then the second model of the list
+    code, out, err = llm_run(
+        ask=ask, secret=lambda q: typed.append(q) or "sk-or-v1-secretsecret", settings=settings_file
+    )
+    assert code == 0, err
+    assert "openrouter.ai/keys" in out and typed and "not shown" in typed[0]
+    assert "sk-or-v1-secretsecret" not in out + err  # never printed
+    text = settings_file.read_text()
+    assert "LLM_PARSER_ENABLED=true" in text and "LLM_PROVIDER=openai" in text
+    assert "LLM_MODEL=google/gemma:free" in text  # 2 = the older one in newest-first order
+    assert "LLM_BASE_URL=https://openrouter.ai/api/v1" in text
+    assert "LLM_API_KEY=sk-or-v1-secretsecret" in text
+    assert settings_file.stat().st_mode & 0o777 == 0o600
+
+
+@respx.mock
+def test_a_key_openrouter_refuses_is_not_saved(settings_file):
+    respx.get(MODELS_URL).mock(return_value=httpx.Response(200, json={"data": []}))
+    respx.get(KEY_URL).mock(return_value=httpx.Response(401))
+    code, _, err = llm_run(ask=answers("2", ""), secret=lambda q: "wrong", settings=settings_file)
+    assert code == 1 and "did not accept that key" in err
+    assert settings_file.read_text() == OLD_SETTINGS
+
+
+@respx.mock
+def test_without_internet_the_key_is_saved_with_a_note_and_a_fallback_model(settings_file):
+    respx.get(MODELS_URL).mock(side_effect=httpx.ConnectError("down"))
+    respx.get(KEY_URL).mock(side_effect=httpx.ConnectError("down"))
+    code, out, _ = llm_run(ask=answers("2", ""), secret=lambda q: "k-123", settings=settings_file)
+    assert code == 0 and "Could not reach OpenRouter" in out
+    assert "LLM_MODEL=google/gemma-4-26b-a4b-it:free" in settings_file.read_text()
+
+
+def test_an_empty_key_means_leave_it_off(settings_file):
+    code, out, _ = llm_run(ask=answers("2"), secret=lambda q: "  ", settings=settings_file)
+    assert code == 0 and "No key given" in out
+    assert "LLM_PARSER_ENABLED=false" in settings_file.read_text()
+
+
+def test_ollama_needs_no_account_and_saves_a_local_model(settings_file):
+    code, out, _ = llm_run(ask=answers("3", "2"), settings=settings_file)  # the 7b model
+    assert code == 0 and "downloads it the first time" in out
+    text = settings_file.read_text()
+    assert "LLM_MODEL=qwen2.5:7b" in text and "LLM_BASE_URL=http://ollama:11434/v1" in text
+    assert "LLM_API_KEY" not in text.replace("# LLM_API_KEY=", "")
+
+
+def test_flags_answer_every_question_for_scripts(settings_file, monkeypatch):
+    code, out, _ = llm_run("--llm", "ollama", "--llm-model", "llama3.2:3b", settings=settings_file)
+    assert code == 0 and "LLM_MODEL=llama3.2:3b" in settings_file.read_text()
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    code, _, err = llm_run("--llm", "openrouter", "--llm-model", "m:free", settings=settings_file)
+    assert code == 2 and "OPENROUTER_API_KEY" in err  # a key is never taken from the command line
+
+
+@respx.mock
+def test_a_key_in_the_environment_is_used_without_asking(settings_file, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-env-key")
+    respx.get(KEY_URL).mock(return_value=httpx.Response(200))
+    code, out, err = llm_run("--llm", "openrouter", "--llm-model", "m:free", settings=settings_file)
+    assert code == 0 and "sk-env-key" not in out + err
+    assert "LLM_API_KEY=sk-env-key" in settings_file.read_text()
+
+
+def test_without_a_settings_file_the_lines_are_shown_and_the_key_is_not(monkeypatch):
+    monkeypatch.delenv("PBR_SETTINGS_FILE", raising=False)
+    code, out, _ = llm_run("--llm", "ollama", "--llm-model", "llama3.2:3b")
+    assert code == 0 and "LLM_PROVIDER=openai" in out and "LLM_MODEL=llama3.2:3b" in out
+
+
+def test_without_a_terminal_and_without_a_flag_nothing_is_asked(settings_file, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    code, out, _ = llm_run(settings=settings_file)
+    assert code == 0 and settings_file.read_text() == OLD_SETTINGS
+
+
+def test_the_settings_file_comes_from_the_environment_in_the_kit(settings_file, monkeypatch):
+    monkeypatch.setenv("PBR_SETTINGS_FILE", str(settings_file))
+    code, _, _ = llm_run("--llm", "off")
+    assert code == 0 and "LLM_PARSER_ENABLED=false" in settings_file.read_text()

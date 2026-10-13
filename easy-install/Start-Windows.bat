@@ -56,9 +56,13 @@ if errorlevel 1 (
   )
 )
 
+set PROFILES=
+findstr /b /c:"LLM_BASE_URL=http://ollama:" settings.env >nul 2>nul
+if not errorlevel 1 set PROFILES=--profile ollama
+
 echo.
 echo Starting ...
-docker compose --env-file settings.env up -d
+docker compose --env-file settings.env %PROFILES% up -d
 if errorlevel 1 (
   echo.
   echo It did not start. If the message above says a port is already allocated,
@@ -84,6 +88,15 @@ pause
 exit /b 1
 
 :ready
+if not "%PROFILES%"=="" (
+  set MODEL=
+  for /f "tokens=1,* delims==" %%a in ('findstr /b "LLM_MODEL=" settings.env') do set MODEL=%%b
+  echo.
+  echo Checking the language model %MODEL% ^(a few GB the first time^) ...
+  docker compose --env-file settings.env --profile ollama exec -T ollama ollama pull %MODEL%
+  if errorlevel 1 echo The model could not be downloaded. Free sentences will not work until it is; start again to retry.
+)
+
 echo.
 echo Ready:  http://localhost:%PORT%
 echo To stop it later double-click Stop-Windows.bat
