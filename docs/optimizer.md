@@ -12,7 +12,7 @@ extra field, `optimize`. Without it nothing changes.
 
 | Where | How |
 | --- | --- |
-| **API** | `"optimize": {"goals": [{"metric": "traffic"}, {"metric": "paved", "weight": 0.7}], "max_detour_pct": 30, "effort": "normal"}` on `POST /v1/route/plan` ([api.md](api.md)) |
+| **API** | `"optimize": {"goals": [{"metric": "traffic"}, {"metric": "paved", "weight": 0.7}], "max_detour_pct": 30, "effort": "normal", "detours": false}` on `POST /v1/route/plan` ([api.md](api.md)) |
 | **CLI** | `bike-router route plan --origin Braunschweig --destination Wernigerode --optimize traffic --optimize paved=0.7 --max-detour-pct 25 --effort thorough` |
 | **Web form** | the **Optimize** tab (next to *Plan*): tick goals and say how much each matters, then *Optimize route*; origin, destination, bike type and constraints are the ones of the form (see [The web form](#the-web-form)) |
 | **Chat** (also the web panel) | `Braunschweig to Wernigerode with less traffic but as much asphalt as possible` · on the route on screen: `optimise for the quietest and smoothest` ([chat.md](chat.md)) |
@@ -75,6 +75,21 @@ requests below, most useful first and cut by `effort` (`quick` 4, `normal` 8, `t
    one with 504); the best three become via points, alone and the best two together, routed with the
    bike type's own profile. Not when you gave via points yourself (their order would be ambiguous) or
    for a loop. They share the effort budget and are labelled `via <place>` in the table.
+
+5. optionally (`"detours": true`, CLI `--detours`, the checkbox in the Optimize tab; **off by default**):
+   routes bent to one side of the direct line. Up to 2 / 4 / 6 (quick / normal / thorough) via
+   points are placed left and right of the line, abeam of 50 %, 35 % and 65 % of the way, and
+   routed with the profile that serves the leading goal. A via point is sized to make the way through
+   it about 30 % of the allowed detour longer than the straight line (the roads wind, so the real
+   routes come out 10-25 % longer than the shortest), and they carry on the label
+   `detour left 50 %`. Not for a trip with your own via points, a loop, or when every goal is
+   length or time. They are **extra** requests on top of the effort budget.
+
+   Measured so far, they do not pay: on Braunschweig -> Wernigerode (traffic and asphalt) and
+   Braunschweig -> Hannover (traffic) the detours were valid routes inside the cap but none beat the
+   best profile route (the best profile already had a traffic index of 0.01-0.02), which is why
+   they are off. They only improve on the *same* profile's plain route (Hannover: commuter 0.08, its
+   detours 0.06). Worth switching on where the profiles keep to one busy corridor.
 
 BRouter answers one request at a time, so they queue; the allowance is 20 s plus
 `BROUTER_OPTIMIZE_TIMEOUT_PER_KM_S` (default 1.2) per km between the places, at most

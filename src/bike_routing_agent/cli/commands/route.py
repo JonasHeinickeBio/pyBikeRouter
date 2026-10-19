@@ -166,6 +166,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="with --optimize: how many routes to fetch (about 4 / 8 / 12; default normal)",
     )
     plan.add_argument(
+        "--detours",
+        action="store_true",
+        help="with --optimize: also try routes bent to the left and right of the direct line "
+        "(a few more requests; see docs/optimizer.md)",
+    )
+    plan.add_argument(
         "--format",
         choices=("json", "text"),
         default="json",
@@ -311,6 +317,8 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
             spec["max_detour_pct"] = args.max_detour_pct
         if args.effort is not None:
             spec["effort"] = args.effort
+        if args.detours:
+            spec["detours"] = True
         poi: dict[str, Any] = {}
         if args.optimize_poi_categories:
             poi["categories"] = _csv(args.optimize_poi_categories)
@@ -403,10 +411,10 @@ def run(
         )
     if (
         usage_error is None
-        and (args.max_detour_pct is not None or args.effort)
+        and (args.max_detour_pct is not None or args.effort or args.detours)
         and not args.optimize
     ):
-        usage_error = "--max-detour-pct and --effort belong to --optimize"
+        usage_error = "--max-detour-pct, --effort and --detours belong to --optimize"
     if (
         usage_error is None
         and not args.optimize

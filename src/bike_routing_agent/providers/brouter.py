@@ -50,8 +50,11 @@ from bike_routing_agent.models import (
     RoutingRequest,
 )
 from bike_routing_agent.providers.brouter_optimize import (
+    EFFORT_DETOURS,
     EFFORT_REQUESTS,
     PoiVia,
+    detour_stops,
+    lead_profile,
     plan_variants,
     poi_via_sets,
 )
@@ -300,9 +303,34 @@ class BRouterAdapter:
         variants = plan_variants(spec, own)
         budget = max(2, EFFORT_REQUESTS[spec.effort] - len(through))
         variants = variants[:budget]
-        if not variants and not through:
+        # Routes bent to one side of the direct line, which no profile would find by itself.
+        detours = (
+            detour_stops(
+                request.origin,
+                request.destination,
+                max_detour_pct=spec.max_detour_pct,
+                count=EFFORT_DETOURS[spec.effort],
+            )
+            if spec.detours
+            and not request.via
+            and not request.constraints.return_to_origin
+            and not all(g.metric in ("distance", "duration") for g in spec.goals)
+            else []
+        )
+        if not variants and not through and not detours:
             return []
         deadline = self.optimization_deadline_s(request)
+        detour_profile = lead_profile(spec, own)
+        detour_tasks = {
+            asyncio.ensure_future(
+                self._route_with_profile(
+                    request.model_copy(update={"via": [d.via]}),
+                    detour_profile,
+                    timeout_s=deadline,
+                )
+            ): d
+            for d in detours
+        }
         via_tasks = {
             asyncio.ensure_future(
                 self._route_with_profile(
@@ -325,14 +353,15 @@ class BRouterAdapter:
             ): v
             for v in variants
         }
-        done, pending = await asyncio.wait([*tasks, *via_tasks], timeout=deadline)
+        done, pending = await asyncio.wait([*tasks, *via_tasks, *detour_tasks], timeout=deadline)
         for task in pending:
             task.cancel()
-            what = (
-                tasks[task].source
-                if task in tasks
-                else "via " + ", ".join(v.name for v in via_tasks[task])
-            )
+            if task in tasks:
+                what = tasks[task].source
+            elif task in detour_tasks:
+                what = detour_tasks[task].label
+            else:
+                what = "via " + ", ".join(v.name for v in via_tasks[task])
             logger.info("brouter optimisation variant %s timed out", what)
         found: list[RouteCandidate] = []
         for task, stops in via_tasks.items():
@@ -349,6 +378,25 @@ class BRouterAdapter:
                 "alternative_of": own,
                 "optimizer_source": "via " + ", ".join(names),
                 "optimizer_via": names,
+            }
+            found.append(result.model_copy(update={"provenance": provenance}))
+        for task, detour in detour_tasks.items():
+            if task not in done:
+                continue
+            try:
+                result = task.result()
+            except Exception as exc:
+                logger.info("brouter %s unavailable: %s", detour.label, exc)
+                continue
+            provenance = {
+                **result.provenance,
+                "alternative_of": own,
+                "optimizer_source": detour.label,
+                "optimizer_detour": {
+                    "side": detour.side,
+                    "along": detour.along,
+                    "via": [detour.via.lon, detour.via.lat],
+                },
             }
             found.append(result.model_copy(update={"provenance": provenance}))
         for task, variant in tasks.items():  # plan order

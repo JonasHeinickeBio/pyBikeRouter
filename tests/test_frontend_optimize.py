@@ -69,6 +69,14 @@ def test_a_choice_becomes_the_spec_the_api_takes():
 
 
 @needs_node
+def test_detours_are_sent_only_when_asked_for_because_off_is_the_default():
+    base = {"goals": [{"metric": "traffic", "level": "high"}], "effort": "normal"}
+    assert call("buildSpec", {**base, "detours": True})["spec"]["detours"] is True
+    assert "detours" not in call("buildSpec", {**base, "detours": False})["spec"]
+    assert "detours" not in call("buildSpec", base)["spec"]  # not asked: the server's default
+
+
+@needs_node
 def test_the_sights_options_are_sent_only_with_the_sights_goal():
     built = call(
         "buildSpec",

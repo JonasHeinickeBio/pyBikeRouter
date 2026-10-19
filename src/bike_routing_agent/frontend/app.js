@@ -84,6 +84,7 @@ const els = {
   optimizeGoals: $("optimize-goals"),
   optimizeDetour: $("optimize-detour"),
   optimizeEffort: $("optimize-effort"),
+  optimizeDetours: $("optimize-detours"),
   optimizePoiOptions: $("optimize-poi-options"),
   optimizePoiCorridor: $("optimize-poi-corridor"),
   optimizePoiFame: $("optimize-poi-fame"),
@@ -1756,6 +1757,7 @@ function optimizeChoice() {
     })),
     maxDetourPct: els.optimizeDetour.value,
     effort: els.optimizeEffort.value,
+    detours: els.optimizeDetours.checked,
     poi: { corridorM: els.optimizePoiCorridor.value, minFame: els.optimizePoiFame.value },
   };
 }

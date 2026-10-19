@@ -67,9 +67,10 @@ decisions still open.
   benchmark against a live model in CI, and more languages in the benchmark.
 - **Route optimiser** -- done for BRouter: several routes fetched (profiles, its own 2nd/3rd routes,
   a traffic variant), measured, and the best fit for weighted goals selected with the numbers shown
-  ([optimizer.md](optimizer.md)). Open: candidates from other engines (they give no road tags), via
-  point detours to find routes no profile produces, a web-form control (it is reachable from the
-  chat panel today), and learning the weights from what people pick.
+  ([optimizer.md](optimizer.md)). Also: optional sideways detours (`detours`, off by default: on two trips they
+  were valid but never beat a profile route). Open: candidates from other engines (they give no road
+  tags), detours that are chosen where the road data shows a busy stretch rather than by geometry
+  alone, and learning the weights from what people pick.
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).

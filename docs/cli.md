@@ -90,7 +90,8 @@ bike-router route plan --origin Braunschweig --destination Wernigerode \
 ```
 
 `--optimize GOAL[=WEIGHT]` (repeatable; `traffic`, `busy_roads`, `paved`, `unpaved`, `cobbles`,
-`distance`, `duration`, `ascent`, `pois`), `--max-detour-pct`, `--effort quick|normal|thorough`; for
+`distance`, `duration`, `ascent`, `pois`), `--max-detour-pct`, `--effort quick|normal|thorough`, `--detours` (also try routes bent to either side
+of the direct line; a few more requests); for
 `pois`: `--optimize-poi-categories historic,museum`, `--optimize-poi-corridor-m 500`,
 `--optimize-poi-min-fame 10`. The text
 output adds what was compared and a table of the routes, best fit first ([optimizer.md](optimizer.md)).
