@@ -641,7 +641,7 @@ function renderResponse(data, secs) {
 
   switch (data.status) {
     case "ready":
-      setStatus("ok", `Route ready in ${secs}s.`);
+      setStatus("ok", secs === null ? "Route restored." : `Route ready in ${secs}s.`);
       renderRoute(data);
       break;
     case "awaiting_clarification":
@@ -1596,6 +1596,7 @@ async function sendChat(text) {
     }
     const data = await resp.json();
     state.chatSession = data.session_id;
+    BikeChat.rememberSession(window.localStorage, state.chatSession);
     chatSay("bot", data.reply);
     setChatChips(data.suggestions);
     if (data.plan) {
@@ -1634,6 +1635,33 @@ function drawChatPlan(plan, focusRank, secs) {
   if (index >= 0) activateCandidate(index);
 }
 
+/** Bring back the conversation of an earlier visit: its messages, quick answers and last route. */
+async function restoreChat() {
+  const id = BikeChat.storedSession(window.localStorage);
+  if (!id) return;
+  try {
+    const resp = await fetch(`${API_BASE}/v1/chat/${id}`);
+    if (resp.status === 404) {
+      BikeChat.rememberSession(window.localStorage, null); // expired or dropped: start afresh
+      return;
+    }
+    if (!resp.ok) return;
+    const history = await resp.json();
+    const messages = BikeChat.historyMessages(history);
+    // Anything typed meanwhile wins: only restore into a conversation that has not begun.
+    if (state.chatSession !== null || state.chatBusy || messages.length === 0) return;
+    state.chatSession = history.session_id;
+    els.chatLog.innerHTML = "";
+    for (const m of messages) chatSay(m.role, m.text);
+    setChatChips(history.suggestions);
+    if (history.plan && !state.lastResponse) {
+      drawChatPlan(history.plan, history.focus_rank, null);
+    }
+  } catch {
+    /* the server could not be reached: the chat just starts empty */
+  }
+}
+
 /** Show the chat only when the server has one. */
 async function initChat() {
   const caps = await getCapabilities();
@@ -1641,6 +1669,7 @@ async function initChat() {
   els.chatPanel.hidden = false;
   chatSay("bot", "Hi! Tell me where you want to ride -- for example \"from Braunschweig to Goslar by gravel bike\" or \"40 km loop from Goslar\". Or say \"plan a route\" and I will ask.");
   setChatChips(["Plan a route", "40 km loop from Goslar", "Help"]);
+  restoreChat(); // the conversation of an earlier visit, when the server still has it
   els.chatForm.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = els.chatInput.value;

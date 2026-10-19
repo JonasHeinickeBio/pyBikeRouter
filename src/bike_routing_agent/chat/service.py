@@ -2,8 +2,9 @@
 
 A session is a LangGraph *thread*: the checkpointer keeps the conversation state between
 requests, and a pending question (which of two Springfields?) is a paused graph that the next
-message resumes. Sessions live in memory (the default checkpointer) -- a restart forgets them --
-and their number is bounded: the least recently used one is dropped first.
+message resumes. By default sessions live in memory -- a restart forgets them; with a
+``SqliteChatSaver`` (``CHAT_STORE_PATH``) they are kept in a file and found again after one. Their
+number is bounded either way: the least recently used one is dropped first.
 """
 
 from __future__ import annotations
@@ -13,20 +14,21 @@ import logging
 import re
 import uuid
 from collections import OrderedDict
-from collections.abc import Sequence
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from bike_routing_agent.chat.graph import build_chat_graph
 from bike_routing_agent.chat.models import (
     MAX_MESSAGE_CHARS,
+    ChatHistory,
+    ChatMessage,
     ChatReply,
     Planner,
     Sights,
 )
+from bike_routing_agent.chat.store import LatestOnlyMemorySaver
 
 logger = logging.getLogger(__name__)
 
@@ -35,34 +37,6 @@ FAILURE_REPLY = (
     "Something went wrong while planning that. Please try again, or rephrase "
     "('from A to B', '40 km loop from A')."
 )
-
-
-class LatestOnlyMemorySaver(MemorySaver):
-    """``MemorySaver`` that can drop a thread's history and keep only its latest checkpoint.
-
-    LangGraph writes a checkpoint per step, each holding the plan (route geometries): without
-    pruning, one long conversation grows the process without limit. Resuming a paused question
-    needs only the latest checkpoint and its pending writes, so those are kept.
-    """
-
-    def prune(self, thread_ids: Sequence[str], *, strategy: str = "keep_latest") -> None:
-        if strategy != "keep_latest":
-            raise NotImplementedError(strategy)
-        for thread_id in thread_ids:
-            self._keep_latest(thread_id)
-
-    def _keep_latest(self, thread_id: str) -> None:
-        for namespace, checkpoints in self.storage.get(thread_id, {}).items():
-            if len(checkpoints) <= 1:
-                continue
-            latest = max(checkpoints)  # checkpoint ids sort in creation order
-            versions = self.serde.loads_typed(checkpoints[latest][0]).get("channel_versions") or {}
-            for checkpoint_id in [c for c in checkpoints if c != latest]:
-                del checkpoints[checkpoint_id]
-                self.writes.pop((thread_id, namespace, checkpoint_id), None)
-            kept = {(thread_id, namespace, channel, v) for channel, v in versions.items()}
-            for key in [k for k in self.blobs if k[:2] == (thread_id, namespace) and k not in kept]:
-                del self.blobs[key]
 
 
 class ChatService:
@@ -84,6 +58,9 @@ class ChatService:
         )
         self._max_sessions = max_sessions
         self._sessions: OrderedDict[str, asyncio.Lock] = OrderedDict()
+        stored = getattr(self._checkpointer, "thread_ids", None)
+        for sid in stored() if callable(stored) else ():  # least recently used first
+            self._touch(sid)
 
     @property
     def sessions(self) -> int:
@@ -112,7 +89,49 @@ class ChatService:
                 )
             finally:
                 self._keep_latest_only(sid)
+                self._save(sid)
         return self._reply(sid, result)
+
+    async def history(self, session_id: str) -> ChatHistory | None:
+        """What a stored conversation said so far, or ``None`` when it is not known."""
+        if session_id not in self._sessions:
+            return None
+        config = {"configurable": {"thread_id": session_id}}
+        async with self._sessions[session_id]:
+            snapshot = await self._graph.aget_state(config)
+        values = snapshot.values or {}
+        messages = [
+            ChatMessage(role="user" if m.type == "human" else "bot", text=str(m.content))
+            for m in values.get("messages") or []
+            if m.type in ("human", "ai") and str(m.content).strip()
+        ]
+        suggestions = list(values.get("suggestions") or [])
+        awaiting: str | None = "guided" if values.get("asking") else None
+        for task in snapshot.tasks:  # a question is open: it was never added to the messages
+            for interrupt in task.interrupts:
+                payload = interrupt.value or {}
+                if payload.get("reply"):
+                    messages.append(ChatMessage(role="bot", text=str(payload["reply"])))
+                suggestions = list(payload.get("suggestions", []))
+                awaiting = payload.get("awaiting")
+        return ChatHistory(
+            session_id=session_id,
+            messages=messages,
+            suggestions=suggestions,
+            plan=values.get("last_plan"),
+            focus_rank=values.get("focus_rank"),
+            awaiting=awaiting,  # type: ignore[arg-type]
+        )
+
+    def _save(self, sid: str) -> None:
+        """Write the conversation down, when the checkpointer keeps them (never fails a turn)."""
+        persist = getattr(self._checkpointer, "persist", None)
+        if persist is None:
+            return
+        try:
+            persist(sid)
+        except Exception:
+            logger.exception("could not store chat session %s", sid)
 
     def _keep_latest_only(self, sid: str) -> None:
         """Bound memory: a thread needs only its latest checkpoint (see LatestOnlyMemorySaver)."""

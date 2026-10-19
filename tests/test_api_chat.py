@@ -243,3 +243,64 @@ async def test_a_failing_sight_lookup_is_explained(client, planned, monkeypatch)
 
 def test_the_chat_service_class_is_what_the_api_builds():
     assert isinstance(api_module.build_chat_service(Settings(_env_file=None)), ChatService)
+
+
+# ------------------------------------------------------------- stored sessions (chat_store_path)
+
+
+async def test_the_history_of_a_conversation_can_be_fetched(client, planned):
+    first = (await client.post("/v1/chat", json={"message": "from Braunschweig to Goslar"})).json()
+    response = await client.get(f"/v1/chat/{first['session_id']}")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == first["session_id"]
+    assert [m["role"] for m in body["messages"]] == ["user", "bot"]
+    assert body["messages"][0]["text"] == "from Braunschweig to Goslar"
+    assert body["suggestions"] == first["suggestions"]
+    assert body["plan"]["status"] == "ready" and body["awaiting"] is None
+
+
+async def test_an_unknown_or_malformed_session_is_404(client, planned):
+    assert (await client.get(f"/v1/chat/{'a' * 32}")).status_code == 404
+    assert (await client.get("/v1/chat/not-a-session")).status_code == 404
+
+
+async def test_the_history_is_503_when_the_chat_is_switched_off(client, monkeypatch):
+    monkeypatch.setattr(api_module, "_chat_service", None)
+    assert (await client.get(f"/v1/chat/{'a' * 32}")).status_code == 503
+
+
+async def test_a_configured_store_keeps_conversations_across_a_restart(client, planned, tmp_path):
+    path = tmp_path / "chat" / "sessions.sqlite"
+    cfg = Settings(_env_file=None, chat_store_path=str(path))
+    service = api_module.build_chat_service(cfg)
+    assert service is not None and path.is_file()
+    first = await service.send("from Braunschweig to Goslar")
+    service._checkpointer.close()
+
+    restarted = api_module.build_chat_service(cfg)  # a new process
+    assert restarted is not None and restarted.sessions == 1
+    api_module._chat_service = restarted  # the fixture restores the original afterwards
+    body = (await client.get(f"/v1/chat/{first.session_id}")).json()
+    assert body["plan"]["status"] == "ready" and len(body["messages"]) == 2
+    restarted._checkpointer.close()
+
+
+def test_a_blank_store_path_means_memory_only():
+    assert Settings(_env_file=None, chat_store_path="  ").chat_store_path == "  "
+    service = api_module.build_chat_service(Settings(_env_file=None, chat_store_path="  "))
+    assert service is not None and not hasattr(service._checkpointer, "persist")
+
+
+def test_the_session_lifetime_must_be_positive():
+    with pytest.raises(ValueError, match="chat_session_days"):
+        Settings(_env_file=None, chat_session_days=0)
+
+
+def test_a_store_that_cannot_be_opened_falls_back_to_memory_instead_of_failing(tmp_path, caplog):
+    blocker = tmp_path / "file"
+    blocker.write_text("not a folder")
+    cfg = Settings(_env_file=None, chat_store_path=str(blocker / "sessions.sqlite"))
+    service = api_module.build_chat_service(cfg)
+    assert service is not None and not hasattr(service._checkpointer, "persist")
+    assert "chat sessions will not be kept" in caplog.text

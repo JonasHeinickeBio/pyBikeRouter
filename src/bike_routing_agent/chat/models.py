@@ -85,6 +85,23 @@ class ChatReply(BaseModel):
     failed: bool = False
 
 
+class ChatMessage(BaseModel):
+    role: Literal["user", "bot"]
+    text: str
+
+
+class ChatHistory(BaseModel):
+    """A stored conversation, for a client that was closed and opens it again."""
+
+    session_id: str
+    messages: list[ChatMessage] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+    # The last route that was drawn, and the alternative that was in focus.
+    plan: dict[str, Any] | None = None
+    focus_rank: int | None = None
+    awaiting: Awaiting | None = None
+
+
 class ChatRequest(BaseModel):
     """Body of ``POST /v1/chat``."""
 

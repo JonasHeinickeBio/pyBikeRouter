@@ -61,7 +61,50 @@
     return status ? `The chat failed (HTTP ${status}). Please try again.` : "The chat could not be reached.";
   }
 
-  const api = { MAX_MESSAGE, escapeHtml, textHtml, bubbleHtml, chipsHtml, outgoing, candidateIndex, failureText };
+  /* The conversation lives on the server; the browser keeps only its id, to find it again. */
+  const SESSION_KEY = "pybikerouter.chat";
+  const SESSION_ID = /^[0-9a-f]{32}$/;
+
+  /** The remembered session id, or null (nothing stored, a malformed value, blocked storage). */
+  function storedSession(storage) {
+    try {
+      const id = storage.getItem(SESSION_KEY);
+      return typeof id === "string" && SESSION_ID.test(id) ? id : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Remember the session id (null forgets it); storage that is blocked just forgets. */
+  function rememberSession(storage, id) {
+    try {
+      if (id && SESSION_ID.test(id)) storage.setItem(SESSION_KEY, id);
+      else storage.removeItem(SESSION_KEY);
+    } catch {
+      /* private window or blocked storage: the conversation is just not found again */
+    }
+  }
+
+  /** The messages of a stored conversation that can be shown (a role and some text each). */
+  function historyMessages(history) {
+    return ((history && history.messages) || [])
+      .filter((m) => m && (m.role === "user" || m.role === "bot") && typeof m.text === "string" && m.text.trim())
+      .map((m) => ({ role: m.role, text: m.text }));
+  }
+
+  const api = {
+    MAX_MESSAGE,
+    escapeHtml,
+    textHtml,
+    bubbleHtml,
+    chipsHtml,
+    outgoing,
+    candidateIndex,
+    failureText,
+    storedSession,
+    rememberSession,
+    historyMessages,
+  };
   root.BikeChat = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

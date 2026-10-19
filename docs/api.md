@@ -373,6 +373,15 @@ One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id
 waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
 `CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
 
+## GET /v1/chat/{session_id}
+
+A conversation as it stands, for a client that was closed and opened again: `{"session_id": "...",
+"messages": [{"role": "user" | "bot", "text": "..."}], "suggestions": [...], "plan": {...} | null,
+"focus_rank": null, "awaiting": null}`. A question that is still open is the last `bot` message.
+`404` when the session is unknown (never existed, expired after `CHAT_SESSION_DAYS`, dropped for newer
+ones, or the service keeps sessions in memory and was restarted); `503` when `CHAT_ENABLED` is off.
+Sessions survive restarts only with `CHAT_STORE_PATH` ([chat.md](chat.md#conversations-that-survive-a-restart)).
+
 `/v1/capabilities` also has `"optimizer": bool` -- true when a configured engine can return many routes
 with road tags (BRouter); the web form shows its Optimize tab only then ([optimizer.md](optimizer.md)).
 

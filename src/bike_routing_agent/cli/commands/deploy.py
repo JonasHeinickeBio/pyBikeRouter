@@ -33,6 +33,7 @@ DEFAULT_PORT = 8765
 DEFAULT_BIND = "127.0.0.1"
 CONTAINER_TILES = "/brouter-segments"
 CONTAINER_EXPORTS = "/app/exports"
+CONTAINER_CHAT = "/app/chat"
 MAIN_BRANCH = "main"
 
 Runner = Callable[[Sequence[str], bool], subprocess.CompletedProcess]
@@ -53,6 +54,7 @@ class Options:
     segments_dir: Path | None
     exports_dir: Path
     user: str | None
+    chat_dir: Path | None = None  # chat conversations survive a redeploy here (None: memory only)
 
     @property
     def url(self) -> str:
@@ -110,6 +112,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
             default=Path.home() / ".local/share/pybikerouter/exports",
             help="where exported GPX/GeoJSON files are kept (default: %(default)s)",
         )
+        p.add_argument(
+            "--chat-dir",
+            type=Path,
+            default=Path.home() / ".local/share/pybikerouter/chat",
+            help="where chat conversations are kept, so a redeploy does not end them "
+            "(default: %(default)s)",
+        )
+        p.add_argument("--no-chat-store", action="store_true", help="keep chats in memory only")
         p.add_argument(
             "--user",
             default=None,
@@ -192,6 +202,7 @@ def build_options(args: argparse.Namespace) -> Options:
         segments_dir=segments,
         exports_dir=Path(args.exports_dir),
         user=args.user if args.user is not None else f"{os.getuid()}:{os.getgid()}",
+        chat_dir=None if args.no_chat_store else Path(args.chat_dir),
     )
 
 
@@ -233,10 +244,14 @@ def run_command(opts: Options, image_ref: str) -> list[str]:
         env["BROUTER_BASE_URL"] = opts.brouter_url
     if opts.segments_dir is not None:
         env["BROUTER_SEGMENTS_DIR"] = CONTAINER_TILES
+    if opts.chat_dir is not None:
+        env["CHAT_STORE_PATH"] = f"{CONTAINER_CHAT}/sessions.sqlite"
     for key, value in env.items():
         cmd += ["-e", f"{key}={value}"]
     if opts.segments_dir is not None:
         cmd += ["-v", f"{opts.segments_dir.resolve()}:{CONTAINER_TILES}"]
+    if opts.chat_dir is not None:
+        cmd += ["-v", f"{opts.chat_dir.resolve()}:{CONTAINER_CHAT}"]
     cmd += ["-v", f"{opts.exports_dir.resolve()}:{CONTAINER_EXPORTS}", image_ref]
     return cmd
 
@@ -346,6 +361,8 @@ class Deployer:
             return f"tile folder {self.opts.segments_dir} is not a directory"
         if not self.dry_run:
             self.opts.exports_dir.mkdir(parents=True, exist_ok=True)
+            if self.opts.chat_dir is not None:
+                self.opts.chat_dir.mkdir(parents=True, exist_ok=True)
         return None
 
     def container_image_id(self) -> str | None:

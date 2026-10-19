@@ -16,7 +16,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # The files in data/ should belong to you, not to root.
-mkdir -p data/segments data/exports
+mkdir -p data/segments data/exports data/chat
 PBR_UID=$(id -u)
 PBR_GID=$(id -g)
 export PBR_UID PBR_GID

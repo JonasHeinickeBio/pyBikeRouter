@@ -3,6 +3,7 @@ rem Connect (or switch off) a language model for free-sentence planning. Start t
 cd /d "%~dp0"
 if not exist data\segments mkdir data\segments
 if not exist data\exports mkdir data\exports
+if not exist data\chat mkdir data\chat
 docker compose --env-file settings.env --profile setup run --rm setup --skip
 if errorlevel 1 (
   echo.
