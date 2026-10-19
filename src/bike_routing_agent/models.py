@@ -273,6 +273,10 @@ class OptimizeSpec(BaseModel):
     effort: Literal["quick", "normal", "thorough"] = "normal"
     # What counts for the "pois" goal (defaults: well-known sights within 300 m).
     poi: OptimizePoiOptions = Field(default_factory=OptimizePoiOptions)
+    # Also try routes bent to the left and right of the direct line (via points sized from
+    # max_detour_pct), which find ways no profile does; they cost extra requests. Off by default:
+    # on the trips measured so far none of them beat the best profile route (docs/optimizer.md).
+    detours: bool = False
 
     @field_validator("goals")
     @classmethod

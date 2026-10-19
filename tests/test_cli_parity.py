@@ -680,6 +680,18 @@ def test_optimize_goals_become_the_requests_optimize_spec():
     }
 
 
+def test_detours_are_sent_to_the_optimiser_only_when_asked_and_only_with_optimize():
+    _, _, _, graph = plan("--optimize", "traffic", "--detours")
+    assert (graph.invoked_with or {})["raw_input"]["optimize"] == {
+        "goals": [{"metric": "traffic"}],
+        "detours": True,
+    }
+    _, _, _, graph = plan("--optimize", "traffic")
+    assert "detours" not in (graph.invoked_with or {})["raw_input"]["optimize"]
+    code, _, err, graph = plan("--detours")
+    assert code == 2 and graph.invoked_with is None and "--detours" in err
+
+
 def test_bad_optimize_options_are_usage_errors_before_any_routing():
     for argv in (
         ["--optimize", "beauty"],

@@ -69,6 +69,14 @@ def test_a_choice_becomes_the_spec_the_api_takes():
 
 
 @needs_node
+def test_detours_are_sent_only_when_asked_for_because_off_is_the_default():
+    base = {"goals": [{"metric": "traffic", "level": "high"}], "effort": "normal"}
+    assert call("buildSpec", {**base, "detours": True})["spec"]["detours"] is True
+    assert "detours" not in call("buildSpec", {**base, "detours": False})["spec"]
+    assert "detours" not in call("buildSpec", base)["spec"]  # not asked: the server's default
+
+
+@needs_node
 def test_the_sights_options_are_sent_only_with_the_sights_goal():
     built = call(
         "buildSpec",
@@ -211,3 +219,10 @@ def test_values_are_shown_compactly_and_the_engine_prefix_is_dropped_when_it_is_
     assert call("compact", "traffic", None) is None
     html = call("tableHtml", REPORT)
     assert ">trekking" in html and "brouter/trekking" not in html  # one engine: no prefix
+
+
+def test_the_reset_button_also_unticks_the_detours_box():
+    source = (FRONTEND / "app.js").read_text()
+    body = source[source.index("function resetAll") :]
+    body = body[: body.index("\n}\n")]
+    assert "els.optimizeDetours.checked = false" in body

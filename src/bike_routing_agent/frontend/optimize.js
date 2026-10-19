@@ -62,7 +62,7 @@
 
   /**
    * The `optimize` spec for the request, or `{ error }` when the choice cannot be sent.
-   * `choice`: { goals: [{metric, level}], maxDetourPct, effort, poi: {corridorM, minFame} }.
+   * `choice`: { goals: [{metric, level}], maxDetourPct, effort, detours, poi: {corridorM, minFame} }.
    */
   function buildSpec(choice) {
     const goals = (choice.goals || []).filter((g) => GOALS.some((d) => d.metric === g.metric));
@@ -79,6 +79,7 @@
     };
     const detour = Number(choice.maxDetourPct);
     if (Number.isFinite(detour) && detour >= 0 && detour <= 300) spec.max_detour_pct = detour;
+    if (choice.detours === true) spec.detours = true; // off is the server's default
     if (metrics.includes("pois") && choice.poi) {
       const poi = {};
       const corridor = Number(choice.poi.corridorM);
