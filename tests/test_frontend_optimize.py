@@ -219,3 +219,10 @@ def test_values_are_shown_compactly_and_the_engine_prefix_is_dropped_when_it_is_
     assert call("compact", "traffic", None) is None
     html = call("tableHtml", REPORT)
     assert ">trekking" in html and "brouter/trekking" not in html  # one engine: no prefix
+
+
+def test_the_reset_button_also_unticks_the_detours_box():
+    source = (FRONTEND / "app.js").read_text()
+    body = source[source.index("function resetAll") :]
+    body = body[: body.index("\n}\n")]
+    assert "els.optimizeDetours.checked = false" in body

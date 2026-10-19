@@ -1319,6 +1319,7 @@ function resetAll() {
   updateDepartureHint();
   els.avoidTraffic.checked = true;
   els.avoidFerries.checked = true;
+  els.optimizeDetours.checked = false;
   els.returnOrigin.checked = false;
   els.poiStopsEnabled.checked = false;
   updatePoiStopsAvailability();

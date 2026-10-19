@@ -320,17 +320,6 @@ class BRouterAdapter:
         if not variants and not through and not detours:
             return []
         deadline = self.optimization_deadline_s(request)
-        detour_profile = lead_profile(spec, own)
-        detour_tasks = {
-            asyncio.ensure_future(
-                self._route_with_profile(
-                    request.model_copy(update={"via": [d.via]}),
-                    detour_profile,
-                    timeout_s=deadline,
-                )
-            ): d
-            for d in detours
-        }
         via_tasks = {
             asyncio.ensure_future(
                 self._route_with_profile(
@@ -352,6 +341,19 @@ class BRouterAdapter:
                 )
             ): v
             for v in variants
+        }
+        # Queued after the profile variants: BRouter takes one request at a time, and if the
+        # allowance runs out it is the optional detours that must be left unfinished.
+        detour_profile = lead_profile(spec, own)
+        detour_tasks = {
+            asyncio.ensure_future(
+                self._route_with_profile(
+                    request.model_copy(update={"via": [d.via]}),
+                    detour_profile,
+                    timeout_s=deadline,
+                )
+            ): d
+            for d in detours
         }
         done, pending = await asyncio.wait([*tasks, *via_tasks, *detour_tasks], timeout=deadline)
         for task in pending:

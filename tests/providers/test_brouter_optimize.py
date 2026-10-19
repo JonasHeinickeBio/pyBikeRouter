@@ -380,3 +380,29 @@ async def test_a_detour_that_fails_is_simply_absent():
 def test_detours_are_off_by_default_in_the_spec_and_can_be_switched_on():
     assert OptimizeSpec(goals=[OptimizeGoal(metric="traffic")]).detours is False
     assert OptimizeSpec(goals=[OptimizeGoal(metric="traffic")], detours=True).detours is True
+
+
+def test_a_trip_across_the_antimeridian_gets_its_detours_on_the_short_side():
+    start, end = Coordinate(lon=179.9, lat=52.0), Coordinate(lon=-179.9, lat=52.0)
+    found = detour_stops(start, end, max_detour_pct=30, count=6)
+    assert found  # the 13 km crossing, not a 358 degree trip the other way round
+    for d in found:
+        assert -180 <= d.via.lon < 180 and abs(d.via.lat - 52.0) < 0.2
+        east_of_start = (d.via.lon - start.lon) % 360
+        assert east_of_start < 1.0 or east_of_start > 359.0  # near the crossing
+
+
+@respx.mock
+async def test_detours_queue_behind_the_profile_variants_and_never_ahead_of_them():
+    calls = []
+
+    def answer(req: httpx.Request) -> httpx.Response:
+        calls.append(req.url.params["lonlats"].count("|") == 2)  # True: a detour (has a via)
+        return httpx.Response(200, json=payload())
+
+    respx.get(URL).mock(side_effect=answer)
+    adapter = BRouterAdapter(base_url=BASE, max_concurrency=1)
+    await adapter.optimization_candidates(request(), spec("traffic", detours=True))
+    assert calls.count(True) == EFFORT_DETOURS["normal"]
+    first_detour = calls.index(True)
+    assert not any(calls[:first_detour]) and all(calls[first_detour:])  # detours come last

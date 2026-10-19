@@ -160,7 +160,8 @@ def detour_stops(
     if count <= 0 or max_detour_pct <= 0:
         return []
     mid_lat = math.radians((origin.lat + destination.lat) / 2)
-    x = (destination.lon - origin.lon) * math.cos(mid_lat) * _M_PER_DEG_LAT
+    dlon = (destination.lon - origin.lon + 180.0) % 360.0 - 180.0  # the short way round the globe
+    x = dlon * math.cos(mid_lat) * _M_PER_DEG_LAT
     y = (destination.lat - origin.lat) * _M_PER_DEG_LAT
     length = math.hypot(x, y)
     if length < MIN_DETOUR_TRIP_KM * 1000.0:
@@ -176,9 +177,9 @@ def detour_stops(
         sign = 1.0 if side == "left" else -1.0
         px = along * x + sign * offset * left_x
         py = along * y + sign * offset * left_y
-        lon = origin.lon + px / (math.cos(mid_lat) * _M_PER_DEG_LAT)
+        lon = (origin.lon + px / (math.cos(mid_lat) * _M_PER_DEG_LAT) + 180.0) % 360.0 - 180.0
         lat = origin.lat + py / _M_PER_DEG_LAT
-        if not (-180 <= lon <= 180 and -90 <= lat <= 90):
+        if not -90 <= lat <= 90:
             continue
         found.append(Detour(side, along, Coordinate(lon=lon, lat=lat)))
         if len(found) == count:
