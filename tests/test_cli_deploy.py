@@ -101,7 +101,8 @@ def run(repo: Path, *argv: str, docker: Docker | None = None, healthy: list[bool
 
     out, err = io.StringIO(), io.StringIO()
     common = ["--repo", str(repo), "--env-file", str(repo / ".env"),
-              "--exports-dir", str(repo / "exports"), "--user", "1000:1000"]  # fmt: skip
+              "--exports-dir", str(repo / "exports"), "--chat-dir", str(repo / "chat"),
+              "--user", "1000:1000"]  # fmt: skip
     args = parse(argv[0], *common, *argv[1:])
     code = deploy_cmd.run(args, out, err, runner=docker, probe=probe, sleep=lambda s: None)
     return code, out.getvalue(), err.getvalue(), docker
@@ -112,7 +113,8 @@ def run(repo: Path, *argv: str, docker: Docker | None = None, healthy: list[bool
 
 def options(repo: Path, *argv: str) -> deploy_cmd.Options:
     args = parse("up", "--repo", str(repo), "--env-file", str(repo / ".env"),
-                 "--exports-dir", str(repo / "exports"), "--user", "1000:1000", *argv)  # fmt: skip
+                 "--exports-dir", str(repo / "exports"), "--chat-dir", str(repo / "chat"),
+                 "--user", "1000:1000", *argv)  # fmt: skip
     return deploy_cmd.build_options(args)
 
 
@@ -156,7 +158,14 @@ def test_bridge_mode_publishes_the_port_and_listens_inside_on_8000(repo: Path):
 
 def test_no_env_file_and_no_tile_folder_leave_those_flags_out(tmp_path: Path):
     args = parse(
-        "up", "--repo", str(tmp_path), "--no-env-file", "--exports-dir", str(tmp_path / "e")
+        "up",
+        "--repo",
+        str(tmp_path),
+        "--no-env-file",
+        "--exports-dir",
+        str(tmp_path / "e"),
+        "--chat-dir",
+        str(tmp_path / "c"),
     )
     joined = " ".join(deploy_cmd.run_command(deploy_cmd.build_options(args), "i"))
     assert "--env-file" not in joined and "BROUTER_SEGMENTS_DIR" not in joined
@@ -378,3 +387,22 @@ def test_a_missing_docker_cli_is_reported(repo: Path):
 
 def test_the_group_is_registered():
     assert "deploy" in build_parser().format_help()
+
+
+def test_the_run_command_keeps_chat_conversations_in_a_mounted_folder(repo: Path):
+    cmd = deploy_cmd.run_command(options(repo), "img:latest")
+    joined = " ".join(cmd)
+    assert "-e CHAT_STORE_PATH=/app/chat/sessions.sqlite" in joined
+    assert f"-v {(repo / 'chat').resolve()}:/app/chat" in joined
+
+
+def test_the_chat_store_can_be_switched_off(repo: Path):
+    joined = " ".join(deploy_cmd.run_command(options(repo, "--no-chat-store"), "img:latest"))
+    assert "CHAT_STORE_PATH" not in joined and "/app/chat" not in joined
+
+
+def test_up_creates_the_chat_folder_but_a_dry_run_does_not(repo: Path):
+    code, _, _, _ = run(repo, "up", "--dry-run")
+    assert code == 0 and not (repo / "chat").exists()
+    code, _, _, _ = run(repo, "up", "--no-build")
+    assert code == 0 and (repo / "chat").is_dir()

@@ -72,8 +72,9 @@ decisions still open.
   chat panel today), and learning the weights from what people pick.
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
-  checkpointer) ([chat.md](chat.md)). Open follow-ups: a model-based intent step for follow-ups, free
-  text verified against a real model, persistent sessions, filling the web form from the chat.
+  checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).
+  Open follow-ups: a model-based intent step for follow-ups, free text verified against a real model,
+  filling the web form from the chat, a list of earlier conversations.
 
 ## Geocoding
 

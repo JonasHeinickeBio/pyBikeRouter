@@ -182,7 +182,9 @@ The container is `pybikerouter-api-hostnet` on `127.0.0.1:8765` by default (`--n
 - It runs as **you** (`--user`), so the folders it mounts are writable: BRouter's tile folder
   (`docker/brouter/segments` when it exists, `--segments-dir`; sets `BROUTER_SEGMENTS_DIR`, which is
   what turns the web form's *Download* button on) and the exports folder
-  (`~/.local/share/pybikerouter/exports`, `--exports-dir`).
+  (`~/.local/share/pybikerouter/exports`, `--exports-dir`), plus the chat folder
+  (`~/.local/share/pybikerouter/chat`, `--chat-dir`; sets `CHAT_STORE_PATH`) so open chat
+  conversations survive a redeploy (`--no-chat-store` keeps them in memory only).
 - Settings come from `--env-file` (default `.env`; `--no-env-file`). `--routing-provider` overrides
   `ROUTING_PROVIDER` for this container only; with `brouter` or `all` it also sets
   `BROUTER_BASE_URL` (`--brouter-url`, default `http://127.0.0.1:17777`, the host's loopback).

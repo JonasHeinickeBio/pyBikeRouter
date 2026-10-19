@@ -100,7 +100,8 @@ Good to know:
 - **Optimize** (the second tab): tick what you care about -- less traffic, more asphalt, more
   sights along the track, less climbing ... -- and the program fetches several routes and picks the
   best fit, showing the numbers behind the choice.
-- **Your files**: GPX and GeoJSON files of the routes are in `data/exports`.
+- **Your files**: GPX and GeoJSON files of the routes are in `data/exports`. Your chat
+  conversations are in `data/chat`, so they are still there after an update.
 
 ## Change things
 

@@ -95,3 +95,78 @@ def test_the_page_ships_the_chat_panel_hidden_until_the_server_has_a_chat():
     assert app.count("if (generation !== state.planGeneration) return;") == 4  # + optimiser, settle
     assert "generation !== state.planGeneration; // the form asked" in app
     assert "state.deferredChat = { plan: data.plan" in app and "drawChatPlan(held.plan" in app
+
+
+# ------------------------------------------------------- finding a conversation again
+
+
+def run_storage(script: str):
+    """Run `script` with a fake localStorage `storage` (a Map) and print its JSON result."""
+    full = (
+        f"const C = require({json.dumps(str(FRONTEND / 'chat.js'))});\n"
+        "const map = new Map();\n"
+        "const storage = { getItem: (k) => (map.has(k) ? map.get(k) : null),"
+        " setItem: (k, v) => map.set(k, String(v)), removeItem: (k) => map.delete(k) };\n"
+        f"process.stdout.write(JSON.stringify({script}));"
+    )
+    result = subprocess.run([NODE, "-e", full], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_the_session_id_is_remembered_and_found_again():
+    sid = "ab" * 16
+    assert run_storage(f"(C.rememberSession(storage, '{sid}'), C.storedSession(storage))") == sid
+    assert run_storage("C.storedSession(storage)") is None  # nothing stored yet
+
+
+def test_remembering_nothing_forgets_the_session():
+    sid = "cd" * 16
+    script = (
+        f"(C.rememberSession(storage, '{sid}'), C.rememberSession(storage, null),"
+        " C.storedSession(storage))"
+    )
+    assert run_storage(script) is None
+
+
+@pytest.mark.parametrize("bad", ["", "nope", "A" * 32, "a" * 31, "a" * 33, "../" + "a" * 29])
+def test_a_malformed_session_id_is_neither_stored_nor_trusted(bad):
+    assert (
+        run_storage(f"(C.rememberSession(storage, {json.dumps(bad)}), C.storedSession(storage))")
+        is None
+    )
+    # ... and one that somehow got into storage is ignored on the way out.
+    assert (
+        run_storage(
+            f"(storage.setItem('pybikerouter.chat', {json.dumps(bad)}), C.storedSession(storage))"
+        )
+        is None
+    )
+
+
+def test_blocked_storage_neither_fails_nor_remembers():
+    script = (
+        "(() => { const blocked = { getItem() { throw new Error('denied'); },"
+        " setItem() { throw new Error('denied'); }, removeItem() { throw new Error('denied'); } };"
+        " C.rememberSession(blocked, 'a'.repeat(32)); C.rememberSession(blocked, null);"
+        " return C.storedSession(blocked); })()"
+    )
+    assert run_storage(script) is None
+
+
+def test_only_messages_with_a_role_and_text_are_restored():
+    history = {
+        "messages": [
+            {"role": "user", "text": "hi"},
+            {"role": "bot", "text": "  "},  # blank: nothing to show
+            {"role": "system", "text": "x"},  # not a speaker of this chat
+            {"role": "bot", "text": 5},  # not text
+            None,
+            {"role": "bot", "text": "Here is your route\nGPX"},
+        ]
+    }
+    assert call("historyMessages", history) == [
+        {"role": "user", "text": "hi"},
+        {"role": "bot", "text": "Here is your route\nGPX"},
+    ]
+    assert call("historyMessages", None) == [] and call("historyMessages", {}) == []

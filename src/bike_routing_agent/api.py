@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sqlite3
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -25,6 +26,7 @@ from bike_routing_agent.chat.models import (
     TextUnavailableError,
 )
 from bike_routing_agent.chat.service import ChatService
+from bike_routing_agent.chat.store import SqliteChatSaver
 from bike_routing_agent.config import PUBLIC_ORS_BASE_URLS, Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
@@ -665,14 +667,29 @@ def _validation_message(exc: ValidationError) -> str:
     )
 
 
+def _chat_checkpointer(cfg: Settings) -> SqliteChatSaver | None:
+    """The file that keeps chat sessions, or ``None`` (memory only) when none is configured or it
+    cannot be opened: a chat that forgets at a restart beats a service that does not start."""
+    store = cfg.chat_store_path.strip() if cfg.chat_store_path else ""
+    if not store:
+        return None
+    try:
+        return SqliteChatSaver(store, max_age_days=cfg.chat_session_days)
+    except (OSError, sqlite3.Error):
+        logger.exception("chat sessions will not be kept: cannot use %s", store)
+        return None
+
+
 def build_chat_service(cfg: Settings) -> ChatService | None:
     """The chat, or ``None`` when ``CHAT_ENABLED`` is false."""
     if not cfg.chat_enabled:
         return None
+    checkpointer = _chat_checkpointer(cfg)
     return ChatService(
         _ApiPlanner(),
         sights=_ApiSights() if _poi_service is not None else None,
         text_enabled=_llm_parser is not None,
+        checkpointer=checkpointer,
         max_sessions=cfg.chat_max_sessions,
     )
 
@@ -710,6 +727,42 @@ async def chat(request: ChatRequest) -> ChatResponse:
         focus_rank=reply.focus_rank,
         intent=reply.intent,
         awaiting=reply.awaiting,
+    )
+
+
+class ChatMessageResponse(BaseModel):
+    role: str  # "user" or "bot"
+    text: str
+
+
+class ChatHistoryResponse(BaseModel):
+    session_id: str
+    messages: list[ChatMessageResponse]
+    suggestions: list[str] = Field(default_factory=list)
+    plan: RoutePlanResponse | None = None
+    focus_rank: int | None = None
+    awaiting: str | None = None
+
+
+@app.get("/v1/chat/{session_id}", response_model=ChatHistoryResponse)
+async def chat_history(session_id: str) -> ChatHistoryResponse:
+    """A stored conversation: what was said, the quick answers on offer, the last route drawn.
+    For a client that was closed and opened again; 404 when the session is not known (it expired,
+    was dropped for newer ones, or the service keeps no sessions across restarts)."""
+    if _chat_service is None:
+        raise HTTPException(status_code=503, detail="the chat is switched off (CHAT_ENABLED)")
+    if not _PLAN_ID.match(session_id):
+        raise HTTPException(status_code=404, detail="unknown chat session")
+    history = await _chat_service.history(session_id)
+    if history is None:
+        raise HTTPException(status_code=404, detail="unknown chat session")
+    return ChatHistoryResponse(
+        session_id=history.session_id,
+        messages=[ChatMessageResponse(role=m.role, text=m.text) for m in history.messages],
+        suggestions=history.suggestions,
+        plan=RoutePlanResponse.model_validate(history.plan) if history.plan else None,
+        focus_rank=history.focus_rank,
+        awaiting=history.awaiting,
     )
 
 

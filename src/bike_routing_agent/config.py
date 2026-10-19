@@ -144,9 +144,12 @@ class Settings(BaseSettings):
 
     # Chat (docs/chat.md): a conversation that plans, changes and explains routes. Works without a
     # language model (one-line requests and a step-by-step dialogue); free text uses the LLM parser
-    # when it is enabled. Sessions live in memory; at most this many are kept.
+    # when it is enabled. At most this many sessions are kept. Unset chat_store_path = they live in
+    # memory and a restart forgets them; a file path keeps them (SQLite) for chat_session_days.
     chat_enabled: bool = True
     chat_max_sessions: int = 200
+    chat_store_path: str | None = None
+    chat_session_days: float = 30.0
 
     # Points of interest (issue #55): found with Overpass, ranked and described with
     # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).
@@ -359,6 +362,8 @@ class Settings(BaseSettings):
     def _check_chat_settings(self) -> Settings:
         if self.chat_max_sessions < 1:
             raise ValueError("chat_max_sessions must be >= 1")
+        if self.chat_session_days <= 0:
+            raise ValueError("chat_session_days must be > 0")
         return self
 
     @model_validator(mode="after")

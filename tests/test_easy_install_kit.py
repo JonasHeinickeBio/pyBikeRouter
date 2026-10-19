@@ -88,6 +88,14 @@ def test_the_stop_scripts_stop_the_local_model_too(name):
     assert "--profile ollama" in (KIT / name).read_text()
 
 
+@pytest.mark.parametrize(
+    "name", [n for n in ALL_LAUNCHERS if n.lower().startswith(("start", "choose"))]
+)
+def test_the_launchers_that_start_things_make_the_data_folders_as_the_user_not_as_docker(name):
+    text = (KIT / name).read_text()
+    assert "data/chat" in text.replace("\\", "/")  # else Docker creates it as root: not writable
+
+
 @pytest.mark.parametrize("name", [n for n in ALL_LAUNCHERS if "language-model" in n.lower()])
 def test_the_language_model_scripts_skip_the_map_question(name):
     assert "--profile setup run --rm setup --skip" in (KIT / name).read_text()
@@ -107,6 +115,9 @@ def test_the_app_is_wired_to_the_engine_and_the_data_folders(compose):
     assert env["BROUTER_SEGMENTS_DIR"] == "/data/segments" and env["EXPORT_DIR"] == "/data/exports"
     assert "./data/segments:/data/segments" in app["volumes"]
     assert "./data/exports:/data/exports" in app["volumes"]
+    # conversations survive an update; the folder is made by the scripts (as the user, not root)
+    assert env["CHAT_STORE_PATH"] == "/data/chat/sessions.sqlite"
+    assert "./data/chat:/data/chat" in app["volumes"]
     # the engine reads the same folder, read-only, plus the project's own profiles
     brouter = compose["services"]["brouter"]["volumes"]
     assert "./data/segments:/segments4:ro" in brouter

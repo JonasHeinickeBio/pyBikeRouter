@@ -23,6 +23,7 @@ if errorlevel 1 (
 
 if not exist data\segments mkdir data\segments
 if not exist data\exports mkdir data\exports
+if not exist data\chat mkdir data\chat
 
 set PORT=8000
 for /f "tokens=1,* delims==" %%a in ('findstr /b "PORT=" settings.env 2^>nul') do set PORT=%%b

@@ -118,16 +118,35 @@ START -> ingest -> router --+-> plan_one_line --+
 - **Planning** goes through an injected `Planner` (`api._ApiPlanner`: `plan_route` /
   `plan_route_from_text`), sights through `Sights` (`api._ApiSights`: the POI service) -- the graph
   has no idea about HTTP, so tests drive it with scripted fakes.
-- **Sessions** are in memory (`MemorySaver`): a restart forgets them, at most `CHAT_MAX_SESSIONS`
-  are kept (least recently used dropped first) and only the latest checkpoint of each conversation (not
-  its step-by-step history), a message is at most 500 characters, and a
-  conversation keeps its last 40 messages. One turn at a time per session.
+- **Sessions** are kept in memory by default (a restart forgets them). With `CHAT_STORE_PATH` set they
+  are written to a SQLite file after every turn and found again after a restart or a redeploy (see
+  below). Either way at most `CHAT_MAX_SESSIONS` are kept (least recently used dropped first) and only
+  the latest checkpoint of each conversation (not its step-by-step history), a message is at most 500
+  characters, and a conversation keeps its last 40 messages. One turn at a time per session.
 
 ## Configuration
 
 `CHAT_ENABLED` (default `true`; `false` = `POST /v1/chat` answers `503`, the panel is hidden),
 `CHAT_MAX_SESSIONS` (default `200`). Free text additionally needs `LLM_PARSER_ENABLED`
 ([llm-parser.md](llm-parser.md)).
+
+### Conversations that survive a restart
+
+`CHAT_STORE_PATH=/path/to/sessions.sqlite` keeps the conversations in that file (the folder is
+created); `CHAT_SESSION_DAYS` (default `30`) drops the ones not used for that long when the service
+starts. A paused question (an ambiguous place, the next question of the step-by-step dialogue) is still
+open afterwards, and `GET /v1/chat/{session_id}` returns what was said, the quick answers and the last
+route. The web panel remembers its session id in the browser and restores the conversation, the quick
+answers and the route when you open it again.
+
+- `bike-router deploy up` mounts `~/.local/share/pybikerouter/chat` (`--chat-dir`; `--no-chat-store`
+  for memory only), and the easy-install kit keeps it in `data/chat`.
+- The file holds JSON, never pickled objects, and only the latest checkpoint of each conversation. A
+  conversation that cannot be read back (a damaged row, or one written by another LangGraph checkpoint
+  layout after an upgrade) is dropped and starts over; a file that cannot be opened at all leaves the
+  chat in memory with a log message instead of stopping the service.
+- It stores what people typed and the routes the chat drew, in plain text on disk: treat the file like
+  the exported routes. Deleting it forgets every conversation.
 
 ## Evidence and limits
 
@@ -150,7 +169,8 @@ Not verified / not covered:
 - Follow-ups ("shorter", "avoid ferries" ...) are understood by **rules**, not by a model: phrasing
   outside them gets "I did not catch what to change" plus examples. A model-based intent step could
   be added behind the same graph.
-- Sessions are not persisted and not authenticated: anyone who can reach the API can chat; a session
-  id (random, 128 bit) is the only handle.
+- Sessions are persisted only when `CHAT_STORE_PATH` is set, and never authenticated: anyone who can
+  reach the API can chat and read a session's history; a session id (random, 128 bit) is the only
+  handle.
 - The web chat draws the route on the map but does not fill the form on the left.
 - English only.

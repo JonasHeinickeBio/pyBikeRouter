@@ -21,11 +21,14 @@ services:
       BROUTER_BASE_URL: http://brouter:17777
       BROUTER_SEGMENTS_DIR: /data/segments
       EXPORT_DIR: /data/exports
+      # Your chat conversations: they are still there after an update or a restart.
+      CHAT_STORE_PATH: /data/chat/sessions.sqlite
       APP_HOST: 0.0.0.0
       APP_PORT: "8000"
     volumes:
       - ./data/segments:/data/segments
       - ./data/exports:/data/exports
+      - ./data/chat:/data/chat
     depends_on:
       - brouter
     healthcheck:
