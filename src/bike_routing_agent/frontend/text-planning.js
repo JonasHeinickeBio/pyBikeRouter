@@ -41,6 +41,15 @@
     );
   }
 
+  /** A place as the text a form field holds: a name stays, a coordinate becomes "lat, lon". */
+  function placeText(place) {
+    if (typeof place === "string") return place;
+    if (place && Number.isFinite(place.lat) && Number.isFinite(place.lon)) {
+      return `${place.lat.toFixed(5)}, ${place.lon.toFixed(5)}`;
+    }
+    return "";
+  }
+
   /** The form fields an interpretation fills in. Unstated constraints stay untouched (null). */
   function formValues(interpretation) {
     if (!interpretation || !interpretation.request) return null;
@@ -49,9 +58,9 @@
     const list = (v) => (Array.isArray(v) ? v.join(", ") : "");
     const nullable = (v) => (v === undefined || v === null ? null : v);
     return {
-      origin: request.origin || "",
-      destination: request.destination || "",
-      via: Array.isArray(request.via) ? request.via.slice() : [],
+      origin: placeText(request.origin),
+      destination: placeText(request.destination),
+      via: Array.isArray(request.via) ? request.via.map(placeText).filter(Boolean) : [],
       bikeType: nullable(c.bike_type),
       targetDistance: nullable(c.target_distance_km),
       maxDistance: nullable(c.max_distance_km),
@@ -104,7 +113,7 @@
     return html;
   }
 
-  const api = { formValues, summaryHtml, toLocalInputValue, escapeHtml };
+  const api = { formValues, summaryHtml, toLocalInputValue, escapeHtml, placeText };
   root.BikeText = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

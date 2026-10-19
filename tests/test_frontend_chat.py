@@ -170,3 +170,18 @@ def test_only_messages_with_a_role_and_text_are_restored():
         {"role": "bot", "text": "Here is your route\nGPX"},
     ]
     assert call("historyMessages", None) == [] and call("historyMessages", {}) == []
+
+
+def test_a_chat_route_fills_the_plan_form_with_the_request_it_came_from():
+    app = (FRONTEND / "app.js").read_text()
+    draw = app[app.index("function drawChatPlan") :]
+    draw = draw[: draw.index("\n}\n")]
+    assert (
+        "if (request) applyInterpretation({ request, departure_time: request.departure_time })"
+        in draw
+    )
+    # every way a chat plan reaches the map hands its request on: a live turn, a held-back one
+    # that is shown after a failed form request, and a restored conversation
+    assert "drawChatPlan(data.plan, data.focus_rank, secs, data.request)" in app
+    assert "drawChatPlan(held.plan, held.focusRank, held.secs, held.request)" in app
+    assert "drawChatPlan(history.plan, history.focus_rank, null, history.request)" in app

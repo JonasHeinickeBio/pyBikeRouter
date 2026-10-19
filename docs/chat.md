@@ -172,5 +172,7 @@ Not verified / not covered:
 - Sessions are persisted only when `CHAT_STORE_PATH` is set, and never authenticated: anyone who can
   reach the API can chat and read a session's history; a session id (random, 128 bit) is the only
   handle.
-- The web chat draws the route on the map but does not fill the form on the left.
+- The web chat draws the route on the map and fills the Plan form on the left with the request it
+  was planned from (places, bike type, distance, preferences, loop), so you can adjust it there and
+  plan again. It does not read the form back: what you type in the form is not known to the chat.
 - English only.

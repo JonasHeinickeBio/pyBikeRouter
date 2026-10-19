@@ -704,6 +704,8 @@ class ChatResponse(BaseModel):
     # A plan to draw this turn (a new route, or the alternatives of the last one).
     plan: RoutePlanResponse | None = None
     focus_rank: int | None = None
+    # The request behind ``plan``: places, bike type, preferences. For a client to fill its form.
+    request: dict[str, Any] | None = None
     intent: str | None = None
     # "place_choice": an ambiguous place waits for an answer; "guided": a question is open.
     awaiting: str | None = None
@@ -725,6 +727,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         suggestions=reply.suggestions,
         plan=RoutePlanResponse.model_validate(reply.plan) if reply.plan else None,
         focus_rank=reply.focus_rank,
+        request=reply.request,
         intent=reply.intent,
         awaiting=reply.awaiting,
     )
@@ -741,6 +744,7 @@ class ChatHistoryResponse(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
     plan: RoutePlanResponse | None = None
     focus_rank: int | None = None
+    request: dict[str, Any] | None = None
     awaiting: str | None = None
 
 
@@ -762,6 +766,7 @@ async def chat_history(session_id: str) -> ChatHistoryResponse:
         suggestions=history.suggestions,
         plan=RoutePlanResponse.model_validate(history.plan) if history.plan else None,
         focus_rank=history.focus_rank,
+        request=history.request,
         awaiting=history.awaiting,
     )
 

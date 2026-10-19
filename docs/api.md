@@ -369,8 +369,10 @@ One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id
  "intent": "plan", "awaiting": null}
 ```
 
-`suggestions` are quick answers; `plan` is present when the turn produced (or re-showed) a route, and
-`focus_rank` names the alternative that was asked for; `awaiting` is `place_choice` (an ambiguous place
+`suggestions` are quick answers; `plan` is present when the turn produced (or re-showed) a route,
+`request` is then the request it was planned from (`origin`, `destination`, `via`, `constraints` ...,
+as `POST /v1/route/plan` takes it -- a place the person chose is a `{lon, lat}`) so a client can fill
+its form, and `focus_rank` names the alternative that was asked for; `awaiting` is `place_choice` (an ambiguous place
 waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
 `CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
 
@@ -378,7 +380,7 @@ waits for an answer) or `guided` (a question of the step-by-step dialogue is ope
 
 A conversation as it stands, for a client that was closed and opened again: `{"session_id": "...",
 "messages": [{"role": "user" | "bot", "text": "..."}], "suggestions": [...], "plan": {...} | null,
-"focus_rank": null, "awaiting": null}`. A question that is still open is the last `bot` message.
+"focus_rank": null, "request": {...} | null, "awaiting": null}`. A question that is still open is the last `bot` message.
 `404` when the session is unknown (never existed, expired after `CHAT_SESSION_DAYS`, dropped for newer
 ones, or the service keeps sessions in memory and was restarted); `503` when `CHAT_ENABLED` is off.
 Sessions survive restarts only with `CHAT_STORE_PATH` ([chat.md](chat.md#conversations-that-survive-a-restart)).
