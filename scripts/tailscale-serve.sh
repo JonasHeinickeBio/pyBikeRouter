@@ -18,9 +18,11 @@
 # Environment:
 #   APP_PORT        local port of the running app          (default 8000);
 #                   `off` only removes a serve entry that targets this port
-#   TS_HTTPS_PORT   HTTPS port on the tailnet side; Tailscale allows 443,
-#                   8443 and 10000. Defaults to 8443 so an existing
-#                   `tailscale serve` on 443 is left alone.
+#   TS_HTTPS_PORT   HTTPS port on the tailnet side, any port from 1 to 65535.
+#                   Defaults to 8443 so an existing `tailscale serve` on 443
+#                   is left alone; if 443, 8443 and 10000 are all taken by other
+#                   services, pick a free one (for example 8765). The check
+#                   below refuses a port that something else already serves.
 set -euo pipefail
 
 APP_PORT="${APP_PORT:-8000}"
@@ -32,9 +34,9 @@ die() { echo "error: $*" >&2; exit 1; }
 command -v tailscale >/dev/null 2>&1 || die "tailscale is not installed (https://tailscale.com/download)"
 
 case "$TS_HTTPS_PORT" in
-  443|8443|10000) ;;
-  *) die "TS_HTTPS_PORT must be 443, 8443 or 10000 (got $TS_HTTPS_PORT)" ;;
+  ""|*[!0-9]*|0*) die "TS_HTTPS_PORT must be a port number from 1 to 65535 (got '$TS_HTTPS_PORT')" ;;
 esac
+[ "$TS_HTTPS_PORT" -le 65535 ] || die "TS_HTTPS_PORT must be a port number from 1 to 65535 (got '$TS_HTTPS_PORT')"
 
 # MagicDNS name of this machine, e.g. mybox.tail1234.ts.net (no trailing dot).
 dns_name() {
@@ -93,7 +95,7 @@ refuse_foreign() {
   echo "error: HTTPS port ${TS_HTTPS_PORT} is in use by something else:" >&2
   echo "       ${1#foreign: }" >&2
   echo "       This script only manages a proxy to ${EXPECTED_TARGET}." >&2
-  echo "       Pick another port (TS_HTTPS_PORT=8443 or 10000), set APP_PORT to match," >&2
+  echo "       Pick another port (any free one, e.g. TS_HTTPS_PORT=8765), set APP_PORT to match," >&2
   echo "       or change it yourself with the tailscale CLI." >&2
   exit 1
 }

@@ -159,7 +159,14 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     ts = sub.add_parser("tailscale", help="publish the app to your tailnet (docs/mobile.md)")
     ts.add_argument("action", choices=("start", "status", "off"), nargs="?", default="start")
     ts.add_argument("--port", type=int, default=DEFAULT_PORT, help="the app's local port")
-    ts.add_argument("--https-port", type=int, default=8443, choices=(443, 8443, 10000))
+    ts.add_argument(
+        "--https-port",
+        type=int,
+        default=8443,
+        choices=range(1, 65536),
+        metavar="PORT",
+        help="HTTPS port on the tailnet side, any free port (default 8443)",
+    )
     ts.add_argument("--repo", type=Path, default=Path("."))
     return group
 
