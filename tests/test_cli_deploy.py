@@ -353,6 +353,13 @@ def test_tailscale_runs_the_repo_script_with_the_chosen_ports(repo: Path):
                           out, err, runner=runner)  # fmt: skip
     assert code == 0 and calls == [[str(script), "status"]]
     assert "APP_PORT=9001 TS_HTTPS_PORT=8443" in out.getvalue()
+    deploy_cmd.run(
+        parse("tailscale", "status", "--repo", str(repo), "--https-port", "8765"),
+        out,
+        err,
+        runner=runner,
+    )
+    assert "TS_HTTPS_PORT=8765" in out.getvalue()
     missing = deploy_cmd.run(
         parse("tailscale", "--repo", str(repo / "nope")), out, err, runner=runner
     )

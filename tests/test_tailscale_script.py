@@ -82,12 +82,22 @@ def run_script(tmp_path, action, config, *, port="8443", app_port="8010", status
     return result, mutating
 
 
-def test_script_refuses_an_unsupported_https_port(tmp_path):
-    result, mutating = run_script(tmp_path, "status", serve_config(), port="8080")
+@pytest.mark.parametrize("port", ["abc", "0", "08080", "65536", "99999", "80 80", "-1"])
+def test_script_refuses_a_port_that_is_not_a_port_number(tmp_path, port):
+    result, mutating = run_script(tmp_path, "status", serve_config(), port=port)
 
     assert result.returncode == 1
-    assert "443, 8443 or 10000" in result.stderr
+    assert "1 to 65535" in result.stderr
     assert mutating == []
+
+
+@pytest.mark.parametrize("port", ["1", "8080", "8765", "65535"])
+def test_start_accepts_any_port_number_that_is_free(tmp_path, port):
+    result, mutating = run_script(tmp_path, "start", serve_config(), port=port)
+
+    assert result.returncode == 0, result.stderr
+    assert mutating == [f"serve --bg --https={port} http://127.0.0.1:8010"]
+    assert f":{port}" in result.stdout
 
 
 def test_start_on_a_free_port_publishes_the_app(tmp_path):

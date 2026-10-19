@@ -50,8 +50,10 @@ or remove** anything on that HTTPS port that is not a proxy to this app
 cannot be read. `off` therefore needs the same `APP_PORT` you started with.
 
 Environment: `APP_PORT` (local port, default `8000`) and `TS_HTTPS_PORT`
-(`443`, `8443` or `10000`; default `8443` so an existing `tailscale serve` on
-443 is not overwritten).
+(any port from 1 to 65535; default `8443` so an existing `tailscale serve` on
+443 is not overwritten). When 443, 8443 and 10000 are all taken by other
+services, use a free one, e.g. `TS_HTTPS_PORT=8765 scripts/tailscale-serve.sh`
+or `bike-router deploy tailscale start --https-port 8765`.
 
 Using Docker instead: `APP_BIND=127.0.0.1 docker compose -f docker/compose.yaml up`
 publishes the container on loopback only (the default, `0.0.0.0`, is open to
