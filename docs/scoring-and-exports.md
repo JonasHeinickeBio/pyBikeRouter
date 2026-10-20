@@ -18,6 +18,7 @@ score = 0.65 * distance_fit + 0.35 * elevation_fit - warning_penalty
 | `elevation_fit` | 1.0 unless both `constraints.max_ascent_m` and `metrics.ascent_m` are present; then `max(0, 1 - excess / max_ascent_m)` where `excess` is the ascent above the limit. If ascent data is missing, it stays 1.0 -- and the gap is surfaced as an uncertainty note instead of a fake penalty. |
 | `warning_penalty` | `min(0.3, 0.05 * len(candidate.warnings))` -- provider warnings cost 0.05 each, capped so warnings can never dominate the score. |
 | `surface_fit` | Reported (not necessarily scored) when surface preferences were stated and the candidate has OSM surface evidence -- see [Surface preferences](#surface-preferences-issue-23). |
+| `traffic_fit` | `1 - traffic_index / 0.4` (floor 0) from the engine's traffic estimate, when the request avoids high-traffic roads (the default) and the candidate has one; scored with `TRAFFIC_WEIGHT` -- see [Traffic](#traffic-issue-23). |
 
 `score_candidates` (the graph node) scores every candidate, writes
 `score`/`score_breakdown` back onto each, then ranks them and selects rank 1
@@ -97,9 +98,79 @@ To produce that evidence:
    achieves it and record the report in the PR; if nothing changes, more
    cases are the answer, not a bigger weight.
 
-Traffic / road-class quality (`avoid_high_traffic_roads`) is still not
-scored: highway shares exist in the enrichment summary but are not yet on
-`RouteMetrics`, and no benchmark case exercises them.
+### Traffic (issue #23)
+
+`avoid_high_traffic_roads` (on by default, the "Avoid high-traffic roads" box in the web form) is now
+read by the scorer. The input is the engine's own estimate, `metrics.traffic_index` (BRouter's road
+tags: motorway/trunk/primary exposure, reduced by cycle tracks and speed limits; 0 = no exposure to cars,
+[providers.md](providers.md)):
+
+```
+traffic_fit = max(0, 1 - traffic_index / 0.4)         # TRAFFIC_INDEX_AT_ZERO_FIT
+score = (0.65 * distance_fit + 0.35 * elevation_fit + TRAFFIC_WEIGHT * traffic_fit) / (1 + TRAFFIC_WEIGHT) - penalty
+```
+
+(`TRAFFIC_WEIGHT = 0.5`; with a surface term active, its weight joins the numerator and the divisor.)
+The same discipline as the surface term applies:
+
+- **All or nothing over the set.** The term enters the score only when *every* candidate carries an
+  index; a set with one candidate from another engine (no index) is scored without it, so no two
+  candidates are ever compared on different formulas. An unknown estimate is never "quiet".
+- **Off when not asked for.** `avoid_high_traffic_roads: false` leaves the score as it was.
+- **No credit for a long detour.** A candidate more than 50 % longer than the shortest one in the set
+  gets `traffic_fit = 0` (`traffic_detour_capped` in the breakdown): quietness cannot buy an absurd
+  route. Choosing a longer, quieter route on purpose is what the [optimiser](optimizer.md) is for.
+- **Alternatives still need a margin.** An alternative profile must lead by `ALTERNATIVE_RANK_MARGIN`
+  (0.10) to outrank the route for the bike type, so a small traffic difference never reshuffles the
+  ranking.
+
+`traffic_fit` is reported in `score_breakdown` whenever it can be computed; `traffic_weight_applied`
+says when it counted. `TRAFFIC_WEIGHT = 0.0` switches the term off.
+
+#### Traffic weight: evidence
+
+Eight real trips around Braunschweig and the Harz (collected 2026-10), planned with BRouter (the candidate sets the service
+returns: the bike type's own profile plus the other profiles as alternatives), scored by the production
+scorer with and without the term:
+
+| Trip (bike) | Best route today | With traffic (weight 0.5) |
+| --- | --- | --- |
+| Braunschweig - Goslar (gravel) | gravel (58 km, index 0.04) | unchanged |
+| Braunschweig - Wernigerode (gravel) | gravel (76 km, 0.02) | unchanged |
+| Braunschweig - Hannover (gravel) | gravel (67 km, 0.01) | unchanged |
+| Braunschweig - Hannover (road) | `fastbike` (69.8 km, **0.23**, 34 % busy roads) | **commuter** (66.0 km, 0.08): shorter *and* quieter |
+| Braunschweig - Wolfsburg (touring) | touring (27.9 km, 0.02) | unchanged |
+| Braunschweig city hop (city) | trekking (1.3 km, 0.00) | unchanged |
+| Goslar - Brocken (gravel) | gravel (33.9 km, 0.02) | unchanged |
+| Braunschweig - Gifhorn (commuter) | commuter (26.2 km, 0.05) | unchanged |
+
+The same sweep on the benchmark set (13 cases; `scripts/calibrate.py --engines brouter`, the ranking is
+the production one, including the margin an alternative profile needs) changes the best route in **two**
+cases, both with a large traffic gain and neither with a long detour:
+
+| Case | Weight 0 - 0.25 | Weight 0.5 - 1.0 | Why |
+| --- | --- | --- | --- |
+| `bs-hannover-road-quiet` (road bike) | `fastbike`, 69.8 km, index 0.23 | commuter, 66.0 km, 0.08 | Shorter *and* quieter; flips between 0.25 and 0.5 |
+| `harz-climb` (touring bike, climb) | touring, 26.7 km, index **0.33** | gravel profile, 31.4 km (+18 %), **0.035** | The touring profile's route is busy; flips already at 0.25. The gravel profile's route is on tracks, so it may be rougher than a touring bike likes: the alternative's own profile notes say so |
+
+The other eleven cases do not change at any weight from 0 to 1 -- including the three other `-quiet`
+cases (touring, commuter and the gravel control, written to look for a flip) and the city, cobble and
+Okerradweg cases. A weight of **0.5** is the
+smallest in the grid at which both changes happen and is not at an edge of the range where anything
+else starts to move. On the eight trips above alone, with the fit reaching 0 at 0.4, the road-bike trip
+is the only change from weight 0.4 upward; with 0.3 or 0.5 as the end of the scale the same trip changes
+(from weight 0.3 / 0.5), so the scale of the fit is not what decides it.
+
+What this evidence does **not** show: it is one region (the benchmark overlaps the eight trips), one engine (BRouter) and 13 cases at most. Other
+terrain (a corridor with no alternative to the main road), other bike types and engines without an
+estimate are untested; the guards above (all-or-nothing, the detour cap, the margin) are there because
+of that. The benchmark set has four traffic cases (`-quiet`, `max_traffic_index` 0.15) for the same
+purpose; run `scripts/calibrate.py` against your own region and read the `traffic_sensitivity` sweep per
+case before trusting the default there. Re-running the numbers above:
+
+```
+BROUTER_BASE_URL=http://127.0.0.1:17777 python scripts/calibrate.py --out report.json
+```
 
 ### Uncertainty notes
 

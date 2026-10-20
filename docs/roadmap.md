@@ -41,17 +41,17 @@ decisions still open.
   run justifies a change. Open follow-ups: more cases (different regions,
   bike types), and surface-profile cases once enrichment is enabled by
   default.
-- **Surface/traffic scoring** -- surface half built (issue #23):
-  `prefer_surfaces`/`avoid_surfaces` resolve to categories, a
-  known-length-based `surface_fit` is computed from the enrichment and
-  reported in `score_breakdown`, the all-or-nothing activation rule keeps
-  unenriched candidates comparable, and the calibration harness sweeps a
-  surface-weight grid over four new preference cases. It ships **inactive**
-  (`SURFACE_WEIGHT = 0.0`): switching it on needs a calibration run with
-  engines and enrichment ([how](scoring-and-exports.md#enabling-the-surface-component)).
-  Still open: that calibration run and the weight it justifies, and traffic
-  scoring (highway shares onto `RouteMetrics`, plus cases that exercise
-  them).
+- **Surface/traffic scoring** -- traffic half done (issue #23): the scorer reads `avoid_high_traffic_roads`
+  (on by default) through the engine's `traffic_index`, with `TRAFFIC_WEIGHT = 0.5` chosen from a
+  calibration run (all-or-nothing over the candidate set, a 50 % detour cap, the alternative-profile
+  margin; four `-quiet` benchmark cases, the calibration harness sweeps the weight). See
+  [scoring-and-exports.md](scoring-and-exports.md#traffic-issue-23) for the evidence and its limits (one
+  region, BRouter only). Surface half built earlier: `prefer_surfaces`/`avoid_surfaces` resolve to
+  categories, a known-length-based `surface_fit` is computed from the enrichment and reported in
+  `score_breakdown`, and it ships **inactive** (`SURFACE_WEIGHT = 0.0`): switching it on needs a calibration
+  run with enrichment ([how](scoring-and-exports.md#enabling-the-surface-component)). Still open: that
+  surface run and the weight it justifies, other regions for the traffic weight, and traffic from engines
+  that give no road tags.
 - **`return_to_origin`** -- done: loop requests synthesize two way-points
   around the origin and route back to the start (`loop_direction` picks
   handedness; caller-supplied `via` is honored verbatim). Provider-native

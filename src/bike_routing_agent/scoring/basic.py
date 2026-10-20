@@ -10,8 +10,14 @@ uncertainty, never a bonus and never a penalty -- and, because the decision
 is made for the whole candidate set, scores of unenriched and enriched
 candidates are never compared across different formulas.
 
-Traffic / road-class quality is still not scored (it needs the highway
-shares on ``RouteMetrics`` and calibration cases of its own).
+A traffic fit (issue #23) follows the same discipline: it comes from the
+engine-estimated ``traffic_index`` (BRouter's road tags), enters the score
+only while the request asks to avoid high-traffic roads *and* every
+candidate in the comparison carries an index, and is never applied to some
+candidates and not others. A route much longer than the shortest one gets
+no credit for being quiet, so quietness cannot buy an absurd detour (the
+route optimiser, docs/optimizer.md, is where such trade-offs are chosen on
+purpose).
 """
 
 from __future__ import annotations
@@ -42,6 +48,26 @@ SURFACE_WEIGHT = 0.0
 # length has a known surface category; below it the fit would describe a
 # sliver of the route.
 MIN_KNOWN_SURFACE_SHARE = 0.5
+
+# Weight of the traffic fit, in the same terms as SURFACE_WEIGHT. Chosen from
+# the evidence in docs/scoring-and-exports.md ("Traffic weight: evidence"):
+# on eight real trips (the stored candidate sets, BRouter profiles) every
+# weight from 0.4 to 1.0 changes the same single verdict -- a road-bike trip
+# where the commuter profile is shorter *and* far quieter than ``fastbike`` --
+# and no weight changed another one. 0.5 sits inside that stable range. Set
+# it to 0.0 to switch the component off (it is still reported in
+# ``score_breakdown``).
+TRAFFIC_WEIGHT = 0.5
+
+# The traffic index (0 = no exposure to cars, see brouter_tags.traffic_summary)
+# at which the fit reaches zero. The measured indices run 0.00-0.35: quiet
+# profile routes 0.00-0.12, ``fastbike`` on main roads 0.23-0.35.
+TRAFFIC_INDEX_AT_ZERO_FIT = 0.4
+
+# A candidate this much longer than the shortest one in the comparison gets no
+# credit for low traffic (its fit is 0). The longest alternative measured was
+# 38 % longer.
+MAX_TRAFFIC_DETOUR = 0.5
 
 
 def surface_fit(
@@ -74,6 +100,25 @@ def surface_fit(
     return fit, min(1.0, known)
 
 
+def traffic_fit(candidate: RouteCandidate, constraints: RouteConstraints) -> float | None:
+    """How little traffic the route has, 0..1 (1 = none), or ``None`` if there is nothing to judge.
+
+    Only when the request asks to avoid high-traffic roads, and only from the engine's own
+    estimate (``traffic_index``): a candidate without one -- another engine, or tags that were
+    not returned -- is unknown, never "quiet".
+    """
+    index = candidate.metrics.traffic_index
+    if not constraints.avoid_high_traffic_roads or index is None:
+        return None
+    return min(1.0, max(0.0, 1.0 - index / TRAFFIC_INDEX_AT_ZERO_FIT))
+
+
+def traffic_active(breakdowns: Sequence[dict[str, float]], traffic_weight: float) -> bool:
+    """Whether the traffic fit enters the score of this candidate set (all or nothing, like
+    the surface fit: one candidate without an estimate must not be ranked on another scale)."""
+    return traffic_weight > 0 and bool(breakdowns) and all("traffic_fit" in b for b in breakdowns)
+
+
 def surface_active(breakdowns: Sequence[dict[str, float]], surface_weight: float) -> bool:
     """Whether the surface fit enters the score of this candidate set.
 
@@ -98,14 +143,44 @@ def weighted_score(
     elevation_weight: float = ELEVATION_WEIGHT,
     surface_weight: float = 0.0,
     use_surface: bool = False,
+    traffic_weight: float = 0.0,
+    use_traffic: bool = False,
 ) -> float:
-    """Combine breakdown components; shared with the calibration re-weighting."""
+    """Combine breakdown components; shared with the calibration re-weighting.
+
+    Active components are weighted against the 1.0 carried by distance + elevation and the sum
+    is divided by the total weight, so the score stays in [0, 1] before the warning penalty.
+    """
     total = (
         distance_weight * breakdown["distance_fit"] + elevation_weight * breakdown["elevation_fit"]
     )
+    weight = 1.0
     if use_surface:
-        total = (total + surface_weight * breakdown["surface_fit"]) / (1 + surface_weight)
+        total += surface_weight * breakdown["surface_fit"]
+        weight += surface_weight
+    if use_traffic:
+        total += traffic_weight * breakdown["traffic_fit"]
+        weight += traffic_weight
+    if weight != 1.0:
+        total /= weight
     return total - breakdown["warning_penalty"]
+
+
+def cap_traffic_detours(
+    scored: list[tuple[float, dict[str, float]]], distances_m: Sequence[float]
+) -> list[dict[str, float]]:
+    """The breakdowns with the traffic fit zeroed for any route much longer than the shortest."""
+    shortest = min(distances_m) if distances_m else 0.0
+    out: list[dict[str, float]] = []
+    for (_, breakdown), distance in zip(scored, distances_m, strict=True):
+        if (
+            "traffic_fit" in breakdown
+            and shortest > 0
+            and distance > shortest * (1 + MAX_TRAFFIC_DETOUR)
+        ):
+            breakdown = {**breakdown, "traffic_fit": 0.0, "traffic_detour_capped": 1.0}
+        out.append(breakdown)
+    return out
 
 
 def score_candidates_together(
@@ -113,16 +188,34 @@ def score_candidates_together(
     constraints: RouteConstraints,
     *,
     surface_weight: float | None = None,
+    traffic_weight: float | None = None,
 ) -> list[tuple[float, dict[str, float]]]:
-    """Score a comparison set; the surface term applies to all or none of it."""
-    weight = SURFACE_WEIGHT if surface_weight is None else surface_weight
+    """Score a comparison set; each optional term applies to all of it or none of it."""
+    s_weight = SURFACE_WEIGHT if surface_weight is None else surface_weight
+    t_weight = TRAFFIC_WEIGHT if traffic_weight is None else traffic_weight
     scored = [score_candidate(c, constraints) for c in candidates]
-    if not surface_active([breakdown for _, breakdown in scored], weight):
-        return scored
+    breakdowns = cap_traffic_detours(scored, [c.metrics.distance_m for c in candidates])
+    use_surface = surface_active(breakdowns, s_weight)
+    use_traffic = traffic_active(breakdowns, t_weight)
+    if not (use_surface or use_traffic):
+        return [
+            (score, breakdown) for (score, _), breakdown in zip(scored, breakdowns, strict=True)
+        ]
     out: list[tuple[float, dict[str, float]]] = []
-    for _, breakdown in scored:
-        breakdown = {**breakdown, "surface_weight_applied": weight}
-        out.append((weighted_score(breakdown, surface_weight=weight, use_surface=True), breakdown))
+    for breakdown in breakdowns:
+        applied = dict(breakdown)
+        if use_surface:
+            applied["surface_weight_applied"] = s_weight
+        if use_traffic:
+            applied["traffic_weight_applied"] = t_weight
+        score = weighted_score(
+            applied,
+            surface_weight=s_weight,
+            use_surface=use_surface,
+            traffic_weight=t_weight,
+            use_traffic=use_traffic,
+        )
+        out.append((score, applied))
     return out
 
 
@@ -130,9 +223,9 @@ def score_candidate(
     candidate: RouteCandidate,
     constraints: RouteConstraints,
 ) -> tuple[float, dict[str, float]]:
-    """Score one candidate *without* the surface term (see score_candidates_together).
+    """Score one candidate *without* the surface and traffic terms (see score_candidates_together).
 
-    The surface fit and the evidence behind it are still reported in the
+    The surface and traffic fits (and the evidence behind them) are still reported in the
     breakdown whenever they can be computed.
     """
     distance_km = candidate.metrics.distance_m / 1_000
@@ -158,6 +251,9 @@ def score_candidate(
     surface = surface_fit(candidate, constraints)
     if surface is not None:
         breakdown["surface_fit"], breakdown["surface_known_share"] = surface
+    traffic = traffic_fit(candidate, constraints)
+    if traffic is not None:
+        breakdown["traffic_fit"] = traffic
     return score, breakdown
 
 

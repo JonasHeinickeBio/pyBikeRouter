@@ -12,6 +12,7 @@ import pytest
 from bike_routing_agent.calibration import (
     DEFAULT_BENCHMARK_PATH,
     SURFACE_CATEGORIES,
+    BenchmarkCase,
     BenchmarkSet,
     build_request,
     evaluate_candidate,
@@ -91,8 +92,10 @@ def _good_metrics(case) -> RouteMetrics:
     unknown = max_unknown if max_unknown is not None and not surf else (
         1.0 - sum(coverage.values()) if surf else None
     )
+    traffic = exp.max_traffic_index / 2 if exp.max_traffic_index is not None else None
     return RouteMetrics(distance_m=distance, duration_s=3600, ascent_m=ascent,
-                        surface_coverage=coverage, unknown_surface_fraction=unknown)
+                        surface_coverage=coverage, unknown_surface_fraction=unknown,
+                        traffic_index=traffic)
 
 
 def _silly_metrics(case) -> RouteMetrics:
@@ -217,9 +220,12 @@ def test_silly_candidate_fails_on_contradicted_expectations_only(case):
         assert "unknown_surface_fraction" in failed
     # missing ascent and missing coverage skip -- unknown is never a failure
     skipped = {c.name for c in evaluation.skipped}
-    assert "ascent_m" in skipped
+    if case.expectations.ascent_m:
+        assert "ascent_m" in skipped
     if case.expectations.surface:
         assert "surface" in skipped
+    if case.expectations.max_traffic_index is not None:
+        assert "traffic_index" in skipped  # no estimate: unknown, not a failure
     assert evaluation.passed is False
 
 
@@ -376,3 +382,41 @@ def test_ranked_candidates_applies_surface_term_all_or_nothing():
     ranked = ranked_candidates([enriched, bare], constraints, surface_weight=0.5)
     assert all("surface_weight_applied" not in c.score_breakdown for c in ranked)
     assert ranked[0].score == pytest.approx(ranked[1].score)
+
+
+# -- traffic (issue #23) ------------------------------------------------------
+
+
+def _traffic_case(benchmark: BenchmarkSet) -> BenchmarkCase:
+    return next(c for c in benchmark.cases if c.case_id == "bs-hannover-road-quiet")
+
+
+def test_a_busy_candidate_fails_the_traffic_judgement_and_a_quiet_one_passes(
+    benchmark: BenchmarkSet,
+):
+    case = _traffic_case(benchmark)
+    busy = _candidate("fastbike", RouteMetrics(distance_m=69_800, traffic_index=0.2347))
+    quiet = _candidate("commuter", RouteMetrics(distance_m=66_000, traffic_index=0.0789))
+    assert [c.name for c in evaluate_candidate(case, busy).failed] == ["traffic_index"]
+    assert evaluate_candidate(case, quiet).passed
+
+
+def test_a_candidate_without_a_traffic_estimate_skips_the_traffic_judgement(
+    benchmark: BenchmarkSet,
+):
+    evaluation = evaluate_candidate(
+        _traffic_case(benchmark), _candidate("ors", RouteMetrics(distance_m=66_000))
+    )
+    assert [c.name for c in evaluation.skipped] == ["traffic_index"] and evaluation.passed
+
+
+def test_the_benchmark_has_at_least_three_traffic_cases_with_rationale(benchmark: BenchmarkSet):
+    quiet = [c for c in benchmark.cases if c.expectations.max_traffic_index is not None]
+    assert len(quiet) >= 3 and all(len(c.rationale) > 40 for c in quiet)
+    assert all(c.request.constraints.avoid_high_traffic_roads for c in quiet)
+
+
+def test_a_traffic_expectation_must_be_a_share_between_0_and_1():
+    payload = _case_payload(max_traffic_index=1.5)
+    with pytest.raises(Exception, match="less than or equal to 1"):
+        BenchmarkSet.model_validate(payload)

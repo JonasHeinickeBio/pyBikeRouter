@@ -1,12 +1,24 @@
 import pytest
 
+from bike_routing_agent.calibration import (
+    TRAFFIC_WEIGHT_GRID,
+    ranked_candidates,
+    traffic_weight_sensitivity,
+)
 from bike_routing_agent.models import RouteCandidate, RouteConstraints, RouteMetrics
 from bike_routing_agent.scoring import basic
+from bike_routing_agent.scoring.alternatives import rank_candidates
 from bike_routing_agent.scoring.basic import (
+    MAX_TRAFFIC_DETOUR,
+    TRAFFIC_INDEX_AT_ZERO_FIT,
+    TRAFFIC_WEIGHT,
     score_candidate,
     score_candidates_together,
     surface_fit,
+    traffic_active,
+    traffic_fit,
     uncertainty_notes,
+    weighted_score,
 )
 
 
@@ -107,6 +119,7 @@ def test_clean_candidate_has_no_uncertainty_notes():
 
 # -- surface fit (issue #23) ---------------------------------------------------
 
+
 def _surface_candidate(provider: str, coverage: dict[str, float], **kw) -> RouteCandidate:
     unknown = round(1.0 - sum(coverage.values()), 6) if coverage else None
     candidate = _candidate(surface_coverage=coverage, unknown_surface_fraction=unknown, **kw)
@@ -201,3 +214,157 @@ def test_module_surface_weight_is_the_default(monkeypatch):
     monkeypatch.setattr(basic, "SURFACE_WEIGHT", 0.25)
     scored = score_candidates_together(cands, constraints)
     assert scored[0][1]["surface_weight_applied"] == 0.25
+
+
+# ------------------------------------------------------------ traffic (issue #23)
+
+
+def _traffic_candidate(profile: str, km: float, index: float | None, *, alt_of: str | None = None):
+    return RouteCandidate(
+        provider="brouter",
+        provider_profile=profile,
+        geometry_geojson={"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+        metrics=RouteMetrics(distance_m=km * 1000, duration_s=3600, traffic_index=index),
+        provenance={"alternative_of": alt_of} if alt_of else {},
+    )
+
+
+@pytest.mark.parametrize(
+    "index, expected",
+    [(0.0, 1.0), (0.1, 0.75), (0.2, 0.5), (0.4, 0.0), (0.7, 0.0)],
+)
+def test_the_traffic_fit_falls_linearly_to_zero_at_the_scale_end(index, expected):
+    assert TRAFFIC_INDEX_AT_ZERO_FIT == 0.4
+    got = traffic_fit(_traffic_candidate("p", 10, index), RouteConstraints())
+    assert got == pytest.approx(expected)
+
+
+def test_there_is_no_traffic_fit_without_an_estimate_or_when_traffic_is_not_to_be_avoided():
+    assert traffic_fit(_traffic_candidate("p", 10, None), RouteConstraints()) is None
+    quiet = _traffic_candidate("p", 10, 0.0)
+    assert traffic_fit(quiet, RouteConstraints(avoid_high_traffic_roads=False)) is None
+    _, breakdown = score_candidate(quiet, RouteConstraints(avoid_high_traffic_roads=False))
+    assert "traffic_fit" not in breakdown
+
+
+def test_the_traffic_fit_is_reported_but_does_not_change_the_single_score():
+    candidate = _traffic_candidate("p", 10, 0.3)
+    score, breakdown = score_candidate(candidate, RouteConstraints())
+    assert breakdown["traffic_fit"] == pytest.approx(0.25) and score == 1.0
+
+
+def test_a_quiet_route_outscores_a_busy_one_and_the_weight_is_recorded():
+    quiet = _traffic_candidate("quiet", 66, 0.08)
+    busy = _traffic_candidate("busy", 70, 0.23)
+    (q_score, q), (b_score, b) = score_candidates_together([quiet, busy], RouteConstraints())
+    assert q_score > b_score
+    assert q["traffic_weight_applied"] == b["traffic_weight_applied"] == TRAFFIC_WEIGHT
+    # (1.0 * 1 + 0.5 * fit) / 1.5: the scale stays 0..1
+    assert q_score == pytest.approx((1.0 + 0.5 * 0.8) / 1.5)
+    assert b_score == pytest.approx((1.0 + 0.5 * (1 - 0.23 / 0.4)) / 1.5)
+
+
+def test_one_candidate_without_an_estimate_switches_the_term_off_for_the_whole_set():
+    candidates = [_traffic_candidate("a", 66, 0.08), _traffic_candidate("b", 70, None)]
+    results = score_candidates_together(candidates, RouteConstraints())
+    assert [score for score, _ in results] == [1.0, 1.0]  # exactly the old formula
+    assert all("traffic_weight_applied" not in breakdown for _, breakdown in results)
+    assert traffic_active([breakdown for _, breakdown in results], 0.5) is False
+
+
+def test_a_weight_of_zero_or_a_request_that_does_not_avoid_traffic_leaves_scores_alone():
+    candidates = [_traffic_candidate("a", 66, 0.08), _traffic_candidate("b", 70, 0.3)]
+    off = score_candidates_together(candidates, RouteConstraints(), traffic_weight=0.0)
+    assert [s for s, _ in off] == [1.0, 1.0]
+    free = score_candidates_together(candidates, RouteConstraints(avoid_high_traffic_roads=False))
+    assert [s for s, _ in free] == [1.0, 1.0]
+
+
+def test_a_much_longer_route_gets_no_credit_for_being_quiet():
+    short_busy = _traffic_candidate("short", 60, 0.3)
+    long_quiet = _traffic_candidate("long", 60 * (1 + MAX_TRAFFIC_DETOUR) + 1, 0.0)
+    ok_quiet = _traffic_candidate("ok", 60 * (1 + MAX_TRAFFIC_DETOUR) - 1, 0.0)
+    results = dict(
+        zip(
+            ["short", "long", "ok"],
+            score_candidates_together([short_busy, long_quiet, ok_quiet], RouteConstraints()),
+            strict=True,
+        )
+    )
+    assert results["long"][1]["traffic_fit"] == 0.0
+    assert results["long"][1]["traffic_detour_capped"] == 1.0
+    assert (
+        results["ok"][1]["traffic_fit"] == 1.0 and "traffic_detour_capped" not in results["ok"][1]
+    )
+    assert results["long"][0] < results["short"][0] < results["ok"][0]
+
+
+def test_the_weighted_score_combines_surface_and_traffic_over_their_total_weight():
+    breakdown = {
+        "distance_fit": 1.0, "elevation_fit": 1.0, "warning_penalty": 0.1,
+        "surface_fit": 0.5, "traffic_fit": 0.25,
+    }  # fmt: skip
+    both = weighted_score(
+        breakdown, surface_weight=0.2, use_surface=True, traffic_weight=0.5, use_traffic=True
+    )
+    assert both == pytest.approx((1.0 + 0.2 * 0.5 + 0.5 * 0.25) / 1.7 - 0.1)
+    assert weighted_score(breakdown, traffic_weight=0.5, use_traffic=True) == pytest.approx(
+        (1.0 + 0.5 * 0.25) / 1.5 - 0.1
+    )
+    assert weighted_score(breakdown) == pytest.approx(0.9)  # nothing active: the old formula
+
+
+def test_the_road_bikes_own_busy_profile_loses_to_a_clearly_quieter_equal_length_alternative():
+    """The case the weight was chosen from (docs/scoring-and-exports.md, evidence table)."""
+    main = _traffic_candidate("fastbike", 69.8, 0.2347)
+    alt = _traffic_candidate("custom_commuter-v1", 66.0, 0.0789, alt_of="fastbike")
+    constraints = RouteConstraints()
+    old = rank_candidates(
+        [
+            c.model_copy(update={"score": s, "score_breakdown": b})
+            for c, (s, b) in zip(
+                [main, alt],
+                score_candidates_together([main, alt], constraints, traffic_weight=0.0),
+                strict=True,
+            )
+        ]
+    )
+    new = rank_candidates(
+        [
+            c.model_copy(update={"score": s, "score_breakdown": b})
+            for c, (s, b) in zip(
+                [main, alt], score_candidates_together([main, alt], constraints), strict=True
+            )
+        ]
+    )
+    assert old[0].provider_profile == "fastbike"  # without the term: its own profile wins
+    assert new[0].provider_profile == "custom_commuter-v1"
+
+
+def test_a_slightly_quieter_alternative_does_not_reshuffle_the_ranking():
+    main = _traffic_candidate("custom_gravel-v2", 58, 0.039)
+    alt = _traffic_candidate("custom_touring-v1", 47.5, 0.12, alt_of="custom_gravel-v2")
+    scored = [
+        c.model_copy(update={"score": s, "score_breakdown": b})
+        for c, (s, b) in zip(
+            [main, alt], score_candidates_together([main, alt], RouteConstraints()), strict=True
+        )
+    ]
+    assert rank_candidates(scored)[0].provider_profile == "custom_gravel-v2"
+
+
+def test_the_calibration_ranking_follows_the_production_rule_and_sweeps_the_weight():
+    busy = _traffic_candidate("busy", 70, 0.3)
+    quiet = _traffic_candidate("quiet", 70, 0.05)
+    constraints = RouteConstraints()
+    assert [c.provider_profile for c in ranked_candidates([busy, quiet], constraints)] == [
+        "quiet", "busy",
+    ]  # fmt: skip
+    sweep = traffic_weight_sensitivity([busy, quiet], constraints)
+    assert list(sweep) == [f"traffic={w:.2f}" for w in TRAFFIC_WEIGHT_GRID]
+    assert sweep["traffic=0.00"] == ["brouter/busy", "brouter/quiet"]  # a tie: provider order
+    assert sweep["traffic=0.50"] == ["brouter/quiet", "brouter/busy"]
+    unasked = traffic_weight_sensitivity(
+        [busy, quiet], RouteConstraints(avoid_high_traffic_roads=False)
+    )
+    assert len({tuple(v) for v in unasked.values()}) == 1  # inactive: the same everywhere

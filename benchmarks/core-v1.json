@@ -7,25 +7,49 @@
     "Expectations encode what a rider familiar with each corridor judges a good engine route to look like;",
     "they are plausibility envelopes, not golden geometries. Missing data never fails a check -- it is",
     "reported as skipped (unknown must stay unknown, see docs/enrichment.md and docs/scoring-and-exports.md).",
-    "Cases whose id ends in a surface-preference suffix (issue #23) carry prefer/avoid_surfaces but no surface expectations; see their rationale."
+    "Cases whose id ends in a surface-preference suffix (issue #23) carry prefer/avoid_surfaces but no surface expectations; see their rationale.",
+    "Cases whose id ends in -quiet (issue #23) judge the engine's traffic estimate (max_traffic_index) of a route for a rider who asked to avoid busy roads."
   ],
   "cases": [
     {
       "id": "bs-city-hop",
       "title": "Braunschweig Hbf -> Bürgerpark (city hop)",
       "request": {
-        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
-        "destination": { "lon": 10.541, "lat": 52.2735 },
-        "constraints": { "bike_type": "city", "max_ascent_m": 60 }
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.541,
+          "lat": 52.2735
+        },
+        "constraints": {
+          "bike_type": "city",
+          "max_ascent_m": 60
+        }
       },
       "expectations": {
-        "distance_m": { "min": 1200, "max": 4000 },
-        "ascent_m": { "min": 0, "max": 80 },
+        "distance_m": {
+          "min": 1200,
+          "max": 4000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 80
+        },
         "max_unknown_surface_fraction": 0.5,
         "surface": {
           "min_known_share": 0.5,
-          "min_combined": { "categories": ["paved", "compacted"], "share": 0.5 },
-          "max_by_category": { "natural_soft": 0.4 }
+          "min_combined": {
+            "categories": [
+              "paved",
+              "compacted"
+            ],
+            "share": 0.5
+          },
+          "max_by_category": {
+            "natural_soft": 0.4
+          }
         }
       },
       "rationale": "Straight line is ~1.0 km through a dense, well-tagged city grid; a good city route is a short street-level hop, almost entirely hard-surfaced, with only marginal ascent."
@@ -34,18 +58,40 @@
       "id": "bs-oldtown-cobble",
       "title": "Braunschweig Hbf -> Burg Dankwarderode / Domplatz (historic centre)",
       "request": {
-        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
-        "destination": { "lon": 10.5275, "lat": 52.2634 },
-        "constraints": { "bike_type": "city" }
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5275,
+          "lat": 52.2634
+        },
+        "constraints": {
+          "bike_type": "city"
+        }
       },
       "expectations": {
-        "distance_m": { "min": 600, "max": 2500 },
-        "ascent_m": { "min": 0, "max": 60 },
+        "distance_m": {
+          "min": 600,
+          "max": 2500
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 60
+        },
         "max_unknown_surface_fraction": 0.5,
         "surface": {
           "min_known_share": 0.5,
-          "min_by_category": { "masonry": 0.03 },
-          "min_combined": { "categories": ["paved", "masonry"], "share": 0.7 }
+          "min_by_category": {
+            "masonry": 0.03
+          },
+          "min_combined": {
+            "categories": [
+              "paved",
+              "masonry"
+            ],
+            "share": 0.7
+          }
         }
       },
       "rationale": "The castle-square area around the Burg and Dom is famously cobbled; a route whose surface profile has zero masonry here indicates missing enrichment data or a bad match, not a genuinely smooth approach. Overall the old town remains hard-surfaced (paved + masonry dominate)."
@@ -54,17 +100,37 @@
       "id": "bs-wf-tour",
       "title": "Braunschweig Hbf -> Schloss Wolfenbüttel (flat valley tour)",
       "request": {
-        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
-        "destination": { "lon": 10.5361, "lat": 52.1688 },
-        "constraints": { "bike_type": "touring" }
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5361,
+          "lat": 52.1688
+        },
+        "constraints": {
+          "bike_type": "touring"
+        }
       },
       "expectations": {
-        "distance_m": { "min": 11500, "max": 20000 },
-        "ascent_m": { "min": 0, "max": 250 },
+        "distance_m": {
+          "min": 11500,
+          "max": 20000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 250
+        },
         "max_unknown_surface_fraction": 0.6,
         "surface": {
           "min_known_share": 0.4,
-          "min_combined": { "categories": ["paved", "compacted"], "share": 0.5 }
+          "min_combined": {
+            "categories": [
+              "paved",
+              "compacted"
+            ],
+            "share": 0.5
+          }
         }
       },
       "rationale": "~11.2 km straight line down the Oker valley; real routes run 12-18 km along valley paths and quiet roads. The valley is gentle: a credible touring route does not accumulate hundreds of metres of climbing."
@@ -73,13 +139,28 @@
       "id": "harz-climb",
       "title": "Bad Harzburg Bhf -> Braunlage Marktplatz (Harz plateau climb)",
       "request": {
-        "origin": { "lon": 10.5555, "lat": 51.8883 },
-        "destination": { "lon": 10.5816, "lat": 51.7269 },
-        "constraints": { "bike_type": "touring", "max_ascent_m": 800 }
+        "origin": {
+          "lon": 10.5555,
+          "lat": 51.8883
+        },
+        "destination": {
+          "lon": 10.5816,
+          "lat": 51.7269
+        },
+        "constraints": {
+          "bike_type": "touring",
+          "max_ascent_m": 800
+        }
       },
       "expectations": {
-        "distance_m": { "min": 18000, "max": 34000 },
-        "ascent_m": { "min": 250, "max": 1200 },
+        "distance_m": {
+          "min": 18000,
+          "max": 34000
+        },
+        "ascent_m": {
+          "min": 250,
+          "max": 1200
+        },
         "max_unknown_surface_fraction": 0.7
       },
       "rationale": "The inverse case: ~18 km straight line but the towns sit at very different elevations, so every credible route climbs onto the Harz plateau. A candidate reporting less than ~250 m ascent here has broken or missing elevation data -- flagged, not silently rewarded (ascent is an expectation, never a bonus)."
@@ -88,18 +169,41 @@
       "id": "bs-okerradweg",
       "title": "Braunschweig Hbf -> Riddagshausen Klosterkirche (Oker path leisure ride)",
       "request": {
-        "origin": { "lon": 10.5267132, "lat": 52.2689081 },
-        "destination": { "lon": 10.5863, "lat": 52.2436 },
-        "constraints": { "bike_type": "gravel" }
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5863,
+          "lat": 52.2436
+        },
+        "constraints": {
+          "bike_type": "gravel"
+        }
       },
       "expectations": {
-        "distance_m": { "min": 5500, "max": 12000 },
-        "ascent_m": { "min": 0, "max": 120 },
+        "distance_m": {
+          "min": 5500,
+          "max": 12000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 120
+        },
         "max_unknown_surface_fraction": 0.6,
         "surface": {
           "min_known_share": 0.4,
-          "min_combined": { "categories": ["compacted", "natural_soft", "loose"], "share": 0.15 },
-          "max_by_category": { "masonry": 0.3 }
+          "min_combined": {
+            "categories": [
+              "compacted",
+              "natural_soft",
+              "loose"
+            ],
+            "share": 0.15
+          },
+          "max_by_category": {
+            "masonry": 0.3
+          }
         }
       },
       "rationale": "~5.0 km straight line; the natural ride follows the Oker river paths southeast through the Riddagshausen nature reserve, so some unpaved share (compacted/soft/loose) is a hallmark of the expected route, and masonry should stay marginal."
@@ -108,13 +212,31 @@
       "id": "bs-city-hop-prefer-paved",
       "title": "Braunschweig Hbf -> Bürgerpark, prefer paved",
       "request": {
-        "origin": {"lon": 10.5267132, "lat": 52.2689081},
-        "destination": {"lon": 10.541, "lat": 52.2735},
-        "constraints": {"bike_type": "city", "max_ascent_m": 60, "prefer_surfaces": ["paved"]}
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.541,
+          "lat": 52.2735
+        },
+        "constraints": {
+          "bike_type": "city",
+          "max_ascent_m": 60,
+          "prefer_surfaces": [
+            "paved"
+          ]
+        }
       },
       "expectations": {
-        "distance_m": {"min": 1200, "max": 4000},
-        "ascent_m": {"min": 0, "max": 80}
+        "distance_m": {
+          "min": 1200,
+          "max": 4000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 80
+        }
       },
       "rationale": "A city rider asking for paved surfaces on a short hop through a well-tagged grid. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-city-hop`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
     },
@@ -122,13 +244,30 @@
       "id": "bs-oldtown-avoid-cobble",
       "title": "Braunschweig Hbf -> Domplatz, avoid cobblestone",
       "request": {
-        "origin": {"lon": 10.5267132, "lat": 52.2689081},
-        "destination": {"lon": 10.5275, "lat": 52.2634},
-        "constraints": {"bike_type": "city", "avoid_surfaces": ["masonry"]}
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5275,
+          "lat": 52.2634
+        },
+        "constraints": {
+          "bike_type": "city",
+          "avoid_surfaces": [
+            "masonry"
+          ]
+        }
       },
       "expectations": {
-        "distance_m": {"min": 600, "max": 2500},
-        "ascent_m": {"min": 0, "max": 60}
+        "distance_m": {
+          "min": 600,
+          "max": 2500
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 60
+        }
       },
       "rationale": "The historic centre is cobbled, so avoiding masonry is the case where a stated avoidance competes hardest with directness. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-oldtown-cobble`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
     },
@@ -136,13 +275,35 @@
       "id": "bs-wf-tour-hard-surfaces",
       "title": "Braunschweig Hbf -> Schloss Wolfenbüttel, prefer hard-packed, avoid loose",
       "request": {
-        "origin": {"lon": 10.5267132, "lat": 52.2689081},
-        "destination": {"lon": 10.5361, "lat": 52.1688},
-        "constraints": {"bike_type": "touring", "prefer_surfaces": ["paved", "compacted"], "avoid_surfaces": ["loose", "natural_soft"]}
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5361,
+          "lat": 52.1688
+        },
+        "constraints": {
+          "bike_type": "touring",
+          "prefer_surfaces": [
+            "paved",
+            "compacted"
+          ],
+          "avoid_surfaces": [
+            "loose",
+            "natural_soft"
+          ]
+        }
       },
       "expectations": {
-        "distance_m": {"min": 11500, "max": 20000},
-        "ascent_m": {"min": 0, "max": 250}
+        "distance_m": {
+          "min": 11500,
+          "max": 20000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 250
+        }
       },
       "rationale": "A touring rider preferring paved/compacted and avoiding loose or soft surfaces on the valley corridor (both prefer and avoid terms exercised). Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-wf-tour`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
     },
@@ -150,15 +311,140 @@
       "id": "bs-okerradweg-prefer-unpaved",
       "title": "Braunschweig Hbf -> Riddagshausen, prefer unpaved, avoid cobblestone",
       "request": {
-        "origin": {"lon": 10.5267132, "lat": 52.2689081},
-        "destination": {"lon": 10.5863, "lat": 52.2436},
-        "constraints": {"bike_type": "gravel", "prefer_surfaces": ["compacted", "loose"], "avoid_surfaces": ["masonry"]}
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.5863,
+          "lat": 52.2436
+        },
+        "constraints": {
+          "bike_type": "gravel",
+          "prefer_surfaces": [
+            "compacted",
+            "loose"
+          ],
+          "avoid_surfaces": [
+            "masonry"
+          ]
+        }
       },
       "expectations": {
-        "distance_m": {"min": 5500, "max": 12000},
-        "ascent_m": {"min": 0, "max": 120}
+        "distance_m": {
+          "min": 5500,
+          "max": 12000
+        },
+        "ascent_m": {
+          "min": 0,
+          "max": 120
+        }
       },
       "rationale": "The inverse preference: a gravel rider choosing the Oker paths over streets, avoiding cobbles. Surface-preference variant (issue #23): same corridor and distance/ascent judgement as `bs-okerradweg`; surface expectations are deliberately omitted -- they are to be observed in a calibration run with enrichment enabled, not guessed. Its purpose is to expose whether stated surface preferences change the engine ranking (see the surface sensitivity report in scripts/calibrate.py)."
+    },
+    {
+      "id": "bs-hannover-road-quiet",
+      "title": "Braunschweig -> Hannover by road bike, avoiding busy roads",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 9.732,
+          "lat": 52.3759
+        },
+        "constraints": {
+          "bike_type": "road",
+          "avoid_high_traffic_roads": true
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 55000,
+          "max": 85000
+        },
+        "max_traffic_index": 0.15
+      },
+      "rationale": "The direct corridor is the B1/A2 region. The road-bike profile (fastbike) follows main roads (traffic index ~0.23, a third of the route on busy roads); the commuter profile is as short and stays on quiet roads (~0.08). A rider who asked to avoid busy roads judges the quiet near-equal route the good one. Evidence run 2026-10: docs/scoring-and-exports.md."
+    },
+    {
+      "id": "bs-gifhorn-commuter-quiet",
+      "title": "Braunschweig -> Gifhorn by commuter bike, avoiding busy roads",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.547,
+          "lat": 52.48
+        },
+        "constraints": {
+          "bike_type": "commuter",
+          "avoid_high_traffic_roads": true
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 20000,
+          "max": 34000
+        },
+        "max_traffic_index": 0.15
+      },
+      "rationale": "A commuter wants it quick but not on the B4 shoulder: the commuter profile stays near 0.05 while fastbike is ~0.34 over 6 % more distance."
+    },
+    {
+      "id": "bs-wolfsburg-touring-quiet",
+      "title": "Braunschweig -> Wolfsburg by touring bike, avoiding busy roads",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.7865,
+          "lat": 52.4227
+        },
+        "constraints": {
+          "bike_type": "touring",
+          "avoid_high_traffic_roads": true
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 24000,
+          "max": 40000
+        },
+        "max_traffic_index": 0.15
+      },
+      "rationale": "Touring and gravel profiles keep to cycle tracks and quiet roads (traffic ~0.03); fastbike is on the main road (~0.35, 58 % busy). Nothing should be preferred over the touring route here: it is the case where the scorer must not move."
+    },
+    {
+      "id": "goslar-brocken-gravel-quiet",
+      "title": "Goslar -> Brocken by gravel bike, avoiding busy roads (control)",
+      "request": {
+        "origin": {
+          "lon": 10.4294,
+          "lat": 51.9055
+        },
+        "destination": {
+          "lon": 10.6167,
+          "lat": 51.8011
+        },
+        "constraints": {
+          "bike_type": "gravel",
+          "avoid_high_traffic_roads": true
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 20000,
+          "max": 40000
+        },
+        "max_traffic_index": 0.15
+      },
+      "rationale": "A forest climb on tracks: every profile is quiet (0.01-0.11), the gravel profile is a third longer than the shortest on purpose. The control case: a traffic term must not turn this into a different route; all candidates meet the envelope, so any ranking flip here would be an artefact."
     }
   ]
 }
