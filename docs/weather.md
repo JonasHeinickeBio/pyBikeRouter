@@ -107,6 +107,45 @@ service.
    sunset. In polar day/night there is no sunrise or sunset and the field is
    empty.
 
+## The wind's effect on the travel time
+
+The engine's duration assumes still air. `route.weather.wind_effect` estimates what the forecast wind does
+to it -- `{still_air_s, adjusted_s, effect_s, range_s: [low, high]}`, `effect_s` positive = slower. The weather
+card shows it as **Wind on your time** ("+12 min (9-15)") and an advisory says it in words; each
+departure option carries `wind_effect_s` for its own hour (the comparison of leaving earlier or later is
+partly a comparison of the wind).
+
+**Method** (`weather/wind_time.py`): the standard cycling power equation,
+`P = (Crr*m*g + m*g*grade + 1/2*rho*CdA*(v + w)*|v + w|) * v`, with `v` the ground speed and `w` the
+headwind. The power is the one the engine's still-air pace needs; the speed in the wind is the one that needs
+the *same power*, solved for each stretch between forecast points from the mean of the headwinds at its two
+ends (the ends take the nearest point). That gives a **factor on the engine's duration**, so what the
+engine knows about surfaces and climbs stays in the number; the route's mean climb (`ascent / distance`)
+takes its share of the power, so the wind matters less on a hilly ride. The rider is a typical one per
+bike type (mass with bike and load, rolling resistance, frontal area: road 85 kg / 0.0045 / 0.36 m^2,
+gravel 88 / 0.007 / 0.42, touring 100 / 0.006 / 0.55, mountain 88 / 0.010 / 0.50, city 95 / 0.006 / 0.58,
+commuter 88 / 0.005 / 0.45, recumbent 95 / 0.005 / 0.30). The model reproduces the textbook figure of
+roughly 300 W for a road bike at 40 km/h on the flat (338 W here). The range varies the frontal area, the
+least certain input, by +-25 %.
+
+**What it is not** -- read these before relying on a number:
+
+- **Same effort as in still air.** Real riders push harder into a headwind and ease off with a tailwind, so
+  the estimate is on the pessimistic side for headwinds and on the optimistic side for tailwinds (it gives
+  more than people typically gain). A 15 km/h headwind at a 20 km/h pace comes out at about 58 % more time.
+- **Not validated** against measured rides; the range is the model's parameter uncertainty only.
+- **Along-track wind only**: crosswinds, gusts and shelter (forest, buildings) are ignored, and the forecast
+  points are kilometres apart (at most five).
+- **Not fed back**: the forecast hours are still picked with the engine's still-air duration, so a long
+  ride with a strong wind has slightly shifted hours.
+- **Only with the engine's own duration** (not the 15 km/h fallback) and **not for e-bikes** (the motor's
+  assistance changes with speed, so "the same power" means nothing): `wind_effect` is `null` there.
+- Stated (advisory, card, option) only from 3 minutes or 3 % of the ride, whichever is larger.
+- Information only: it does not change the plan, the ranking or the score.
+
+On the live forecast for Braunschweig -> Hannover (2026-10-20, a 22 km/h east wind, riding west, mean tailwind
+13 km/h) it comes out at about -49 min on the engine's 3 h 05 min for a road bike (range -50 to -47).
+
 ## Other departure times
 
 "Should I leave now or later?" The same route is also evaluated for departures
@@ -198,7 +237,8 @@ your app; also sent to Bright Sky), `WEATHER_TIMEOUT_S`, `WEATHER_CACHE_TTL_S`, 
 
 - **No effect on the score or ranking**: weights for weather would need the same
   calibration evidence as every other term ([scoring-and-exports.md](scoring-and-exports.md)).
-- **No wind-adjusted travel time**: durations are the engine's.
+- The wind's effect on the travel time is an estimate and shown beside the engine's duration, which is
+  never replaced (see above).
 - No radar nowcast and no historical weather.
 - The departure comparison is for the route you got: it does not re-route (a
   different time never changes the path) and compares hourly steps only.

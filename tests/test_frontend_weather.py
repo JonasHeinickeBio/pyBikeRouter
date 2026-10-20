@@ -327,3 +327,66 @@ def test_the_card_includes_the_options_between_notes_and_credit():
     assert (
         html.index("weather-notes") < html.index("departure-options") < html.index("weather-credit")
     )
+
+
+# ------------------------------------------------------------------ wind effect on the time
+
+
+def test_the_wind_effect_is_shown_as_minutes_with_a_sign_and_a_range():
+    effect = {"effect_s": 720, "still_air_s": 7200, "range_s": [540, 900]}
+    assert run_js(f"W.windEffectText({json.dumps(effect)})") == "+12 min (9–15)"
+    saved = {"effect_s": -600, "still_air_s": 7200, "range_s": [-720, -480]}
+    assert run_js(f"W.windEffectText({json.dumps(saved)})") == "−10 min (8–12)"
+    same_range = {"effect_s": 600, "still_air_s": 7200, "range_s": [600, 610]}
+    assert run_js(f"W.windEffectText({json.dumps(same_range)})") == "+10 min"  # a range of one
+
+
+@pytest.mark.parametrize(
+    "effect",
+    [
+        None,
+        {},
+        {"effect_s": "x"},
+        {"effect_s": 120, "still_air_s": 3600, "range_s": [100, 140]},  # under 3 minutes
+        {"effect_s": 300, "still_air_s": 36000, "range_s": [250, 350]},  # under 3 % of the ride
+    ],
+)
+def test_a_small_or_missing_wind_effect_is_not_shown(effect):
+    assert run_js(f"W.windEffectText({json.dumps(effect)})") is None
+
+
+def test_the_card_lists_the_wind_effect_among_the_facts():
+    weather = {
+        "departure": "2026-10-07T07:30:00+00:00",
+        "duration_source": "provider",
+        "summary": {"worst_condition": "clear", "wind_speed_max_kmh": 20},
+        "samples": [],
+        "wind_effect": {"effect_s": 900, "still_air_s": 7200, "range_s": [700, 1100]},
+        "advisories": [],
+    }
+    html = run_js(f"W.weatherCardHtml({json.dumps(weather)}, 'ok')")
+    assert "Wind on your time" in html and "+15 min (12–18)" in html
+    weather["wind_effect"] = None
+    assert "Wind on your time" not in run_js(f"W.weatherCardHtml({json.dumps(weather)}, 'ok')")
+
+
+def test_a_departure_option_shows_its_own_wind_effect_when_it_is_worth_stating():
+    option = {
+        "departure": "2026-10-07T07:00:00+00:00",
+        "arrival": "2026-10-07T09:00:00+00:00",
+        "offset_minutes": 0,
+        "samples": 3,
+        "wet_samples": 0,
+        "headwind_mean_kmh": 12.0,
+        "wind_effect_s": 840,
+    }
+    quiet = {
+        **option,
+        "offset_minutes": 60,
+        "departure": "2026-10-07T08:00:00+00:00",
+        "wind_effect_s": 60,
+    }
+    weather = {"departure_options": [option, quiet]}
+    html = run_js(f"W.departureOptionsHtml({json.dumps(weather)})")
+    assert "opt-windtime" in html and "+14 min" in html
+    assert html.count("opt-windtime") == 1  # one minute is not worth stating

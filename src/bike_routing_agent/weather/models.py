@@ -146,9 +146,22 @@ class DepartureOption(BaseModel):
     temperature_max_c: float | None = None
     wind_speed_max_kmh: float | None = None
     headwind_mean_kmh: float | None = None
+    # The wind's effect on the travel time at this departure, seconds (positive = slower).
+    wind_effect_s: float | None = None
     # True when the ride starts before sunrise or ends after sunset (computed);
     # the forecast's daylight flag when sunrise/sunset cannot be computed.
     after_dark: bool | None = None
+
+
+class WindEffect(BaseModel):
+    """What the forecast wind does to the travel time: an estimate for the same effort as in still
+    air (``weather/wind_time.py`` says what it assumes). ``effect_s`` is positive when slower."""
+
+    still_air_s: float = Field(ge=0)  # the engine's duration
+    adjusted_s: float = Field(ge=0)  # with the wind
+    effect_s: float
+    # The effect with a 25 % smaller and a 25 % larger frontal area of the rider.
+    range_s: tuple[float, float]
 
 
 class RouteWeather(BaseModel):
@@ -162,6 +175,8 @@ class RouteWeather(BaseModel):
     # "provider" when the engine reported the duration, "estimated" when it was
     # derived from the distance (the forecast hours depend on it).
     duration_source: Literal["provider", "estimated"]
+    # Only with an engine duration and a bike type the model describes (not an e-bike).
+    wind_effect: WindEffect | None = None
     retrieved_at: datetime
     samples: list[WeatherSample]
     summary: WeatherSummary

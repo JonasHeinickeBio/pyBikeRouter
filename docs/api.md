@@ -238,7 +238,10 @@ Notes:
   departure time: `summary`, `samples[]` with head/crosswind, `advisories[]`, the
   provider's `attribution`) or `null`, and the response has `weather_status`
   (`ok`, `unavailable`, `not_covered`, `skipped`, or `null` when weather is off).
-  Weather is best effort and never changes `status` ([weather.md](weather.md)).
+  Weather is best effort and never changes `status` ([weather.md](weather.md)). `weather.wind_effect`
+  (`still_air_s`, `adjusted_s`, `effect_s`, `range_s`) is an estimate of what the wind does to the
+  travel time for the same effort as in still air, `null` for e-bikes and without an engine duration;
+  each `departure_options[]` has `wind_effect_s` for its own hour.
 - Every candidate carries `rank` (1-based position in the returned list),
   `rank_rationale` (a facts-only comparison to rank 1) and the duplicate
   bookkeeping `duplicates` / `duplicate_of`; all are optional additions,
