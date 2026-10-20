@@ -376,6 +376,21 @@ its form, and `focus_rank` names the alternative that was asked for; `awaiting` 
 waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
 `CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
 
+## POST /v1/chat/summaries
+
+Titles for the conversations a client already knows. Body: `{"session_ids": ["<32 hex>", ...]}` (at most
+30). Response: `{"sessions": [{"session_id": "...", "title": "from Braunschweig to Goslar", "updated":
+1760950000.0, "messages": 4}]}`, most recently used first. `title` is the first thing that was asked,
+shortened to 60 characters; `updated` is seconds since the epoch. An id the service does not know
+(never existed, expired, dropped, deleted) is left out, so a client can drop it from its own list. The
+service only answers for the ids it is given: there is no way to list conversations nobody named.
+`422` for a malformed id or more than 30; `503` when `CHAT_ENABLED` is off.
+
+## DELETE /v1/chat/{session_id}
+
+Forgets a conversation: its messages, its last route and (with `CHAT_STORE_PATH`) its file entry. `204`
+when it was deleted, `404` when it is unknown or the id is malformed, `503` when the chat is off.
+
 ## GET /v1/chat/{session_id}
 
 A conversation as it stands, for a client that was closed and opened again: `{"session_id": "...",

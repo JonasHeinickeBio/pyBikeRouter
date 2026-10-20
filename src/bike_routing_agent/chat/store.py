@@ -122,6 +122,14 @@ class SqliteChatSaver(LatestOnlyMemorySaver):
         """The conversations that were read back at start, least recently used first."""
         return list(self._order)
 
+    def updated_at(self, thread_id: str) -> float | None:
+        """When the conversation was last written, or ``None`` when it never was."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT updated FROM chat_threads WHERE thread_id = ?", (thread_id,)
+            ).fetchone()
+        return float(row[0]) if row else None
+
     def close(self) -> None:
         with self._lock:
             self._db.close()

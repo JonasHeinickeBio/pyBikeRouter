@@ -93,6 +93,15 @@ class ChatMessage(BaseModel):
     text: str
 
 
+class ChatSummary(BaseModel):
+    """One conversation in a list: enough to recognise it and open it again."""
+
+    session_id: str
+    title: str  # what was asked first, shortened
+    updated: float  # when it was last used (seconds since the epoch)
+    messages: int
+
+
 class ChatHistory(BaseModel):
     """A stored conversation, for a client that was closed and opens it again."""
 

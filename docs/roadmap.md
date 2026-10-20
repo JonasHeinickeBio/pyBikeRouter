@@ -74,9 +74,10 @@ decisions still open.
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).
-  Open follow-ups: a model-based intent step for follow-ups, free text verified against a real model,
-  a list of earlier conversations. (The chat now fills the web form with the request behind each
-  route; the other direction -- the chat knowing what is in the form -- is not built.)
+  Open follow-ups: a model-based intent step for follow-ups and free text verified against a real model.
+  Done since: the chat fills the web form with the request behind each route (the other direction -- the
+  chat knowing what is in the form -- is not built), and the web panel has New chat, a list of this
+  browser's earlier conversations, and delete.
 
 ## Geocoding
 

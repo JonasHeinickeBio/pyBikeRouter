@@ -185,3 +185,126 @@ def test_a_chat_route_fills_the_plan_form_with_the_request_it_came_from():
     assert "drawChatPlan(data.plan, data.focus_rank, secs, data.request)" in app
     assert "drawChatPlan(held.plan, held.focusRank, held.secs, held.request)" in app
     assert "drawChatPlan(history.plan, history.focus_rank, null, history.request)" in app
+
+
+# ------------------------------------------------------------ earlier conversations
+
+
+def A(n: int) -> str:
+    return f"{n:032x}"
+
+
+def test_the_conversations_of_this_browser_are_remembered_newest_first_without_duplicates():
+    script = (
+        f"(C.rememberSession(storage, '{A(1)}'), C.rememberSession(storage, '{A(2)}'),"
+        f" C.rememberSession(storage, '{A(1)}'), C.knownSessions(storage))"
+    )
+    assert run_storage(script) == [A(1), A(2)]  # 1 was used again, so it is the newest
+
+
+def test_starting_a_new_chat_forgets_the_current_one_but_keeps_it_in_the_list():
+    script = (
+        f"(C.rememberSession(storage, '{A(1)}'), C.rememberSession(storage, null),"
+        " [C.storedSession(storage), C.knownSessions(storage)])"
+    )
+    assert run_storage(script) == [None, [A(1)]]
+
+
+def test_the_list_is_bounded_and_ignores_garbage():
+    many = ", ".join(f"C.rememberSession(storage, '{A(n)}')" for n in range(1, 40))
+    got = run_storage(f"({many}, C.knownSessions(storage))")
+    assert len(got) == 30 and got[0] == A(39)  # the server takes at most 30 ids per request
+    junk = json.dumps(json.dumps(["nope", A(5), 7, None, A(5), "../" + "a" * 29]))
+    assert run_storage(
+        f"(storage.setItem('pybikerouter.chats', {junk}), C.knownSessions(storage))"
+    ) == [A(5)]
+    assert (
+        run_storage("(storage.setItem('pybikerouter.chats', 'not json'), C.knownSessions(storage))")
+        == []
+    )
+
+
+def test_forgetting_and_keeping_ids_edits_the_list():
+    setup = ", ".join(f"C.rememberSession(storage, '{A(n)}')" for n in (1, 2, 3))
+    assert run_storage(
+        f"({setup}, C.forgetKnown(storage, '{A(2)}'), C.knownSessions(storage))"
+    ) == [A(3), A(1)]
+    # what the server still knows, in the order it gave (not the order stored)
+    keep = f"C.keepKnown(storage, ['{A(1)}', 'bad', '{A(3)}'])"
+    assert run_storage(f"({setup}, {keep}, C.knownSessions(storage))") == [A(1), A(3)]
+
+
+def test_blocked_storage_does_not_break_the_conversation_list():
+    script = (
+        "(() => { const blocked = { getItem() { throw new Error('x'); },"
+        " setItem() { throw new Error('x'); }, removeItem() { throw new Error('x'); } };"
+        f" C.rememberSession(blocked, '{A(1)}'); C.forgetKnown(blocked, '{A(1)}');"
+        " return C.knownSessions(blocked); })()"
+    )
+    assert run_storage(script) == []
+
+
+@pytest.mark.parametrize(
+    "then, now, expected",
+    [
+        (1000, 1030, "just now"),
+        (1000, 1000 + 5 * 60, "5 min ago"),
+        (1000, 1000 + 3 * 3600, "3 h ago"),
+        (1000, 1000 + 30 * 3600, "yesterday"),
+        (1000, 1000 + 4 * 86400, "4 days ago"),
+        (0, 20 * 86400, "1970-01-01"),
+        (1000, 900, "just now"),  # a clock a little behind is not "in the future"
+        (None, 5, ""),
+    ],
+)
+def test_relative_time(then, now, expected):
+    assert call("relativeTime", then, now) == expected
+
+
+def test_the_list_shows_title_age_and_message_count_and_marks_the_current_one():
+    summaries = [
+        {"session_id": A(1), "title": "from A to B", "updated": 1000, "messages": 4},
+        {"session_id": A(2), "title": "40 km loop", "updated": 900, "messages": 2},
+    ]
+    html = call("conversationsHtml", summaries, 1000 + 300, A(1))
+    assert (
+        html.count("<li") == 2 and f'data-open="{A(1)}"' in html and f'data-delete="{A(2)}"' in html
+    )
+    assert "5 min ago" in html and "4 messages" in html and "from A to B" in html
+    assert html.count("chat-earlier-item current") == 1 and 'aria-current="true"' in html
+    assert call("conversationsHtml", [], 1, None) == ""
+
+
+def test_a_title_is_escaped_and_a_malformed_entry_is_skipped():
+    summaries = [
+        {
+            "session_id": A(1),
+            "title": '<img src=x onerror="alert(1)">',
+            "updated": 1,
+            "messages": 1,
+        },
+        {"session_id": "not-an-id", "title": "x", "updated": 1, "messages": 1},
+        {"session_id": A(3), "title": "", "updated": 1, "messages": "many"},
+        None,
+    ]
+    html = call("conversationsHtml", summaries, 2, None)
+    assert "<img" not in html and "&lt;img" in html
+    assert "not-an-id" not in html and html.count("<li") == 2
+    assert ">Conversation<" in html and "0 messages" in html  # a missing title / count
+
+
+def test_the_panel_has_new_chat_and_an_earlier_conversations_list_wired_up():
+    html = (FRONTEND / "index.html").read_text()
+    assert (
+        'id="chat-new"' in html and 'id="chat-earlier-box"' in html and 'id="chat-earlier"' in html
+    )
+    app = (FRONTEND / "app.js").read_text()
+    assert 'els.chatNew.addEventListener("click", newChat)' in app
+    assert "/v1/chat/summaries" in app and 'method: "DELETE"' in app
+    assert "window.confirm(" in app  # a delete asks first
+    # opening one replaces the conversation and the map; a reopened page only fills empty ones
+    assert "loadChat(id, true)" in app and "loadChat(id, false)" in app
+    # a conversation the server no longer knows is dropped from the list and from "current"
+    load = app[app.index("async function loadChat") :]
+    load = load[: load.index("\n}\n")]
+    assert "forgetKnown(" in load and "rememberSession(window.localStorage, null)" in load
