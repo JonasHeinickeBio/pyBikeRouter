@@ -15,6 +15,31 @@ Four ways, all ending up in the same fields (Origin, Destination, the Via stops)
   (below).
 - **Chat** -- a route the chat plans fills the form with its request, so you can adjust it there.
 
+## Elevation profile
+
+Below the numbers of a route the page draws its **elevation profile**: elevation over distance, coloured
+by the grade of each stretch (steep descent, descent, flat, climb, steep climb, very steep climb; the
+legend is under the chart), with the highest and lowest point, the steepest 100 m and the biggest
+climbs. Move the pointer (or a finger) over the chart to read the distance, elevation and grade at that
+point; the same spot is marked on the map. With the keyboard, focus the chart and use the arrow keys
+(Home and End jump to the ends). It follows the route you are looking at: click another alternative and
+the chart changes.
+
+How it is made (`frontend/profile.js`):
+
+- from the elevation each route vertex carries (BRouter returns it for every vertex; a route whose
+  geometry has no elevation on every vertex, or that is shorter than 200 m, gets no chart rather than
+  a guessed one);
+- the raw elevations are noisy -- a vertex every ~20 m with a metre or so of jitter, which summed up
+  overstates the climbing by 10-15 % against the engine's own figure -- so the chart works on elevations
+  averaged over 100 m of route. The totals shown elsewhere (ascent, descent) stay the engine's: on the
+  Goslar - Brocken test routes the smoothed climbing came out within 7 % of them;
+- *steepest 100 m* is the biggest rise or fall over 100 m of that smoothed profile (shown from 6 %);
+- a *climb* is a stretch that gains at least 25 m over at least 400 m at an average of at least 3 %; a dip
+  of up to 10 m does not end it. The three with the biggest gain are listed. They are the profile's own
+  reading, not the engine's;
+- the vertical axis spans at least 40 m, so a flat ride looks flat instead of like a mountain range.
+
 ## Service status
 
 A dot next to the title shows whether the services behind the planner are up -- green: all, amber: some

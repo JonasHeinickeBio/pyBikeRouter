@@ -85,6 +85,11 @@ const els = {
   optimizeDetour: $("optimize-detour"),
   optimizeEffort: $("optimize-effort"),
   optimizeDetours: $("optimize-detours"),
+  profileCard: $("profile-card"),
+  profileChart: $("profile-chart"),
+  profileHover: $("profile-hover"),
+  profileFacts: $("profile-facts"),
+  profileLegend: $("profile-legend"),
   serviceStatus: $("service-status"),
   serviceStatusText: $("service-status-text"),
   serviceStatusPanel: $("service-status-panel"),
@@ -120,6 +125,9 @@ const state = {
   activeIndex: 0, // index into candidateLayers currently being inspected
   placeMarkers: L.layerGroup(),
   pointLayer: L.layerGroup(), // the point picked by a click, with its menu
+  profileLayer: L.layerGroup(), // where the elevation chart's cursor is on the route
+  profile: null, // the profile of the route shown
+  profileMarker: null,
   foreignPopupClosedAt: 0, // when a popup that is not the point menu was last closed by a click
   weatherMarkers: L.layerGroup(), // forecast points along the active candidate
   poiLayer: L.layerGroup(), // points of interest (along the active route, or in the map view)
@@ -159,6 +167,7 @@ function initMap() {
   }).addTo(state.map);
   state.placeMarkers.addTo(state.map);
   state.pointLayer.addTo(state.map);
+  state.profileLayer.addTo(state.map);
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
@@ -771,6 +780,9 @@ function clearResults() {
   els.poiStopsNote.innerHTML = "";
   els.weatherCard.hidden = true;
   els.weatherCard.innerHTML = "";
+  state.profile = null;
+  clearProfileCursor();
+  els.profileCard.hidden = true;
   els.alternatives.hidden = true;
   els.alternativesList.innerHTML = "";
   els.viewingNote.hidden = true;
@@ -1170,6 +1182,104 @@ function renderCandidatesTable() {
   });
 }
 
+/* ----------------------------- elevation profile ----------------------------- */
+
+const PROFILE_HOVER_HINT = "Move over the chart to see the grade and where it is on the map.";
+
+function clearProfileCursor() {
+  state.profileLayer.clearLayers();
+  state.profileMarker = null;
+  const cursor = els.profileChart.querySelector(".profile-cursor");
+  if (cursor) cursor.setAttribute("hidden", "");
+  els.profileHover.textContent = PROFILE_HOVER_HINT;
+}
+
+/** Put the chart's cursor and the marker on the map at `distanceM` along the route. */
+function showProfileCursor(distanceM) {
+  const profile = state.profile;
+  const svg = els.profileChart.querySelector("svg");
+  if (!profile || !svg) return;
+  const here = BikeProfile.at(profile, distanceM);
+  const left = Number(svg.dataset.left);
+  const right = Number(svg.dataset.right);
+  const x = left + (here.distanceM / profile.totalM) * (right - left);
+  const cursor = svg.querySelector(".profile-cursor");
+  cursor.removeAttribute("hidden");
+  cursor.setAttribute("transform", `translate(${x.toFixed(1)} 0)`);
+  const percent = here.grade * 100;
+  const sign = percent > 0.5 ? "+" : percent < -0.5 ? "−" : "";
+  els.profileHover.textContent =
+    `km ${(here.distanceM / 1000).toFixed(1)} · ${Math.round(here.elevationM)} m · ` +
+    `${sign}${Math.abs(percent).toFixed(1)} %`;
+  if (!state.profileMarker) {
+    state.profileMarker = L.circleMarker([here.lat, here.lon], {
+      radius: 8, weight: 3, color: "#c43d32", fillColor: "#ffffff", fillOpacity: 1, interactive: false,
+    }).addTo(state.profileLayer);
+  } else {
+    state.profileMarker.setLatLng([here.lat, here.lon]);
+  }
+}
+
+function renderProfile(cand) {
+  const profile = BikeProfile.build(cand.geometry_geojson);
+  state.profile = profile;
+  clearProfileCursor();
+  if (!profile) {
+    els.profileCard.hidden = true; // no elevation in this route (or too short): nothing to draw
+    return;
+  }
+  els.profileCard.hidden = false;
+  els.profileChart.innerHTML = BikeProfile.chartSvg(profile);
+  const svg = els.profileChart.querySelector("svg");
+  svg.setAttribute("tabindex", "0");
+  const fractionAt = (ev) => {
+    const rect = svg.getBoundingClientRect();
+    const width = Number(svg.dataset.width);
+    const left = Number(svg.dataset.left);
+    const right = Number(svg.dataset.right);
+    return ((((ev.clientX - rect.left) / rect.width) * width) - left) / (right - left);
+  };
+  const onPointer = (ev) => showProfileCursor(BikeProfile.distanceAtFraction(profile, fractionAt(ev)));
+  svg.addEventListener("pointermove", onPointer);
+  svg.addEventListener("pointerdown", onPointer);
+  svg.addEventListener("pointerleave", clearProfileCursor);
+  svg.addEventListener("pointercancel", clearProfileCursor);
+  svg.addEventListener("blur", clearProfileCursor);
+  // Keyboard: arrows move the cursor by 2 % of the route, Home and End jump to the ends.
+  let keyboardAt = 0;
+  svg.addEventListener("keydown", (ev) => {
+    const step = profile.totalM * 0.02;
+    if (ev.key === "ArrowRight") keyboardAt += step;
+    else if (ev.key === "ArrowLeft") keyboardAt -= step;
+    else if (ev.key === "Home") keyboardAt = 0;
+    else if (ev.key === "End") keyboardAt = profile.totalM;
+    else return;
+    ev.preventDefault();
+    keyboardAt = Math.max(0, Math.min(profile.totalM, keyboardAt));
+    showProfileCursor(keyboardAt);
+  });
+
+  const facts = [];
+  facts.push(`Highest ${Math.round(profile.max)} m, lowest ${Math.round(profile.min)} m`);
+  const steep = BikeProfile.steepest(profile);
+  if (Math.abs(steep.grade) >= 0.06) {
+    facts.push(
+      `Steepest 100 m: ${Math.abs(steep.grade * 100).toFixed(0)} % ${steep.grade > 0 ? "up" : "down"}, ` +
+        `at km ${(steep.atM / 1000).toFixed(1)}`,
+    );
+  }
+  for (const k of BikeProfile.climbs(profile, 3)) {
+    facts.push(
+      `Climb at km ${(k.fromM / 1000).toFixed(1)}: ${(k.lengthM / 1000).toFixed(1)} km, ` +
+        `+${Math.round(k.gainM)} m, ${(k.grade * 100).toFixed(1)} % on average`,
+    );
+  }
+  els.profileFacts.innerHTML = facts.map((f) => `<li>${escapeHtml(f)}</li>`).join("");
+  els.profileLegend.innerHTML = BikeProfile.GRADE_BANDS.map(
+    (b) => `<li><span class="profile-swatch" style="background:${b.color}"></span>${escapeHtml(b.label)}</li>`,
+  ).join("");
+}
+
 function updateActiveView() {
   const entry = state.candidateLayers[state.activeIndex];
   if (!entry) return;
@@ -1193,6 +1303,7 @@ function updateActiveView() {
     metric(cand.score != null ? cand.score.toFixed(2) : "—", "Score") +
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
+  renderProfile(cand);
   renderWeather(cand);
   schedulePoiRefresh();
   renderScoreBreakdown(cand.score_breakdown);
