@@ -445,6 +445,116 @@
         "max_traffic_index": 0.15
       },
       "rationale": "A forest climb on tracks: every profile is quiet (0.01-0.11), the gravel profile is a third longer than the shortest on purpose. The control case: a traffic term must not turn this into a different route; all candidates meet the envelope, so any ranking flip here would be an artefact."
+    },
+    {
+      "id": "bs-hannover-gravel-prefer-paved",
+      "title": "Braunschweig -> Hannover by gravel bike, preferring paved surfaces",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 9.732,
+          "lat": 52.3759
+        },
+        "constraints": {
+          "bike_type": "gravel",
+          "prefer_surfaces": [
+            "paved"
+          ]
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 55000,
+          "max": 85000
+        }
+      },
+      "rationale": "The gravel profile deliberately takes tracks (about a quarter of the route paved); the touring profile is two thirds paved at the same length. A gravel rider who still asks for paved surfaces wants the second."
+    },
+    {
+      "id": "goslar-gravel-prefer-paved",
+      "title": "Braunschweig -> Goslar by gravel bike, preferring paved surfaces",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 10.4294,
+          "lat": 51.9055
+        },
+        "constraints": {
+          "bike_type": "gravel",
+          "prefer_surfaces": [
+            "paved",
+            "asphalt"
+          ]
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 44000,
+          "max": 70000
+        }
+      },
+      "rationale": "Gravel 58 km at half paved, touring 47.5 km at 81 % paved, mtb 51.5 km at a third: with paved preferred the shorter, mostly hard-surfaced touring route is the sensible pick, not the longest."
+    },
+    {
+      "id": "hannover-road-prefer-paved",
+      "title": "Braunschweig -> Hannover by road bike, preferring paved surfaces (control)",
+      "request": {
+        "origin": {
+          "lon": 10.5267132,
+          "lat": 52.2689081
+        },
+        "destination": {
+          "lon": 9.732,
+          "lat": 52.3759
+        },
+        "constraints": {
+          "bike_type": "road",
+          "prefer_surfaces": [
+            "paved"
+          ]
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 55000,
+          "max": 85000
+        }
+      },
+      "rationale": "The control: the road-bike profile is already 95 % paved, the commuter profile 65 %. Asking for paved on a road bike must not push the route to anything else."
+    },
+    {
+      "id": "goslar-brocken-gravel-prefer-gravel",
+      "title": "Goslar -> Brocken by gravel bike, preferring gravel surfaces",
+      "request": {
+        "origin": {
+          "lon": 10.4294,
+          "lat": 51.9055
+        },
+        "destination": {
+          "lon": 10.6167,
+          "lat": 51.8011
+        },
+        "constraints": {
+          "bike_type": "gravel",
+          "prefer_surfaces": [
+            "gravel"
+          ],
+          "avoid_high_traffic_roads": false
+        }
+      },
+      "expectations": {
+        "distance_m": {
+          "min": 20000,
+          "max": 40000
+        }
+      },
+      "rationale": "The opposite preference, for a forest climb on tracks: the gravel and mtb profiles are 23-29 % paved, touring 44 %. Preferring gravel surfaces must keep the track-heavy profile on top; the engine's coarse 'unpaved' class (compacted + loose + soft) is the evidence."
     }
   ]
 }

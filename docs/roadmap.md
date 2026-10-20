@@ -46,12 +46,12 @@ decisions still open.
   calibration run (all-or-nothing over the candidate set, a 50 % detour cap, the alternative-profile
   margin; four `-quiet` benchmark cases, the calibration harness sweeps the weight). See
   [scoring-and-exports.md](scoring-and-exports.md#traffic-issue-23) for the evidence and its limits (one
-  region, BRouter only). Surface half built earlier: `prefer_surfaces`/`avoid_surfaces` resolve to
-  categories, a known-length-based `surface_fit` is computed from the enrichment and reported in
-  `score_breakdown`, and it ships **inactive** (`SURFACE_WEIGHT = 0.0`): switching it on needs a calibration
-  run with enrichment ([how](scoring-and-exports.md#enabling-the-surface-component)). Still open: that
-  surface run and the weight it justifies, other regions for the traffic weight, and traffic from engines
-  that give no road tags.
+  region, BRouter only). Surface half done too: `prefer_surfaces`/`avoid_surfaces` resolve to categories and
+  a known-length-based `surface_fit` is computed from the OSM enrichment or, without it, from the
+  engine's own surface shares, scored with `SURFACE_WEIGHT = 1.0` chosen from a calibration run
+  ([evidence](scoring-and-exports.md#surface-weight-evidence)). Still open: other regions for both
+  weights, a calibration run with OSM enrichment (finer categories, needs a stable Overpass), and traffic
+  and surface from engines that give no road tags.
 - **`return_to_origin`** -- done: loop requests synthesize two way-points
   around the origin and route back to the start (`loop_direction` picks
   handedness; caller-supplied `via` is honored verbatim). Provider-native

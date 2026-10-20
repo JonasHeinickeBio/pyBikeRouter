@@ -56,10 +56,10 @@ Enrichment output feeds the surface fit of the scorer (issue #23):
 (re-based onto the known length, never counting `unknown_fraction` for or
 against a route) -- see
 [scoring-and-exports.md](scoring-and-exports.md#surface-preferences-issue-23).
-The component ships inactive (`SURFACE_WEIGHT = 0.0`) until
-`scripts/calibrate.py` evidence justifies a weight, so enrichment is still
-chiefly explanation/uncertainty material plus the evidence base for the
-calibration harness in `benchmarks/`.
+The component is active (`SURFACE_WEIGHT = 1.0`, from a calibration run) for requests that state
+surface preferences, and it does not need enrichment: without it the scorer reads BRouter's own surface
+shares (coarser: paved / unpaved / cobbles). Enrichment, when it is on, has the finer categories and is
+used instead; it is also the evidence base for the calibration harness in `benchmarks/`.
 
 ## Configuration
 

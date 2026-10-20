@@ -166,10 +166,19 @@ def test_breakdown_reports_surface_only_when_computable():
     assert with_data["surface_known_share"] == pytest.approx(0.9)
 
 
-def test_surface_is_inactive_by_default_so_scores_are_unchanged():
+def test_a_request_without_surface_preferences_is_scored_exactly_as_before():
+    cands = [_surface_candidate("a", {"paved": 1.0}), _surface_candidate("b", {"loose": 1.0})]
+    together = score_candidates_together(cands, RouteConstraints())
+    assert [round(s, 9) for s, _ in together] == [
+        round(score_candidate(c, RouteConstraints())[0], 9) for c in cands
+    ]
+    assert all("surface_weight_applied" not in b for _, b in together)
+
+
+def test_a_surface_weight_of_zero_switches_the_term_off():
     constraints = RouteConstraints(prefer_surfaces=["paved"])
     cands = [_surface_candidate("a", {"paved": 1.0}), _surface_candidate("b", {"loose": 1.0})]
-    together = score_candidates_together(cands, constraints)
+    together = score_candidates_together(cands, constraints, surface_weight=0.0)
     assert [round(s, 9) for s, _ in together] == [
         round(score_candidate(c, constraints)[0], 9) for c in cands
     ]
@@ -180,7 +189,9 @@ def test_active_surface_term_reorders_and_stays_in_unit_range():
     constraints = RouteConstraints(prefer_surfaces=["paved"], target_distance_km=20)
     near_but_loose = _surface_candidate("loose", {"loose": 1.0}, distance_m=20_000)
     farther_but_paved = _surface_candidate("paved", {"paved": 1.0}, distance_m=21_000)
-    base = score_candidates_together([near_but_loose, farther_but_paved], constraints)
+    base = score_candidates_together(
+        [near_but_loose, farther_but_paved], constraints, surface_weight=0.0
+    )
     assert base[0][0] > base[1][0]  # distance alone prefers the loose route
     scored = score_candidates_together(
         [near_but_loose, farther_but_paved], constraints, surface_weight=0.5
@@ -368,3 +379,113 @@ def test_the_calibration_ranking_follows_the_production_rule_and_sweeps_the_weig
         [busy, quiet], RouteConstraints(avoid_high_traffic_roads=False)
     )
     assert len({tuple(v) for v in unasked.values()}) == 1  # inactive: the same everywhere
+
+
+# ----------------------------------------------- surface from the engine's own shares (issue #23)
+
+
+def _engine_candidate(profile: str, shares: dict[str, float], km: float = 66.0, **kw):
+    return RouteCandidate(
+        provider="brouter",
+        provider_profile=profile,
+        geometry_geojson={"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+        metrics=RouteMetrics(distance_m=km * 1000, engine_surface_shares=shares, **kw),
+        provenance={} if profile == "main" else {"alternative_of": "main"},
+    )
+
+
+def test_the_shipped_surface_weight_is_the_calibrated_one():
+    assert basic.SURFACE_WEIGHT == 1.0  # docs/scoring-and-exports.md, "Surface weight: evidence"
+
+
+def test_the_engines_shares_give_a_surface_fit_when_there_is_no_enrichment():
+    candidate = _engine_candidate(
+        "p", {"paved": 0.5, "unpaved": 0.2, "cobbles": 0.1, "unknown": 0.2}
+    )
+    fit, known = surface_fit(candidate, RouteConstraints(prefer_surfaces=["paved"]))
+    assert fit == pytest.approx(0.5 / 0.8) and known == pytest.approx(0.8)  # of the known length
+    fit, _ = surface_fit(candidate, RouteConstraints(avoid_surfaces=["cobblestone"]))
+    assert fit == pytest.approx(1 - 0.1 / 0.8)  # a raw OSM value resolves to a category first
+    both, _ = surface_fit(
+        candidate, RouteConstraints(prefer_surfaces=["paved"], avoid_surfaces=["sett"])
+    )
+    assert both == pytest.approx((0.5 / 0.8 + (1 - 0.1 / 0.8)) / 2)
+
+
+@pytest.mark.parametrize("token", ["gravel", "compacted", "dirt", "loose", "natural_soft"])
+def test_every_unpaved_category_is_read_as_the_engines_unpaved_class(token):
+    candidate = _engine_candidate(
+        "p", {"paved": 0.4, "unpaved": 0.6, "cobbles": 0.0, "unknown": 0.0}
+    )
+    fit, _ = surface_fit(candidate, RouteConstraints(prefer_surfaces=[token]))
+    assert fit == pytest.approx(0.6)
+
+
+def test_a_preference_the_engine_cannot_tell_apart_is_not_judged():
+    candidate = _engine_candidate(
+        "p", {"paved": 0.4, "unpaved": 0.6, "cobbles": 0.0, "unknown": 0.0}
+    )
+    # compacted and loose are both "unpaved" to the engine: preferring one and avoiding the other
+    # is a question it cannot answer, so there is no fit (never a guess)
+    conflicting = RouteConstraints(prefer_surfaces=["compacted"], avoid_surfaces=["loose"])
+    assert surface_fit(candidate, conflicting) is None
+
+
+def test_no_engine_shares_or_all_unknown_means_no_fit():
+    constraints = RouteConstraints(prefer_surfaces=["paved"])
+    assert surface_fit(_engine_candidate("p", {}), constraints) is None
+    unknown = _engine_candidate("p", {"paved": 0.0, "unpaved": 0.0, "cobbles": 0.0, "unknown": 1.0})
+    assert surface_fit(unknown, constraints) is None
+
+
+def test_the_osm_enrichment_wins_over_the_engines_shares_when_both_exist():
+    candidate = _engine_candidate(
+        "p",
+        {"paved": 0.9, "unpaved": 0.0, "cobbles": 0.0, "unknown": 0.1},
+        surface_coverage={"loose": 0.8},
+        unknown_surface_fraction=0.2,
+    )
+    fit, known = surface_fit(candidate, RouteConstraints(prefer_surfaces=["paved"]))
+    assert fit == 0.0 and known == pytest.approx(0.8)  # the finer source decides
+
+
+def test_a_gravel_rider_who_asks_for_paved_gets_the_paved_alternative_of_equal_length():
+    """The clearest case of the calibration (Braunschweig -> Hannover)."""
+    main = _engine_candidate(
+        "main", {"paved": 0.26, "unpaved": 0.58, "cobbles": 0.07, "unknown": 0.1}
+    )
+    alt = _engine_candidate(
+        "touring", {"paved": 0.65, "unpaved": 0.15, "cobbles": 0.14, "unknown": 0.06}
+    )
+    constraints = RouteConstraints(bike_type="gravel", prefer_surfaces=["paved"])
+
+    def best(**kw):
+        results = score_candidates_together([main, alt], constraints, **kw)
+        ranked = rank_candidates(
+            [
+                c.model_copy(update={"score": s, "score_breakdown": b})
+                for c, (s, b) in zip([main, alt], results, strict=True)
+            ]
+        )
+        return ranked[0].provider_profile
+
+    assert best(surface_weight=0.0) == "main"  # the term off: the bike type's own profile
+    assert best() == "touring"  # shipped weight: the stated preference decides
+    plain = score_candidates_together([main, alt], RouteConstraints(bike_type="gravel"))
+    assert plain[0][0] == plain[1][0]  # no preference stated: nothing changes
+
+
+def test_one_candidate_from_another_engine_without_shares_switches_the_term_off_for_all():
+    other = RouteCandidate(
+        provider="ors",
+        provider_profile="cycling-regular",
+        geometry_geojson={"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
+        metrics=RouteMetrics(distance_m=66_000),
+    )
+    engine = _engine_candidate(
+        "main", {"paved": 0.2, "unpaved": 0.8, "cobbles": 0.0, "unknown": 0.0}
+    )
+    results = score_candidates_together(
+        [engine, other], RouteConstraints(prefer_surfaces=["paved"])
+    )
+    assert all("surface_weight_applied" not in breakdown for _, breakdown in results)

@@ -56,7 +56,9 @@ unknown stays unknown. Preferring and avoiding the same *category* (e.g.
 `asphalt` and `concrete`) is rejected as contradictory.
 
 `surface_fit` is computed from `metrics.surface_coverage` (populated by the
-[OSM enricher](enrichment.md)) **re-based onto the known length**: coverage
+[OSM enricher](enrichment.md), which is off by default) or, when there is none, from the engine's own
+`metrics.engine_surface_shares` (BRouter's way tags; see
+[the engine evidence](#evidence-from-the-engines-own-surface-shares) below) **re-based onto the known length**: coverage
 shares are of the whole route and sum with `unknown_surface_fraction` to 1,
 so an unmapped stretch is neither credited nor held against the route; it
 lowers only the *evidence* (`surface_known_share`). `surface_fit` is the mean
@@ -79,24 +81,59 @@ score = (0.65 * distance_fit + 0.35 * elevation_fit + SURFACE_WEIGHT * surface_f
 so scores stay in [0, 1], and a request without surface preferences scores
 exactly as before.
 
-#### Enabling the surface component
+#### Evidence from the engine's own surface shares
 
-`SURFACE_WEIGHT` (`scoring/basic.py`) ships at **0.0**: the component is
-computed and reported but does not move scores, because no calibration run
-has yet justified a value (the project rule: weights come from evidence).
-To produce that evidence:
+OSM enrichment is off by default, so on its own the surface term would almost never have had data.
+BRouter already tells how much of each route is on which surface (`surface` tags of the ways it used),
+reduced to four classes: `paved`, `unpaved`, `cobbles` and `unknown`. When `surface_coverage` is
+empty, `surface_fit` is computed from those shares, with the same re-basing onto the known length and
+the same all-or-nothing rule over the candidate set (a candidate from an engine without shares -- ORS,
+Valhalla -- switches the term off for everyone). The categories map onto the engine's classes like this:
 
-1. start the engines you want compared and set `OSM_ENRICHMENT_ENABLED=true`;
-2. `poetry run python scripts/calibrate.py --out calibration-report.json`;
-3. read, per surface-preference case (`*-prefer-*`, `*-avoid-*`,
-   `*-hard-surfaces`): the `[surface evidence: n/m candidates]` count (an
-   inactive component needs evidence on *every* candidate), and whether the
-   ranking is `surface-weight-sensitive` across `surface=0.00 .. 0.30`
-   (`SURFACE_WEIGHT_GRID`);
-4. if rankings change only where surface evidence is real and the change
-   matches local judgement, set `SURFACE_WEIGHT` to the smallest weight that
-   achieves it and record the report in the PR; if nothing changes, more
-   cases are the answer, not a bigger weight.
+| Category stated | Engine class |
+| --- | --- |
+| `paved` | `paved` |
+| `masonry` (setts, paving stones, cobbles) | `cobbles` |
+| `compacted`, `loose`, `natural_soft` | `unpaved` |
+
+The engine's resolution is coarser than the categories, which has two consequences, both deliberate:
+
+- Asking for `gravel` (`loose`) is read as asking for the engine's whole `unpaved` class, which also
+  holds compacted and soft ground: it can say "more off-road", not "more gravel".
+- Preferring one category and avoiding another that share an engine class (prefer `compacted`, avoid
+  `loose`) is a question the engine cannot answer, so there is **no fit** -- the term is off for that
+  request -- rather than a guess. OSM enrichment, when it ran, has the finer data and is used instead.
+
+`masonry` is named "cobbles" by the engine but also covers flat paving stones; the fit counts it only
+when you prefer or avoid `masonry` (or a raw value such as `cobblestone`, `sett`, `paving_stones`).
+
+#### Surface weight: evidence
+
+`SURFACE_WEIGHT` was 0.0 until this run (the project rule: weights come from evidence). Run:
+`scripts/calibrate.py --engines brouter` against the live BRouter, no enrichment, on the benchmark's
+seven preference cases (four older ones, four added with this change; the control cases are there to
+catch a preference pushing a route somewhere it should not go). The ranking is the production one,
+including the traffic term and the margin an alternative profile needs, swept over
+`SURFACE_WEIGHT_GRID = 0, 0.1, 0.2, 0.3, 0.5, 1.0`:
+
+| Case | Result |
+| --- | --- |
+| `bs-hannover-gravel-prefer-paved` (gravel bike, paved) | gravel profile (26 % paved) until **~0.72**, then the touring profile (65 % paved, same length). Flips at 0.75-1.0 |
+| `hannover-road-prefer-paved` (road bike, paved; control) | commuter (65 % paved, quiet) at 0-0.1, `fastbike` (95 % paved, busy) from 0.2: the stated surface preference outweighs the default traffic preference |
+| `goslar-gravel-prefer-paved` (gravel bike, paved) | gravel profile throughout: the touring route is 81 % paved against 50 %, but the gravel route's 28 % unknown length is left out of the share, so the fits are 0.87 against 0.70 and never clear the margin |
+| `goslar-brocken-gravel-prefer-gravel`, `bs-okerradweg-prefer-unpaved`, `bs-city-hop-prefer-paved`, `bs-oldtown-avoid-cobble` | no change at any weight |
+
+**1.0** is the shipped weight: the clearest case flips at about 0.72 (found with a finer search on the
+measured routes) and 1.0 leaves headroom, while no other case moves between 0.5 and 1.0. It only affects
+requests that state surface preferences (the form's "Prefer surfaces" / "Avoid surfaces", a chat "prefer
+paved"); everyone else is scored exactly as before. `SURFACE_WEIGHT = 0.0` switches it off.
+
+What this does not show: one region, BRouter only, seven cases, and the engine's coarse classes. The
+case that does not flip (`goslar-gravel-prefer-paved`) shows a limit rather than a success: when a lot of
+a route's surface is unknown, the fit rests on a smaller share and discriminates less, which is the
+unknown-is-unknown policy working as designed. Re-run it for your region:
+`BROUTER_BASE_URL=... python scripts/calibrate.py --engines brouter --out report.json`, and read
+`surface_sensitivity` and `surface_evidence` per case.
 
 ### Traffic (issue #23)
 
