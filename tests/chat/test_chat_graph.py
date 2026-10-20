@@ -377,9 +377,9 @@ async def test_sights_along_the_route_are_listed_and_a_stop_can_be_offered():
     assert "- Rammelsberg (described in 36 languages), 1210 m off the route" in r.reply
     assert "- viewpoint" in r.reply and r.suggestions == ["Route past 2 sights"]
     assert sights.lines[0][0] == [10.5, 52.2]
-    # For a loop no stop is offered (the API does not allow it).
+    # A loop can pass sights too (stops are looked for along the circuit).
     await t.say("30 km loop from Goslar")
-    assert (await t.say("any castles near the route")).suggestions == []
+    assert (await t.say("any castles near the route")).suggestions == ["Route past 2 sights"]
 
 
 async def test_sights_are_reported_when_none_or_unavailable():

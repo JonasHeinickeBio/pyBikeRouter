@@ -348,14 +348,15 @@ class RoutePlanAPIRequest(BaseModel):
         elif self.destination is None:
             raise ValueError("destination is required unless return_to_origin is set")
         if self.poi_stops is not None:
-            if self.constraints.return_to_origin:
+            from bike_routing_agent.loops import SYNTHESIZED_VIA_COUNT
+
+            # A loop without via points of its own is drawn with the synthesized ones.
+            base = len(self.via) or (
+                SYNTHESIZED_VIA_COUNT if self.constraints.return_to_origin else 0
+            )
+            if base + self.poi_stops.count > MAX_VIA_POINTS:
                 raise ValueError(
-                    "poi_stops is not supported with return_to_origin: a loop has no "
-                    "origin-destination corridor to look in"
-                )
-            if len(self.via) + self.poi_stops.count > MAX_VIA_POINTS:
-                raise ValueError(
-                    f"via ({len(self.via)}) plus poi_stops.count ({self.poi_stops.count}) "
+                    f"via ({base}) plus poi_stops.count ({self.poi_stops.count}) "
                     f"exceeds the {MAX_VIA_POINTS} via points an engine accepts"
                 )
         return self

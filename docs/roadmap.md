@@ -127,7 +127,8 @@ decisions still open.
 - **Points of interest** -- done (issue #55): Overpass search along a route or in
   a map view, fame from Wikidata sitelinks, Wikipedia/Wikivoyage/Commons details,
   a map filter, *add to route*, and routing past the most famous sights
-  ([pois.md](pois.md)). Open follow-ups: stops for loops, POI-aware scoring
+  ([pois.md](pois.md)). Stops for loops are done (searched along the circuit, which is drawn smaller to make room; see
+  [pois.md](pois.md#loops)). Open follow-ups: POI-aware scoring
   (needs calibration evidence), opening-hours awareness against the arrival time,
   a self-hosted Overpass in the compose stack, and pageview counts as a second
   fame signal.

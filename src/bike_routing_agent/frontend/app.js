@@ -1518,17 +1518,15 @@ async function initPois() {
 
 function updatePoiStopsAvailability() {
   const loop = els.returnOrigin.checked;
-  els.poiStopsEnabled.disabled = loop;
-  if (loop) els.poiStopsEnabled.checked = false;
   els.poiStopsField.hidden = !els.poiStopsEnabled.checked;
   els.poiStopsHint.textContent = loop
-    ? "Not available for loops: a loop has no origin-to-destination corridor to look in."
+    ? "Looks for the best-known sights close to the loop (within 2 km) and routes past them; the loop is drawn a little smaller to make room for the detours. Uses the sight kinds ticked above."
     : "Picks the best-known sights between origin and destination (by how many languages describe them) and adds them as stops. Uses the sight kinds ticked above.";
 }
 
 /** The `poi_stops` part of a plan request, or null when not asked for. */
 function poiStopsRequest() {
-  if (!state.poiCategories.length || !els.poiStopsEnabled.checked || els.returnOrigin.checked) return null;
+  if (!state.poiCategories.length || !els.poiStopsEnabled.checked) return null;
   const sights = state.poiCategories.filter((c) => c.kind === "sight").map((c) => c.key);
   const chosen = state.poiPrefs.keys.filter((k) => sights.includes(k));
   return { count: Number(els.poiStopsCount.value), categories: chosen.length ? chosen : sights };

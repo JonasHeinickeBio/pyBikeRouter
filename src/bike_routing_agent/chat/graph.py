@@ -528,12 +528,9 @@ def build_chat_graph(
             )
             for p in found
         ]
-        is_loop = bool(
-            ((state.get("last_request") or {}).get("constraints") or {}).get("return_to_origin")
-        )
         return {
             "reply": "Well-known places near your route:\n" + "\n".join(rows),
-            "suggestions": [] if is_loop else ["Route past 2 sights"],
+            "suggestions": ["Route past 2 sights"],
         }
 
     async def explain(state: ChatState) -> dict[str, Any]:

@@ -208,20 +208,32 @@ def plan(**kw):
     )
 
 
-def test_poi_stops_cannot_combine_with_loops_or_overflow_the_via_limit():
+def loop(**extra):
+    return RoutePlanAPIRequest.model_validate(
+        {
+            "origin": "A",
+            "constraints": {"return_to_origin": True, "target_distance_km": 30},
+            **extra,
+        }
+    )
+
+
+def test_poi_stops_may_overflow_the_via_limit_but_a_loop_may_have_them():
     assert plan(poi_stops={"count": 3}).poi_stops.count == 3
-    with pytest.raises(ValueError, match="return_to_origin"):
-        RoutePlanAPIRequest.model_validate(
-            {
-                "origin": "A",
-                "constraints": {"return_to_origin": True, "target_distance_km": 30},
-                "poi_stops": {},
-            }
-        )
     vias = [{"lon": 10.0 + i / 100, "lat": 47.5} for i in range(9)]
     with pytest.raises(ValueError, match="via points"):
         plan(via=vias, poi_stops={"count": 2})
     assert plan(via=vias, poi_stops={"count": 1}).poi_stops.count == 1
+
+
+def test_a_loop_may_ask_for_sight_stops_within_the_via_limit_it_shares_with_its_own_circuit():
+    # A loop without via points of its own is drawn with two synthesized ones.
+    assert loop(poi_stops={"count": 3}).poi_stops.count == 3
+    assert loop(poi_stops={"count": 5}).poi_stops.count == 5  # 2 + 5 is within the 10 vias
+    vias = [{"lon": 10.0 + i / 100, "lat": 47.5} for i in range(8)]
+    with pytest.raises(ValueError, match="via points"):  # a loop the caller drew counts its own
+        loop(via=vias, poi_stops={"count": 3})
+    assert loop(via=vias, poi_stops={"count": 2}).poi_stops.count == 2
 
 
 class ScriptedGraph:

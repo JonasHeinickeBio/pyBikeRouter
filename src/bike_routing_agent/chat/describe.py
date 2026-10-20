@@ -206,7 +206,7 @@ def describe_plan(plan: dict[str, Any]) -> str:
             "none_found": "I found no well-known sights along this trip",
             "unavailable": "the sight lookup is not available right now",
             "dropped": "the routing engines could not reach the sights by bike",
-            "unsupported": "sight stops do not work for loops",
+            "unsupported": "this loop cannot be drawn with sight stops (it needs a size)",
         }
         lines.append(f"No sight stops: {reasons[plan['poi_stops_status']]}.")
     lines.extend(optimization_lines(plan))

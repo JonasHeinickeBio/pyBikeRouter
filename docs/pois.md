@@ -94,12 +94,35 @@ The response lists them in `poi_stops` with `poi_stops_status`:
 | `ok` | the stops were added |
 | `none_found` | nothing well-known in the corridor; planned without |
 | `unavailable` | POIs are off or Overpass/Wikidata failed; planned without (no "most famous" is ever guessed) |
-| `unsupported` | loops (`return_to_origin`) have no origin-destination corridor |
+| `unsupported` | a loop that cannot be drawn: no size (`target_distance_km`) or a start within half a degree of a pole |
 | `dropped` | the engines could not route through the stops (a POI is a point on the map, not on a road); planned again without them |
 
-Limits: not for loops; stops are chosen near the *straight line*, so on a very
+Limits: stops are chosen near the *straight line*, so on a very
 winding trip a stop can add a long detour -- the route's distance and the
 `max_distance_km` warnings show it.
+
+## Loops
+
+A loop (`return_to_origin`) can pass sights too. It has no destination, so the line the sights are searched
+along is the **circuit itself**: the start, the corners of the loop and back to the start. The corners
+are your own `via` points when you drew the loop, else the ones the loop synthesis would use for
+`target_distance_km`. Differences from the point-to-point case:
+
+- the corridor is **at most 2 km** (`corridor_km` is capped there): a stop on a loop is a detour out and
+  back, and the loop has a size to keep;
+- stops are merged into the corners **in loop order** (position along the circuit), and a stop within 3 %
+  of the start is not taken;
+- when the circuit is synthesized it is **drawn smaller by the detours the stops add** (twice each
+  stop's distance from the circuit, never below 70 % of the asked size), so the loop comes out near the
+  size you asked for. A loop you drew yourself is left as it is: only the stops are added, and its length
+  grows by the detours;
+- the corners and the stops share the engines' 10 via points (a loop without `via` counts its 2 synthesized
+  corners; `poi_stops.count` is at most 5);
+- as ever best effort: with no sights found, or the lookup unavailable, the loop is planned as before
+  and `poi_stops_status` says why.
+
+The real route is whatever the engine finds through those points: check the length against the size
+you asked for (the explanation and `max_distance_km` warnings show it).
 
 ## The map
 
@@ -209,7 +232,7 @@ page that does not exist). The front-end helpers in `frontend/pois.js` run under
 - The `dropped` fallback (the engines cannot route through a stop) is unit-tested. One real
   run reported it; the cause could not be reproduced afterwards, so it is not understood.
 - Stops are chosen near the **straight line** origin -> destination; on a winding trip a
-  stop can add a long detour. Loops are rejected.
+  stop can add a long detour. A loop's stops are looked for along the circuit (see above).
 - Opening hours are shown as mapped and not compared with the arrival time.
 - No self-hosted Overpass, no pageview-based fame, no scoring effect -- see the roadmap.
 - The Overpass quirks above are those of one day's public instance; if they no longer

@@ -143,7 +143,7 @@ def test_option_mistakes_are_usage_errors_before_any_routing(extra, fragment):
     assert code == 2 and fragment in err and graph.invoked_with is None
 
 
-def test_stops_cannot_be_combined_with_a_loop_or_free_text():
+def test_a_loop_may_ask_for_sight_stops():
     graph = FakeGraph(ready_state())
     out, err = io.StringIO(), io.StringIO()
     code = route_cmd.run(
@@ -151,7 +151,15 @@ def test_stops_cannot_be_combined_with_a_loop_or_free_text():
               "--poi-stops", "2"),
         out, err, graph_factory=lambda: graph,
     )  # fmt: skip
-    assert code == 2 and "return_to_origin" in err.getvalue() and graph.invoked_with is None
+    assert code == 0
+    request = (graph.invoked_with or {})["raw_input"]
+    assert request["poi_stops"]["count"] == 2
+    assert request["constraints"]["return_to_origin"] is True
+
+
+def test_stops_cannot_be_combined_with_free_text():
+    graph = FakeGraph(ready_state())
+    out, err = io.StringIO(), io.StringIO()
     code = route_cmd.run(
         parse("route", "plan", "--text", "a ride", "--poi-stops", "2"),
         out, err, graph_factory=lambda: graph,
