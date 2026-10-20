@@ -166,3 +166,39 @@ async def test_the_adapter_puts_the_stretches_on_the_candidate(with_messages):
         ]
     else:
         assert candidate.stretches == []
+
+
+def test_a_real_brouter_excerpt_matches_without_any_coordinate_offset():
+    """The first rows of a real BRouter route (Hannover): message coordinates are plain degrees
+    times 1e6, e.g. 9732014 for 9.732014, with no 180/90 degree offset."""
+    geometry = [
+        [9.732029, 52.375892, 53.0],
+        [9.732014, 52.375866, 53.0],
+        [9.73206, 52.375858, 53.0],
+        [9.732078, 52.375855, 53.0],
+        [9.732123, 52.375848, 53.0],
+        [9.732147, 52.375841, 53.0],
+    ]
+
+    def real(lon, lat, distance, tags):
+        return [lon, lat, "50", distance, "0", "0", "0", "0", "0", tags, "", "0", "0"]
+
+    tertiary = (
+        "reversedirection=yes highway=tertiary surface=asphalt oneway=yes "
+        "cycleway:right=lane cycleway:left=no"
+    )
+    cycleway = "highway=cycleway surface=asphalt oneway=no route_bicycle_lcn=yes"
+    pedestrian = "reversedirection=yes highway=pedestrian surface=paving_stones foot=designated"
+    rows = [
+        real("9732014", "52375866", "3", tertiary),
+        real("9732078", "52375855", "4", cycleway),
+        real("9732123", "52375848", "3", cycleway),
+        real("9732147", "52375841", "2", pedestrian),
+    ]
+    got = stretches_from([HEADER, *rows], geometry)
+    # the rows end at vertices 1, 3, 4 and 5 (vertex 2 lies inside a segment)
+    assert as_tuples(got) == [
+        (0, 1, "paved", "some"),  # a tertiary road with a lane
+        (1, 4, "paved", "off_road"),  # two cycleway segments, merged
+        (4, 5, "cobbles", "off_road"),  # paving stones on a pedestrian way
+    ]
