@@ -35,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 ComponentStatusName = Literal["ok", "degraded", "unavailable", "unknown"]
 OverallStatus = Literal["ok", "degraded", "unavailable"]
-ComponentKind = Literal["routing", "geocoder", "database", "artifact_store", "cache", "weather"]
+ComponentKind = Literal[
+    "routing", "geocoder", "database", "artifact_store", "cache", "weather", "pois"
+]
 
 _VALID_STATUSES = ("ok", "degraded", "unavailable", "unknown")
 # "unknown" is what the public ORS reports (it has no health endpoint): no
@@ -215,6 +217,7 @@ def build_health_monitor(
     history: Any | None,
     cache: Any | None = None,
     weather: Any | None = None,
+    poi: Any | None = None,
     database_is_critical: bool,
     timeout_s: float,
     ttl_s: float,
@@ -258,6 +261,18 @@ def build_health_monitor(
                 "weather",
                 "weather",
                 _call_health(weather, "health"),
+                required=False,
+                ttl_s=max(ttl_s, geocoder_ttl_s),
+            )
+        )
+    if poi is not None:
+        # Sights are a bonus (map markers, stops): an outage degrades the instance, never readies
+        # it away. The public Overpass is the flakiest part of the stack, so it gets its own line.
+        components.append(
+            Component(
+                "overpass",
+                "pois",
+                _call_health(poi, "health"),
                 required=False,
                 ttl_s=max(ttl_s, geocoder_ttl_s),
             )

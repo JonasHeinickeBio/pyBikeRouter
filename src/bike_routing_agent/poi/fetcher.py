@@ -46,6 +46,10 @@ _MAX_ERROR_BODY_CHARS = 300
 _CACHE_SCHEMA = 1
 
 
+# A status request that takes longer than this is as good as no answer (the search waits longer).
+HEALTH_PROBE_TIMEOUT_S = 4.0
+
+
 class OverpassPoiFetcher:
     name = "overpass-poi"
 
@@ -172,6 +176,44 @@ class OverpassPoiFetcher:
                 key, [p.model_dump(mode="json") for p in pois], ttl_s=self._cache_ttl_s
             )
         return pois
+
+    @staticmethod
+    def _status_url(url: str) -> str:
+        """Overpass's status endpoint (``.../api/status``) for an interpreter URL
+        (``.../api/interpreter``): a cheap request that answers even while queries queue up."""
+        return url.rsplit("/", 1)[0] + "/status" if url.endswith("/interpreter") else url
+
+    async def health(self) -> dict[str, Any]:
+        """Does an Overpass instance answer? One short request to the status endpoint of each
+        configured instance in turn, stopping at the first that does.
+
+        ``ok``: the first instance answers; ``degraded``: it does not but a later one does (the
+        search falls back to it) or it answers with an error code; ``unavailable``: none answers
+        in time. The budget per instance is short (``HEALTH_PROBE_TIMEOUT_S``): the search itself
+        waits tens of seconds, a status page must not.
+        """
+        code: int | None = None
+        for index, base in enumerate(self._base_urls):
+            try:
+                if self._client is not None:
+                    response = await self._client.get(
+                        self._status_url(base),
+                        headers={"User-Agent": self._user_agent},
+                        timeout=HEALTH_PROBE_TIMEOUT_S,
+                    )
+                else:
+                    async with httpx.AsyncClient(
+                        timeout=HEALTH_PROBE_TIMEOUT_S, headers={"User-Agent": self._user_agent}
+                    ) as client:
+                        response = await client.get(self._status_url(base))
+            except httpx.HTTPError:  # a timeout, a refused connection ...
+                continue
+            if response.status_code == 200:
+                return {"status": "ok" if index == 0 else "degraded"}
+            code = response.status_code  # it answered, but with an error
+        if code is not None:
+            return {"status": "degraded", "status_code": code}
+        return {"status": "unavailable"}
 
     async def _post(self, query: str) -> Any:
         """POST to each configured instance in turn; the first usable answer wins.

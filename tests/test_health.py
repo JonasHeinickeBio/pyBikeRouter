@@ -495,3 +495,20 @@ async def test_a_weather_outage_degrades_but_never_makes_the_instance_unready():
     weather = next(c for c in report.components if c.kind == "weather")
     assert (weather.status, weather.required) == ("unavailable", False)
     assert (report.status, report.ready) == ("degraded", True)
+
+
+async def test_the_sight_lookup_is_an_optional_component_that_degrades_but_never_gates():
+    class Pois:
+        def __init__(self, status):
+            self.status = status
+
+        async def health(self):
+            return {"status": self.status}
+
+    up = await build(poi=Pois("ok")).check()
+    line = next(c for c in up.components if c.kind == "pois")
+    assert (line.name, line.required, line.status) == ("overpass", False, "ok")
+    down = await build(poi=Pois("unavailable")).check()
+    assert next(c for c in down.components if c.kind == "pois").status == "unavailable"
+    assert (down.status, down.ready) == ("degraded", True)  # sights are a bonus, plans still work
+    assert not any(c.kind == "pois" for c in (await build().check()).components)  # POIs off

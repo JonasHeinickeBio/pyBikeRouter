@@ -105,9 +105,11 @@ decisions still open.
   negative caching of not-found geocodes, and metrics on hit rates.
 - **Provider health over HTTP** -- done (issue #25): `GET /readyz`
   aggregates cached, time-bounded probes of the routing engines, geocoder,
-  artifact store and database ([api.md](api.md#get-readyz)). Open
-  follow-ups: a UI status badge, reporting the shared cache once it exists,
-  and a real Pelias probe if Pelias is ever served on its own.
+  artifact store, weather, the sight lookup (Overpass) and database
+  ([api.md](api.md#get-readyz)), and the web page shows it as a status dot
+  with a list ([web-ui.md](web-ui.md#service-status)). Open follow-ups:
+  reporting the shared cache once it exists, and a real Pelias probe if
+  Pelias is ever served on its own.
 - **Artifact lifecycle** -- done (issue #27): `ArtifactStore` gained
   `list_artifacts`/`delete`, an S3-compatible backend (`ARTIFACT_BACKEND=s3`,
   `s3` dev compose profile) and `bike-router retention prune` expire plans and

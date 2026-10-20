@@ -481,8 +481,9 @@ healthchecks should call.
 ## GET /readyz
 
 Readiness (issue #25): *can this instance plan right now?* It probes every
-configured routing engine, the geocoder, the artifact store and, when a
-database is configured, the database.
+configured routing engine, the geocoder, the artifact store, the weather
+service, the sight lookup (`overpass`, kind `pois`) and, when a database is
+configured, the database.
 
 ```json
 {
@@ -515,6 +516,13 @@ instance unready.
 
 Notes:
 
+- The **sight lookup** (`overpass`, `kind: "pois"`) is optional like the weather: it probes the status
+  endpoint of each configured Overpass instance (`.../api/status`, a cheap request that answers while
+  queries queue up) with a 4 s budget per instance. `ok`: the first instance answers; `degraded`: only a
+  later one does, or it answers with an error code (`HTTP 502`); `unavailable`: none answers. An outage
+  degrades the instance (`200`), it never makes it unready: plans work without sights. The public
+  instances are often overloaded, so this line is the one most likely to be amber.
+- The web page shows these as a dot next to the title (below).
 - With `ROUTING_PROVIDER=all`, one working engine is enough; none of them is
   individually `required`. With a single engine it is.
 - History is recorded best effort, so the `database` component only gates
