@@ -165,7 +165,8 @@ def test_the_waypoints_come_before_the_track_and_the_metadata_has_the_descriptio
     order = [child.tag.removeprefix(NS) for child in root]
     assert order == ["metadata", "wpt", "wpt", "wpt", "trk"]
     desc = root.find(f"{NS}metadata/{NS}desc").text
-    assert "Open-Meteo.com" in desc and "+12 min" in desc
+    assert desc == forecast.description(weather().model_dump(mode="json"))  # credit and effect
+    assert desc.endswith("(CC BY 4.0)") and "+12 min" in desc
     meta = [child.tag.removeprefix(NS) for child in root.find(f"{NS}metadata")]
     assert meta == ["name", "desc", "extensions"]  # the schema's order
 

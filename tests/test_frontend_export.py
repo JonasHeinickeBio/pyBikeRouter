@@ -198,7 +198,7 @@ def test_the_gpx_forecast_matches_the_server_waypoint_for_waypoint():
     assert points[0][4] == "9 °C, rain 3 %, wind 20 km/h from NE, headwind 13 km/h"
     assert points[1][4] == "0 °C, rain 60 %, wind 8 km/h from N, tailwind 3 km/h"
     assert points[2][4] == "-1 °C"  # -1.5 rounds to -1 in both; no wind speed: no wind text
-    assert "+18 min" in desc and 'Open-Meteo.com & "DWD" <CC BY>' in desc
+    assert "+18 min" in desc and desc.endswith('& "DWD" <CC BY>')  # the credit, unescaped again
 
 
 def test_the_geojson_forecast_matches_the_servers_block():
