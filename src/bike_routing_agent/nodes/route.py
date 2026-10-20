@@ -174,7 +174,8 @@ def build_route_node(
         # is synthesized around the origin at the requested size, because
         # origin == destination alone would ask the engines for a
         # zero-length route.
-        loop_plan: dict[str, Any] | None = None
+        # The sight stops of a loop (select_poi_stops) draw the circuit themselves.
+        loop_plan: dict[str, Any] | None = state.get("loop_plan")
         if constraints.return_to_origin and not via:
             assert constraints.target_distance_km is not None  # RouteConstraints validator
             plan = synthesize_loop_vias(

@@ -217,7 +217,7 @@
       case "unavailable":
         return "The sight lookup is not available right now, so the route was planned without stops.";
       case "unsupported":
-        return "Famous-sight stops are not available for loops, so the route was planned without them.";
+        return "Famous-sight stops could not be set up for this loop (it needs a size and a start away from the poles), so the route was planned without them.";
       case "dropped":
         return "The routing engines could not reach the sights by bike, so the route was planned without them.";
       default:

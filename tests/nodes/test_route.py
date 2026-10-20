@@ -367,6 +367,22 @@ async def test_loop_with_caller_supplied_vias_keeps_the_callers_shape():
     assert update["loop_plan"] is None
 
 
+async def test_a_circuit_drawn_by_the_sight_stops_is_routed_as_it_is_and_keeps_its_plan():
+    """select_poi_stops draws the circuit when it adds stops to a loop: its vias (corners and
+    stops) are routed as given and its plan is what the explanation reports."""
+    router = CapturingRouter()
+    node = build_route_node(routing_providers=[router])
+
+    state = loop_state()
+    plan = {"vias": [], "radius_m": 2100.0, "reach_m": 3600.0, "direction": "counterclockwise"}
+    state["resolved_via"] = [{"lon": 10.6, "lat": 52.3}, {"lon": 10.55, "lat": 52.36}]
+    state["loop_plan"] = plan
+    update = await node(state)
+
+    assert [(v.lon, v.lat) for v in router.last_request.via] == [(10.6, 52.3), (10.55, 52.36)]
+    assert update["loop_plan"] == plan  # not reset to None
+
+
 async def test_ordinary_request_records_no_loop_plan():
     router = CapturingRouter()
     node = build_route_node(routing_providers=[router])

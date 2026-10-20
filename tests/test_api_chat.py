@@ -142,9 +142,7 @@ async def test_free_text_without_a_parser_falls_back_to_the_dialogue(client, pla
 
 
 async def test_a_request_the_api_would_reject_is_answered_not_a_422(client, planned):
-    body = (
-        await client.post("/v1/chat", json={"message": "30 km loop from Goslar past 2 castles"})
-    ).json()
+    body = (await client.post("/v1/chat", json={"message": "2000 km loop from Goslar"})).json()
     assert "That did not work" in body["reply"] and body["plan"] is None
     assert planned.requests == []  # rejected before routing
 

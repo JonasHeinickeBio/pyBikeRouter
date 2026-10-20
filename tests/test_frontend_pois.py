@@ -174,7 +174,7 @@ def test_thin_bounds_the_request_and_keeps_the_ends():
         ("ok", "Passing the best-known sights: Burg, Aussicht"),
         ("none_found", "planned without stops"),
         ("unavailable", "not available right now"),
-        ("unsupported", "not available for loops"),
+        ("unsupported", "could not be set up for this loop"),
         ("dropped", "could not reach the sights by bike"),
     ],
 )
