@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from bike_routing_agent.config import SURFACE_TAXONOMY
+from bike_routing_agent.models import RouteStretch
 
 MAIN_ROADS = frozenset(
     {
@@ -122,6 +123,15 @@ def segment_exposure(tags: dict[str, str]) -> float | None:
     return min(weight, 1.0)
 
 
+def traffic_band(exposure: float) -> str:
+    """The band (``busy`` / ``some`` / ``quiet`` / ``off_road``) of an estimated exposure."""
+    if exposure >= BUSY_FROM:
+        return "busy"
+    if exposure >= SOME_FROM:
+        return "some"
+    return "quiet" if exposure > 0 else "off_road"
+
+
 def traffic_summary(messages: Any) -> tuple[dict[str, float], float | None]:
     """``(length shares by traffic band, mean exposure)`` -- the bands are ``busy`` / ``some`` /
     ``quiet`` / ``off_road``, summing to 1; ``({}, None)`` when too little of the route carries
@@ -141,14 +151,7 @@ def traffic_summary(messages: Any) -> tuple[dict[str, float], float | None]:
             continue
         tagged += length
         weighted += exposure * length
-        if exposure >= BUSY_FROM:
-            bands["busy"] += length
-        elif exposure >= SOME_FROM:
-            bands["some"] += length
-        elif exposure > 0:
-            bands["quiet"] += length
-        else:
-            bands["off_road"] += length
+        bands[traffic_band(exposure)] += length
     if total <= 0 or tagged / total < MIN_TAGGED_SHARE:
         return {}, None
     shares = {band: round(length / tagged, 4) for band, length in bands.items()}
@@ -161,6 +164,17 @@ def traffic_shares(messages: Any) -> dict[str, float]:
 
 
 _UNPAVED = frozenset({"compacted", "loose", "natural_soft"})
+
+
+def surface_class(tags: dict[str, str]) -> str:
+    """``paved`` / ``unpaved`` / ``cobbles`` / ``unknown`` (no usable ``surface`` tag)."""
+    raw = tags.get("surface")
+    category = SURFACE_TAXONOMY.get(raw.split(":")[0]) if raw else None
+    if category == "paved":
+        return "paved"
+    if category in _UNPAVED:
+        return "unpaved"
+    return "cobbles" if category == "masonry" else "unknown"
 
 
 def surface_shares(messages: Any) -> dict[str, float]:
@@ -176,16 +190,73 @@ def surface_shares(messages: Any) -> dict[str, float]:
         except (IndexError, TypeError, ValueError):
             continue
         any_tags = any_tags or bool(tags)
-        raw = tags.get("surface")
-        category = SURFACE_TAXONOMY.get(raw.split(":")[0]) if raw else None
-        if category == "paved":
-            totals["paved"] += length
-        elif category in _UNPAVED:
-            totals["unpaved"] += length
-        elif category == "masonry":
-            totals["cobbles"] += length
-        else:
-            totals["unknown"] += length
+        totals[surface_class(tags)] += length
     total = sum(totals.values())
     # A route with no way tags at all is "no data", not "100 % unknown".
     return {k: round(v / total, 4) for k, v in totals.items()} if total > 0 and any_tags else {}
+
+
+_LON, _LAT = 0, 1
+
+
+def _vertex_keys(coordinates: Any) -> list[tuple[int, int]] | None:
+    """Geometry vertices as BRouter writes them in ``messages`` (degrees * 1e6, rounded)."""
+    if not isinstance(coordinates, list) or len(coordinates) < 2:
+        return None
+    keys: list[tuple[int, int]] = []
+    for position in coordinates:
+        try:
+            keys.append((round(float(position[0]) * 1e6), round(float(position[1]) * 1e6)))
+        except (IndexError, TypeError, ValueError):
+            return None
+    return keys
+
+
+def stretches_from(messages: Any, coordinates: Any) -> list[RouteStretch]:
+    """Where the surface and the traffic exposure change along the route, as runs of vertices.
+
+    Every row of ``messages`` is a segment that ends at a vertex of the geometry and carries that
+    segment's tags. Each row's end point is found in the geometry (walking forward, so repeated
+    points do not confuse it); if one cannot be found the rows do not describe this geometry and
+    the answer is empty rather than a guess. Neighbouring segments of the same surface and traffic
+    band are merged. Traffic is "unknown" everywhere when too little of the route carries
+    ``highway`` tags, as in :func:`traffic_summary`.
+    """
+    keys = _vertex_keys(coordinates)
+    if keys is None or not isinstance(messages, list) or len(messages) < 2:
+        return []
+    shares, _ = traffic_summary(messages)
+    traffic_known = bool(shares)
+    pieces: list[tuple[int, int, str, str]] = []
+    start = 0
+    for row in messages[1:]:
+        try:
+            end_key = (int(row[_LON]), int(row[_LAT]))
+            tags = _tags(str(row[_WAY_TAGS] or ""))
+        except (IndexError, TypeError, ValueError):
+            return []
+        try:
+            end = next(i for i in range(start, len(keys)) if keys[i] == end_key)
+        except StopIteration:
+            return []
+        if end == start:
+            continue  # a zero-length row (a node with its own tags): nothing to colour
+        exposure = segment_exposure(tags) if traffic_known else None
+        traffic = traffic_band(exposure) if exposure is not None else "unknown"
+        pieces.append((start, end, surface_class(tags), traffic))
+        start = end
+    merged: list[RouteStretch] = []
+    for from_index, to_index, surface, traffic in pieces:
+        last = merged[-1] if merged else None
+        if last and last.surface == surface and last.traffic == traffic:
+            merged[-1] = last.model_copy(update={"to_index": to_index})
+        else:
+            merged.append(
+                RouteStretch(
+                    from_index=from_index,
+                    to_index=to_index,
+                    surface=surface,  # type: ignore[arg-type]
+                    traffic=traffic,  # type: ignore[arg-type]
+                )
+            )
+    return merged

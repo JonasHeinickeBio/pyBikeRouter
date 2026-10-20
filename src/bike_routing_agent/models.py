@@ -162,6 +162,24 @@ class RouteCue(BaseModel):
     angle_deg: int | None = Field(default=None, ge=-180, le=180)  # the turn; negative = left
 
 
+SurfaceClass = Literal["paved", "unpaved", "cobbles", "unknown"]
+TrafficClass = Literal["busy", "some", "quiet", "off_road", "unknown"]
+
+
+class RouteStretch(BaseModel):
+    """A run of the route that is one kind of surface and one kind of traffic exposure.
+
+    ``from_index`` / ``to_index`` are vertices of ``geometry_geojson`` (the stretch is the line
+    from the first to the second, inclusive), read from the OSM tags the engine routed over.
+    ``unknown`` means untagged, which is not the same as bad or quiet.
+    """
+
+    from_index: int = Field(ge=0)
+    to_index: int = Field(ge=0)
+    surface: SurfaceClass
+    traffic: TrafficClass
+
+
 class RouteCandidate(BaseModel):
     provider: str
     provider_profile: str
@@ -190,6 +208,9 @@ class RouteCandidate(BaseModel):
     # Turn-by-turn instructions (BRouter only for now), in route order; empty when the engine gives
     # none. Never a safety statement: they say where the engine's route turns.
     cues: list[RouteCue] = Field(default_factory=list)
+    # Where along the route the surface and the traffic exposure change (BRouter only: it gives the
+    # tags); empty when the engine gives none. Lets the map colour the route.
+    stretches: list[RouteStretch] = Field(default_factory=list)
     raw_provider_response: dict[str, Any] | None = Field(default=None, repr=False)
 
 

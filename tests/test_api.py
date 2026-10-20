@@ -58,6 +58,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/hours.js", "BikeHours"),
         ("/link.js", "BikeLink"),
         ("/cues.js", "BikeCues"),
+        ("/stretches.js", "BikeStretches"),
+        ("/index.html", 'id="colours-card"'),
         ("/index.html", 'id="cues-card"'),
         ("/index.html", 'id="copy-link-btn"'),
         ("/index.html", 'src="hours.js"'),

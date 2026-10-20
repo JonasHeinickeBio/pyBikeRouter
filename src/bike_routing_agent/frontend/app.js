@@ -87,6 +87,11 @@ const els = {
   optimizeEffort: $("optimize-effort"),
   optimizeDetours: $("optimize-detours"),
   profileCard: $("profile-card"),
+  coloursCard: $("colours-card"),
+  coloursModes: $("colours-modes"),
+  coloursLegend: $("colours-legend"),
+  coloursLongest: $("colours-longest"),
+  coloursNote: $("colours-note"),
   cuesCard: $("cues-card"),
   cuesSummary: $("cues-summary"),
   cuesList: $("cues-list"),
@@ -132,6 +137,8 @@ const state = {
   pointLayer: L.layerGroup(), // the point picked by a click, with its menu
   profileLayer: L.layerGroup(), // where the elevation chart's cursor is on the route
   cueLayer: L.layerGroup(), // the step picked in the directions list
+  colourLayer: L.layerGroup(), // the active route cut into surface / traffic colours
+  colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
   profileMarker: null,
@@ -177,6 +184,8 @@ function initMap() {
   state.pointLayer.addTo(state.map);
   state.profileLayer.addTo(state.map);
   state.cueLayer.addTo(state.map);
+  state.colourLayer.addTo(state.map);
+  state.colourMode = loadColourMode();
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
@@ -796,6 +805,8 @@ function clearResults() {
   state.cueRows = [];
   state.cueLayer.clearLayers();
   els.cuesCard.hidden = true;
+  state.colourLayer.clearLayers();
+  els.coloursCard.hidden = true;
   els.alternatives.hidden = true;
   els.alternativesList.innerHTML = "";
   els.viewingNote.hidden = true;
@@ -1231,6 +1242,61 @@ function renderCandidatesTable() {
   });
 }
 
+/* ---------------------------- route colours (map) ---------------------------- */
+
+const COLOUR_KEY = "pybikerouter.colour";
+
+function loadColourMode() {
+  try {
+    const saved = window.localStorage.getItem(COLOUR_KEY);
+    return saved === "surface" || saved === "traffic" ? saved : "none";
+  } catch {
+    return "none"; // storage blocked: just not remembered
+  }
+}
+
+function setColourMode(mode) {
+  state.colourMode = mode;
+  try {
+    window.localStorage.setItem(COLOUR_KEY, mode);
+  } catch {
+    /* not remembered */
+  }
+  const entry = state.candidateLayers[state.activeIndex];
+  if (entry) renderColours(entry.candidate);
+}
+
+/** The active route cut into surface or traffic colours, with what each covers (hidden when the
+ * engine gave no tags for this route). */
+function renderColours(cand) {
+  state.colourLayer.clearLayers();
+  const modes = BikeStretches.modes(cand);
+  if (!modes.length) {
+    els.coloursCard.hidden = true;
+    return;
+  }
+  els.coloursCard.hidden = false;
+  const mode = modes.includes(state.colourMode) ? state.colourMode : "none";
+  const choices = [["none", "Plain"], ...modes.map((m) => [m, BikeStretches.MODES[m].label])];
+  els.coloursModes.innerHTML = choices
+    .map(
+      ([key, label]) =>
+        `<button type="button" class="ghost colour-mode${key === mode ? " active" : ""}" data-colour="${key}" aria-pressed="${key === mode}">${escapeHtml(label)}</button>`,
+    )
+    .join("");
+  const shown = mode !== "none";
+  els.coloursLegend.hidden = !shown;
+  els.coloursLongest.hidden = !shown;
+  els.coloursNote.hidden = !shown;
+  if (!shown) return;
+  for (const piece of BikeStretches.pieces(cand, mode)) {
+    L.polyline(piece.latlngs, { color: piece.color, weight: 6, opacity: 0.95, interactive: false }).addTo(state.colourLayer);
+  }
+  els.coloursLegend.innerHTML = BikeStretches.legendHtml(BikeStretches.legend(cand, mode));
+  els.coloursLongest.textContent = BikeStretches.longestText(BikeStretches.longest(cand, mode));
+  els.coloursNote.textContent = BikeStretches.MODES[mode].note;
+}
+
 /* -------------------------------- directions -------------------------------- */
 
 /** The turn-by-turn list of the route shown (hidden when the engine gave no cues). */
@@ -1395,6 +1461,7 @@ function updateActiveView() {
     metric(cand.score != null ? cand.score.toFixed(2) : "—", "Score") +
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
+  renderColours(cand);
   renderProfile(cand);
   renderCues(cand);
   renderWeather(cand);
@@ -1645,6 +1712,10 @@ function wireEvents() {
     if (button) showCue(Number(button.dataset.cue));
   });
   els.cuesDownload.addEventListener("click", downloadCueSheet);
+  els.coloursModes.addEventListener("click", (ev) => {
+    const button = ev.target.closest("button[data-colour]");
+    if (button) setColourMode(button.dataset.colour);
+  });
 
   for (const input of document.querySelectorAll("#places-panel input, #constraints-panel input, #constraints-panel select")) {
     input.addEventListener("keydown", (ev) => {
