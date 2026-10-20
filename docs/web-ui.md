@@ -40,6 +40,22 @@ How it is made (`frontend/profile.js`):
   reading, not the engine's;
 - the vertical axis spans at least 40 m, so a flat ride looks flat instead of like a mountain range.
 
+## Share a trip with a link
+
+**Copy link** (next to *Reset*) copies a link that opens the planner with this form's trip in it:
+the places, via stops, bike type and constraints, the number of alternatives and, if it is still
+ahead, the departure time. Opening such a link fills the form and plans the route straight away, so
+it works for sending a trip to your phone or someone else. (On a page without clipboard access, for
+example plain `http` beyond localhost, the link is shown in a box to copy by hand.)
+
+- The trip is in the `#plan=...` **fragment** of the address, which browsers never send to a
+  server: the places are not in any request log, and nothing is stored anywhere.
+- A link is text from somewhere else, so it is read strictly (`frontend/link.js`): only the known
+  fields, of the right type and in range, reach the form; a link without a usable origin and
+  destination is ignored. A departure that has passed, or is more than 14 days ahead, is dropped.
+- Not carried: the sights-on-the-way setting, the chosen route among the alternatives, and the
+  optimiser's settings. A relative departure ("tomorrow morning") becomes the actual time it meant.
+
 ## Service status
 
 A dot next to the title shows whether the services behind the planner are up -- green: all, amber: some

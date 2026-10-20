@@ -184,6 +184,7 @@ button.ghost:hover { background: var(--bg); }
 }
 .status.loading { background: var(--info-bg); border: 1px solid var(--info-line); }
 .status.error { background: var(--err-bg); border: 1px solid var(--err-line); }
+.status .link-box { width: 100%; margin-top: 0.4rem; font-size: 0.75rem; }
 .status.info { background: var(--warn-bg); border: 1px solid var(--warn-line); }
 .status.ok { background: var(--ok-bg); border: 1px solid var(--ok-line); }
 
