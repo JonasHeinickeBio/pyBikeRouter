@@ -37,6 +37,7 @@ The full documentation suite lives in [`docs/`](docs/README.md):
 | [Weather](docs/weather.md) | Forecast along the route at your departure time: temperature, rain, wind vs. riding direction (free, keyless providers) |
 | [Self-hosted stack](docs/self-hosted.md) | Run routing and/or geocoding locally from one OSM extract; hardware requirements and small-PC options |
 | [Testing](docs/testing.md) | Test layout, mocking conventions, live tests, CI |
+| [Web planner](docs/web-ui.md) | Putting places into the trip; click a point on the map and choose where in the route it goes |
 | [iPhone / Tailscale](docs/mobile.md) | Use the planner from an iPhone as a home-screen app over your tailnet |
 | [Roadmap](docs/roadmap.md) | Planned work and explicit non-goals |
 

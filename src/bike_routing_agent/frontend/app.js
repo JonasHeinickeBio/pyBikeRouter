@@ -109,6 +109,8 @@ const state = {
   selectedRoute: null,
   activeIndex: 0, // index into candidateLayers currently being inspected
   placeMarkers: L.layerGroup(),
+  pointLayer: L.layerGroup(), // the point picked by a click, with its menu
+  foreignPopupClosedAt: 0, // when a popup that is not the point menu was last closed by a click
   weatherMarkers: L.layerGroup(), // forecast points along the active candidate
   poiLayer: L.layerGroup(), // points of interest (along the active route, or in the map view)
   poiStopLayer: L.layerGroup(), // the famous sights the plan was routed past
@@ -146,17 +148,27 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(state.map);
   state.placeMarkers.addTo(state.map);
+  state.pointLayer.addTo(state.map);
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
   state.map.on("click", onMapClick);
+  // A click that only closes another popup (a sight, a weather marker) must not open the menu.
+  state.map.on("popupclose", (ev) => {
+    if (!ev.popup || ev.popup.options.className !== "point-popup") {
+      state.foreignPopupClosedAt = performance.now();
+    }
+  });
   state.map.on("moveend", () => {
     if (!state.candidateLayers.length) schedulePoiRefresh();
   });
 }
 
 function onMapClick(ev) {
-  if (!state.pickingTarget) return;
+  if (!state.pickingTarget) {
+    if (performance.now() - state.foreignPopupClosedAt > 80) openPointMenu(ev.latlng);
+    return;
+  }
   const lat = ev.latlng.lat.toFixed(5);
   const lon = ev.latlng.lng.toFixed(5);
   const value = `${lat}, ${lon}`;
@@ -172,6 +184,122 @@ function onMapClick(ev) {
   }
   stopPicking();
   redrawPlaceMarkers();
+}
+
+/* ------------------------ a point picked on the map ------------------------ */
+
+/** What the place fields hold now, as the placement logic wants it. */
+function currentPlaces() {
+  const vias = viaInputs();
+  return {
+    hasOrigin: els.origin.value.trim() !== "",
+    hasDestination: els.destination.value.trim() !== "",
+    origin: parseInputCoordinate(els.origin.value),
+    destination: parseInputCoordinate(els.destination.value),
+    vias: vias.map((input) => parseInputCoordinate(input.value)),
+    viaCount: vias.length,
+  };
+}
+
+/** The route on the map ([lon, lat] pairs), or null. */
+function activeRouteLine() {
+  const entry = state.candidateLayers[state.activeIndex];
+  const coords = entry && entry.candidate && entry.candidate.geometry_geojson
+    ? entry.candidate.geometry_geojson.coordinates
+    : null;
+  return Array.isArray(coords) && coords.length >= 2 && typeof coords[0][0] === "number" ? coords : null;
+}
+
+function closePointMenu() {
+  state.pointLayer.clearLayers();
+}
+
+/** Select the clicked point and offer where in the trip to put it. */
+function openPointMenu(latlng) {
+  closePointMenu();
+  const ll = latlng.wrap();
+  const text = BikeWaypoints.coordText(ll.lat, ll.lng);
+  const places = currentPlaces();
+  const options = BikeWaypoints.slots(places.viaCount, places);
+  const best = BikeWaypoints.suggest({
+    ...places,
+    route: activeRouteLine(),
+    point: { lat: ll.lat, lon: ll.lng },
+  });
+
+  const menu = document.createElement("div");
+  menu.className = "point-menu";
+  const coords = document.createElement("div");
+  coords.className = "point-coords";
+  coords.textContent = text;
+  const label = document.createElement("label");
+  label.textContent = "Add this point as";
+  label.htmlFor = "point-slot";
+  const select = document.createElement("select");
+  select.id = "point-slot";
+  for (const option of options) {
+    const el = document.createElement("option");
+    el.value = option.key;
+    el.textContent = option.label;
+    select.appendChild(el);
+  }
+  select.value = options.some((o) => o.key === best) ? best : "end";
+  const actions = document.createElement("div");
+  actions.className = "point-actions";
+  const button = (caption, className, handler) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = className;
+    b.textContent = caption;
+    b.addEventListener("click", handler);
+    return b;
+  };
+  actions.append(
+    button("Add", "primary", () => applyPoint(select.value, text, false)),
+    button("Add & plan", "", () => applyPoint(select.value, text, true)),
+    button("Cancel", "link", closePointMenu),
+  );
+  menu.append(coords, label, select, actions);
+  L.DomEvent.disableClickPropagation(menu);
+
+  const marker = L.marker(ll, {
+    icon: L.divIcon({ className: "", html: '<span class="point-pin"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+    keyboard: false,
+  }).addTo(state.pointLayer);
+  marker.bindPopup(menu, { className: "point-popup", minWidth: 230, offset: [0, -4] });
+  marker.on("popupclose", closePointMenu);
+  marker.openPopup();
+  select.focus({ preventScroll: true });
+}
+
+/** Put the picked point into the place fields at `key` and, if asked, plan again. */
+function applyPoint(key, text, andPlan) {
+  const placed = BikeWaypoints.place(
+    {
+      origin: els.origin.value,
+      destination: els.destination.value,
+      vias: viaInputs().map((input) => input.value),
+    },
+    key,
+    text,
+  );
+  if (!placed) {
+    setStatus("error", "No more stops fit: a trip has at most " + BikeWaypoints.MAX_VIA + ".");
+    return;
+  }
+  stopPicking();
+  if (key === "start") els.origin.value = text;
+  else if (key === "end") els.destination.value = text;
+  else insertViaRow(Number(key.split(":")[1]), text);
+  for (const input of [els.origin, els.destination, ...viaInputs()]) markCoordInput(input);
+  closePointMenu();
+  redrawPlaceMarkers();
+  if (andPlan) {
+    planRoute();
+    return;
+  }
+  const drawn = state.candidateLayers.length > 0;
+  setStatus("info", `Added as ${placed.label}.` + (drawn ? " Press <strong>Plan route</strong> to use it." : ""));
 }
 
 /* ------------------------- phone / geolocation --------------------------- */
@@ -274,6 +402,15 @@ function addViaRow(value = "") {
 
   row.append(input, pick, remove);
   els.viaList.appendChild(row);
+  return row;
+}
+
+/** A via row at position `index` (0 = first stop after the start). */
+function insertViaRow(index, value) {
+  const row = addViaRow(value);
+  const before = els.viaList.children[index];
+  if (before && before !== row) els.viaList.insertBefore(row, before);
+  return row;
 }
 
 function viaInputs() {
