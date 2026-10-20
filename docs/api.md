@@ -74,6 +74,11 @@ alternative, and the better-scored one is kept.
 - **`max_alternatives = N`**: near-copies are dropped (still listed under the
   kept route's `duplicates`) and at most `N` distinct routes are returned.
   `route` is always `candidates[0]`, rank 1.
+- `stretches` (BRouter routes; empty from other engines): where the surface and the traffic exposure
+  change, `{"from_index": 120, "to_index": 410, "surface": "unpaved", "traffic": "off_road"}` -- vertex
+  indices into `geometry_geojson` (the stretch is the line from the first to the second), `surface` one
+  of `paved`/`unpaved`/`cobbles`/`unknown`, `traffic` one of `busy`/`some`/`quiet`/`off_road`/`unknown`
+  (`unknown` = untagged). The same tags as `engine_surface_shares` and `traffic_shares`, in order.
 - `cues` (BRouter routes; empty from other engines): the turn-by-turn instructions in route order,
   `{"kind": "left", "distance_m": 412.3, "lon": ..., "lat": ..., "exit": null, "angle_deg": -90}`.
   `kind` is `left`, `right`, `slight_left`, `slight_right`, `sharp_left`, `sharp_right`, `keep_left`,

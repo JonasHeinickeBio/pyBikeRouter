@@ -40,6 +40,24 @@ How it is made (`frontend/profile.js`):
   reading, not the engine's;
 - the vertical axis spans at least 40 m, so a flat ride looks flat instead of like a mountain range.
 
+## Colour the route
+
+Under the metrics, *Colour the route* switches the active route on the map between **Plain**,
+**Surface** (paved / unpaved / cobbles / not mapped) and **Traffic** (busy / some traffic / quiet /
+off-road and bike paths / not mapped). The legend gives what each colour covers in km and percent, and
+one line names the longest unpaved (or busy) stretch with where it starts. The choice is remembered in
+this browser.
+
+- The colours come from the OSM tags BRouter routed over (`RouteCandidate.stretches`: runs of vertices
+  of the route's geometry; neighbouring segments of the same class are merged). Each row of BRouter's
+  tag table is placed on the geometry by its end point; if a point cannot be found the route is not
+  coloured rather than coloured wrongly.
+- **Not mapped** is a missing tag, which says nothing about the surface or the road. Traffic is the
+  same estimate as the *Busy roads* number (road class, bike lanes, speed limits), not a count of cars,
+  and it is "not mapped" everywhere when too little of the route carries road tags.
+- Routes from engines that give no tags (ORS, Valhalla) show no card. Classes of a few metres are left
+  out of the legend, and a "longest stretch" under 300 m is not mentioned.
+
 ## Directions
 
 Under the elevation chart, *Directions* lists the route's turn instructions (collapsed; it says how

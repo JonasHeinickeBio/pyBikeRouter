@@ -62,6 +62,7 @@ from bike_routing_agent.providers.brouter_optimize import (
 from bike_routing_agent.providers.brouter_segments import missing_segment
 from bike_routing_agent.providers.brouter_tags import (
     main_road_share,
+    stretches_from,
     surface_shares,
     traffic_summary,
 )
@@ -589,6 +590,9 @@ class BRouterAdapter:
             geometry_geojson=track["geometry"],
             metrics=metrics,
             cues=cues_from(properties, track["geometry"].get("coordinates")),
+            stretches=stretches_from(
+                properties.get("messages"), track["geometry"].get("coordinates")
+            ),
             # What was set per request is part of the record: the same profile with a
             # different switch is a different route.
             provenance={
