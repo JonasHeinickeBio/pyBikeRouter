@@ -146,6 +146,15 @@ least certain input, by +-25 %.
 On the live forecast for Braunschweig -> Hannover (2026-10-20, a 22 km/h east wind, riding west, mean tailwind
 13 km/h) it comes out at about -49 min on the engine's 3 h 05 min for a road bike (range -50 to -47).
 
+## In the exported files
+
+The GPX and GeoJSON of a route with a forecast carry it: every forecast point is a GPX waypoint
+(`Forecast 14:01 UTC`, the time the rider is expected there and a line such as `8 °C, rain 2 %, wind
+19 km/h from E, tailwind 12 km/h`), and the GPX header and the GeoJSON `forecast` block say when the
+forecast is for, the estimated effect of the wind on the time and **the data credit** (the data is
+CC BY: the credit travels with the file). Details: [scoring-and-exports.md](scoring-and-exports.md).
+The forecast is a snapshot taken when the plan was made; a file does not update itself.
+
 ## Other departure times
 
 "Should I leave now or later?" The same route is also evaluated for departures

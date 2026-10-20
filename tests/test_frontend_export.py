@@ -117,3 +117,108 @@ def test_file_names_say_which_alternative_it_is_and_formats_have_mime_types():
     assert run_js(f"E.build({json.dumps(cand)}, 'gpx')")["type"] == "application/gpx+xml"
     odd = {**cand, "provider_profile": "weird profile/../x"}
     assert "/" not in run_js(f"E.filename({json.dumps(odd)}, 'gpx')")
+
+
+# ------------------------------------------------------------------ the forecast in the files
+
+from datetime import UTC, datetime  # noqa: E402
+
+from bike_routing_agent.weather.models import (  # noqa: E402
+    HourlyWeather,
+    RouteWeather,
+    WeatherSample,
+    WeatherSummary,
+    WindEffect,
+)
+
+T0 = datetime(2026, 10, 20, 12, 30, tzinfo=UTC)
+
+
+def forecast_candidate(**heads) -> RouteCandidate:
+    """Values chosen where Python's round() and JavaScript's Math.round() would disagree.
+    ``head12``/``head13``/``head14``: the headwind (km/h) at the sample reached at that hour."""
+
+    def at(fraction, lon, hour, **weather):
+        return WeatherSample(
+            fraction=fraction,
+            lon=lon,
+            lat=52.25,
+            time=datetime(2026, 10, 20, hour, 30, tzinfo=UTC),
+            weather=HourlyWeather(time=T0, condition="clear", **weather),
+            headwind_kmh=heads.get(f"head{hour}"),
+        )
+
+    samples = [
+        at(0.0, 10.5, 12, temperature_c=8.5, precipitation_probability=2.5,
+           wind_speed_kmh=19.5, wind_from_deg=22.5),
+        at(0.5, 10.1, 13, temperature_c=-0.5, precipitation_probability=60.0,
+           wind_speed_kmh=7.5, wind_from_deg=337.5),
+        at(1.0, 9.7, 14, temperature_c=-1.5, wind_from_deg=-90.0),  # no speed; a negative angle
+    ]  # fmt: skip
+    return candidate(
+        weather=RouteWeather(
+            provider="open-meteo",
+            attribution='Weather data by Open-Meteo.com & "DWD" <CC BY>',
+            departure=T0,
+            arrival=datetime(2026, 10, 20, 15, 30, tzinfo=UTC),
+            duration_source="provider",
+            retrieved_at=T0,
+            samples=samples,
+            summary=WeatherSummary(temperature_min_c=-1.5, temperature_max_c=8.5),
+            wind_effect=WindEffect(
+                still_air_s=10800.0, adjusted_s=11880.0, effect_s=1080.0, range_s=(900.0, 1300.0)
+            ),
+            advisories=["A note."],
+        )
+    )
+
+
+def waypoints(xml: str):
+    root = ET.fromstring(xml.split("\n", 1)[1])
+    out = []
+    for w in root.findall(f"{GPX}wpt"):
+
+        def text(tag, node=w):
+            found = node.find(f"{GPX}{tag}")
+            return None if found is None else found.text
+
+        out.append((w.get("lon"), w.get("lat"), text("time"), text("name"), text("desc")))
+    meta = root.find(f"{GPX}metadata/{GPX}desc")
+    return out, None if meta is None else meta.text, [c.tag.removeprefix(GPX) for c in root]
+
+
+def test_the_gpx_forecast_matches_the_server_waypoint_for_waypoint():
+    cand = forecast_candidate(head12=12.5, head13=-3.0, head14=2.0)
+    data = json.dumps(cand.model_dump(mode="json"))
+    mine = waypoints(run_js(f"E.gpx({data}, 'x')"))
+    server = waypoints(to_gpx_str(cand, name="x"))
+    assert mine == server
+    points, desc, order = server
+    assert order == ["metadata", "wpt", "wpt", "wpt", "trk"]
+    assert points[0][4] == "9 °C, rain 3 %, wind 20 km/h from NE, headwind 13 km/h"
+    assert points[1][4] == "0 °C, rain 60 %, wind 8 km/h from N, tailwind 3 km/h"
+    assert points[2][4] == "-1 °C"  # -1.5 rounds to -1 in both; no wind speed: no wind text
+    assert "+18 min" in desc and 'Open-Meteo.com & "DWD" <CC BY>' in desc
+
+
+def test_the_geojson_forecast_matches_the_servers_block():
+    cand = forecast_candidate(head12=12.5, head13=-3.0)
+    data = json.dumps(cand.model_dump(mode="json"))
+    mine = json.loads(run_js(f"E.geojson({data})"))
+    assert mine == to_geojson_feature(cand)
+    assert mine["properties"]["forecast"]["points"][0]["headwind_kmh"] == 12.5
+
+
+def test_a_route_without_a_forecast_still_matches_and_has_no_forecast_parts():
+    cand = candidate()
+    data = json.dumps(cand.model_dump(mode="json"))
+    gpx_points, desc, order = waypoints(run_js(f"E.gpx({data})"))
+    assert gpx_points == [] and desc is None and order == ["metadata", "trk"]
+    assert "forecast" not in json.loads(run_js(f"E.geojson({data})"))["properties"]
+
+
+@pytest.mark.parametrize("degrees", [0, 22.4, 22.5, 44, 337.5, 359.9, 360, -90, -22.5, 720])
+def test_the_compass_agrees_between_python_and_javascript(degrees):
+    from bike_routing_agent.exporters.forecast import compass
+
+    assert run_js(f"E.compass({degrees})") == compass(degrees)
