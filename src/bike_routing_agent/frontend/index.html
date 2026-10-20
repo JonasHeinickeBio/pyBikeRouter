@@ -264,6 +264,13 @@
         <p id="poi-stops-note" class="poi-stops-note" hidden></p>
         <p id="explanation" class="explanation"></p>
         <div class="metrics" id="metrics"></div>
+        <section id="profile-card" class="profile-card" hidden>
+          <h3>Elevation</h3>
+          <div id="profile-chart" class="profile-chart"></div>
+          <p id="profile-hover" class="profile-hover" aria-live="off">Move over the chart to see the grade and where it is on the map.</p>
+          <ul id="profile-facts" class="profile-facts"></ul>
+          <ul id="profile-legend" class="profile-legend" aria-label="Colours of the chart"></ul>
+        </section>
         <section id="alternatives" class="alternatives" hidden>
           <h3>Alternative routes</h3>
           <p class="hint">The same trip priced differently. Each line is a measured difference between the routes, not advice; click a card to see it on the map.</p>
@@ -344,6 +351,7 @@
   <script src="settings.js"></script>
   <script src="chat.js"></script>
   <script src="status.js"></script>
+  <script src="profile.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>
