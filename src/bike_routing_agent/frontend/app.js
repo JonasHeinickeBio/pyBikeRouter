@@ -24,6 +24,7 @@ const els = {
   returnOrigin: $("return-origin"),
   planBtn: $("plan-btn"),
   resetBtn: $("reset-btn"),
+  copyLinkBtn: $("copy-link-btn"),
   status: $("status"),
   clarificationPanel: $("clarification-panel"),
   clarificationList: $("clarification-list"),
@@ -901,6 +902,38 @@ async function downloadSegments(segments, button) {
   }
 }
 
+/* ------------------------------ shareable link ----------------------------- */
+
+/** Copy a link that opens the planner with the form's trip in it (the trip is in the #fragment,
+ * which no server ever sees). Without clipboard access the link is shown to be copied by hand. */
+async function copyPlanLink() {
+  const keep = state.engineOverride; // buildRequest consumes it; copying a link is not a plan
+  const request = buildRequest();
+  state.engineOverride = keep;
+  const fragment = BikeLink.encode(request);
+  if (!fragment) {
+    setStatus("error", "Enter an origin and a destination first (and keep the trip small enough for a link).");
+    return;
+  }
+  const url = window.location.href.split("#")[0] + fragment;
+  if (await copyText(url)) {
+    setStatus("info", "Link copied. It opens this trip in the form; the places are in the link itself, not on a server.");
+  } else {
+    setStatus("info", `Copy this link: <input class="link-box" type="text" readonly value="${escapeHtml(url)}">`);
+    const box = els.status.querySelector(".link-box");
+    if (box) box.select();
+  }
+}
+
+/** A link with a trip in it: fill the form and plan it, before anything else can draw. */
+function loadSharedPlan() {
+  const request = BikeLink.decode(window.location.hash);
+  if (!request) return;
+  if (request.max_alternatives) els.maxAlternatives.value = String(request.max_alternatives);
+  applyInterpretation({ request, departure_time: request.departure_time });
+  planRoute();
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1548,6 +1581,7 @@ function wireEvents() {
     }
   });
   els.resetBtn.addEventListener("click", resetAll);
+  els.copyLinkBtn.addEventListener("click", copyPlanLink);
 
   for (const input of document.querySelectorAll("#places-panel input, #constraints-panel input, #constraints-panel select")) {
     input.addEventListener("keydown", (ev) => {
@@ -1948,7 +1982,7 @@ async function loadChat(id, explicit) {
     els.chatLog.innerHTML = "";
     for (const m of messages) chatSay(m.role, m.text);
     setChatChips(history.suggestions);
-    if (history.plan && (explicit || !state.lastResponse)) {
+    if (history.plan && (explicit || (!state.lastResponse && state.planPending === null))) {
       drawChatPlan(history.plan, history.focus_rank, null, history.request);
     }
     return true;
@@ -2364,6 +2398,9 @@ document.addEventListener("DOMContentLoaded", () => {
   initTextPlanning();
   initSettingsPanel();
   initPois();
+  loadSharedPlan(); // before the chat restores its route: a link's trip is the newest
+  // A link pasted into the address bar of a page that is already open is only a fragment change.
+  window.addEventListener("hashchange", loadSharedPlan);
   initChat();
   initStatus();
   initOptimizer();
