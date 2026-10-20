@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 from xml.etree import ElementTree as ET
 
+from bike_routing_agent.exporters import forecast
 from bike_routing_agent.models import RouteCandidate
 
 _GPX_NS = "http://www.topografix.com/GPX/1/1"
@@ -30,11 +31,24 @@ def to_gpx_element(candidate: RouteCandidate, *, name: str = "route") -> ET.Elem
         },
     )
 
+    weather = forecast.weather_of(candidate)
     metadata = ET.SubElement(gpx, "metadata")
     ET.SubElement(metadata, "name").text = name
+    if weather is not None:
+        ET.SubElement(metadata, "desc").text = forecast.description(weather)
     extensions = ET.SubElement(metadata, "extensions")
     ET.SubElement(extensions, "provider").text = candidate.provider
     ET.SubElement(extensions, "provider_profile").text = candidate.provider_profile
+
+    if weather is not None:
+        # Waypoints come before the track in GPX 1.1; a point's children go in schema order.
+        for sample in weather["samples"]:
+            wpt = ET.SubElement(gpx, "wpt", {"lon": str(sample["lon"]), "lat": str(sample["lat"])})
+            ET.SubElement(wpt, "time").text = forecast.gpx_time(sample["time"])
+            ET.SubElement(wpt, "name").text = forecast.sample_name(sample)
+            text = forecast.sample_description(sample)
+            if text:
+                ET.SubElement(wpt, "desc").text = text
 
     trk = ET.SubElement(gpx, "trk")
     ET.SubElement(trk, "name").text = name

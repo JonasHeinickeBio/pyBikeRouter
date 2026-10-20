@@ -124,8 +124,8 @@ decisions still open.
   sunrise/sunset against arrival, and a comparison of departure times around the
   requested one. Open follow-ups: letting weather influence ranking
   (needs calibration evidence), validating the wind-adjusted travel time against measured rides (it is an
-  estimate for the same effort as in still air, see [weather.md](weather.md)), and exporting the
-  forecast in the GPX/GeoJSON files.
+  estimate for the same effort as in still air, see [weather.md](weather.md)). Done since: the forecast
+  is in the GPX/GeoJSON files ([scoring-and-exports.md](scoring-and-exports.md)).
 - **Points of interest** -- done (issue #55): Overpass search along a route or in
   a map view, fame from Wikidata sitelinks, Wikipedia/Wikivoyage/Commons details,
   a map filter, *add to route*, and routing past the most famous sights

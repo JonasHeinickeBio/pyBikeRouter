@@ -291,6 +291,13 @@ response body carries, so an exported file is self-describing. Geometry types
 other than `LineString`/`MultiLineString` raise `ValueError`, mirroring the
 GPX exporter.
 
+With a weather forecast on the candidate (`weather.md`) the properties also carry `forecast`:
+`departure`, `arrival`, the data credit (`attribution`), a short `summary` (temperature range, highest
+rain probability, wind, gusts, mean headwind), `wind_effect` (the estimate of the wind's effect on the
+travel time), `advisories`, and `points` -- one per forecast point with its position, the time the rider
+is expected there, temperature, rain probability, wind speed and direction, head/tailwind and the
+condition. Without a forecast there is no `forecast` key and the file is exactly what it was before.
+
 ### GPX
 
 GPX 1.1 (`http://www.topografix.com/GPX/1/1`) written via ElementTree:
@@ -302,7 +309,17 @@ GPX 1.1 (`http://www.topografix.com/GPX/1/1`) written via ElementTree:
 - `<trkpt lat lon>` with `<ele>` only when the coordinate triple actually
   contains elevation -- 2D geometry exports as 2D points;
 - any geometry type other than `LineString`/`MultiLineString` raises
-  `ValueError` (surfaced as a structured failure, not a corrupt file).
+  `ValueError` (surfaced as a structured failure, not a corrupt file);
+- with a weather forecast (`weather.md`) each forecast point is a `<wpt>` -- `<time>` (when the rider is
+  expected there, UTC), `<name>` ("Forecast 14:01 UTC") and `<desc>` ("8 °C, rain 2 %, wind 19 km/h from
+  E, tailwind 12 km/h") -- which a device shows as a waypoint along the route, and `<metadata><desc>` says
+  when the forecast is for, the estimated effect of the wind on the time and **the data credit** (the
+  forecast data is CC BY: it travels with the file). Waypoints come before the track and children are in
+  the schema's order. Without a forecast the file has no `<wpt>` and no `<desc>`.
+
+The browser's own download of an alternative (`frontend/export.js`) builds the same files from the
+candidate in the response, including the forecast (a test compares both, down to the rounding: values are
+rounded half up, like JavaScript, on both sides).
 
 GPX files are plain XML with no external schema dependency; consumers that
 validate against the official schema will find the output conformant for the
