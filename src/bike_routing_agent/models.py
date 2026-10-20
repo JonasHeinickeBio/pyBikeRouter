@@ -137,6 +137,31 @@ class RouteMetrics(BaseModel):
     engine_surface_shares: dict[str, float] = Field(default_factory=dict)
 
 
+CueKind = Literal[
+    "left",
+    "right",
+    "slight_left",
+    "slight_right",
+    "sharp_left",
+    "sharp_right",
+    "keep_left",
+    "keep_right",
+    "uturn",
+    "roundabout",
+]
+
+
+class RouteCue(BaseModel):
+    """One instruction on the way (what to do and where; the engines used give no street names)."""
+
+    kind: CueKind
+    distance_m: float = Field(ge=0)  # from the start of the route
+    lon: float
+    lat: float
+    exit: int | None = Field(default=None, ge=1)  # roundabouts: which exit to take
+    angle_deg: int | None = Field(default=None, ge=-180, le=180)  # the turn; negative = left
+
+
 class RouteCandidate(BaseModel):
     provider: str
     provider_profile: str
@@ -162,6 +187,9 @@ class RouteCandidate(BaseModel):
     cons: list[str] = Field(default_factory=list)
     duplicate_of: str | None = None
     duplicates: list[str] = Field(default_factory=list)
+    # Turn-by-turn instructions (BRouter only for now), in route order; empty when the engine gives
+    # none. Never a safety statement: they say where the engine's route turns.
+    cues: list[RouteCue] = Field(default_factory=list)
     raw_provider_response: dict[str, Any] | None = Field(default=None, repr=False)
 
 

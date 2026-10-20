@@ -298,6 +298,12 @@ travel time), `advisories`, and `points` -- one per forecast point with its posi
 is expected there, temperature, rain probability, wind speed and direction, head/tailwind and the
 condition. Without a forecast there is no `forecast` key and the file is exactly what it was before.
 
+A candidate with turn-by-turn `cues` ([api.md](api.md#alternatives)) carries them as a `cues` property
+(same fields as in the response); without cues there is no key. The **GPX file has no cue points**: a
+track GPX has no turn-instruction standard that devices agree on, and hundreds of plain waypoints
+would clutter the ones that are not meant as turns. For a device or paper, the page's *Cue sheet
+(.txt)* has the same steps ([web-ui.md](web-ui.md#directions)).
+
 ### GPX
 
 GPX 1.1 (`http://www.topografix.com/GPX/1/1`) written via ElementTree:

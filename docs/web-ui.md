@@ -40,6 +40,20 @@ How it is made (`frontend/profile.js`):
   reading, not the engine's;
 - the vertical axis spans at least 40 m, so a flat ride looks flat instead of like a mountain range.
 
+## Directions
+
+Under the elevation chart, *Directions* lists the route's turn instructions (collapsed; it says how
+many turns there are): a start, each turn with the distance from the start, how far to the next one
+("then 230 m"), and the arrival. Clicking a step shows where it is on the map. *Cue sheet (.txt)*
+downloads the same list as plain text to print or send.
+
+- The instructions are the routing engine's (BRouter only; other engines show no list). BRouter knows
+  no street names, so a step says "Turn left", not "onto Hauptstrasse".
+- Steps are measured along the drawn route; a step the engine placed past the end of the route, or out
+  of order, is left out instead of trusted.
+- Not turned into GPX: see [scoring-and-exports.md](scoring-and-exports.md#geojson). The GeoJSON
+  download does carry the cues.
+
 ## Share a trip with a link
 
 **Copy link** (next to *Reset*) copies a link that opens the planner with this form's trip in it:

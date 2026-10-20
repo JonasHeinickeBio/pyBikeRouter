@@ -147,6 +147,15 @@ bodies on 400/500, string-typed GeoJSON summary values, no descent figure
 instead. Unsupported-constraint honesty works the same way as for ORS: the
 constraint is recorded as a candidate warning, not silently dropped.
 
+**Turn instructions.** Every request carries `timode=2`, which makes BRouter add `voicehints` to the
+route (the route itself is identical: checked on a 31 km route, same length, time and cost).
+`providers/brouter_cues.py` turns them into `RouteCandidate.cues`: *left/right* (also slight and
+sharp), *keep left/right*, *u-turn* and *roundabout* with its exit. The hint's own distance field is
+the distance to the *next* hint, so the distance from the start is measured along the geometry. The
+command codes were read off real routes (a left and a right u-turn, a roundabout with an exit, keep
+left/right); "continue", "off route", "beeline" and any code not in the table are dropped, never
+guessed. BRouter carries no street names, so a cue never says "onto Hauptstrasse".
+
 A real-world A/B against ORS across all bike types -- where the engines
 disagree and why -- is in
 [providers-comparison.md](providers-comparison.md).

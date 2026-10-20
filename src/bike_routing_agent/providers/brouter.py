@@ -49,6 +49,7 @@ from bike_routing_agent.models import (
     RouteMetrics,
     RoutingRequest,
 )
+from bike_routing_agent.providers.brouter_cues import cues_from
 from bike_routing_agent.providers.brouter_optimize import (
     EFFORT_DETOURS,
     EFFORT_REQUESTS,
@@ -474,6 +475,7 @@ class BRouterAdapter:
                 "profile": profile,
                 "alternativeidx": str(alternative_index),
                 "format": "geojson",
+                "timode": "2",  # adds the turn instructions (voicehints); the route is the same
                 **{f"profile:{name}": str(value) for name, value in overrides.items()},
             },
             timeout_s=timeout_s,
@@ -586,6 +588,7 @@ class BRouterAdapter:
             provider_profile=profile,
             geometry_geojson=track["geometry"],
             metrics=metrics,
+            cues=cues_from(properties, track["geometry"].get("coordinates")),
             # What was set per request is part of the record: the same profile with a
             # different switch is a different route.
             provenance={

@@ -874,3 +874,14 @@ body[data-tab="plan"] [data-tab="optimize"] { display: none !important; }
 .profile-facts { margin: 0.2rem 0; padding-left: 1.1rem; font-size: 0.82rem; }
 .profile-legend { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.15rem 0.7rem; font-size: 0.72rem; color: var(--muted); }
 .profile-swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.25rem; vertical-align: -1px; }
+
+/* directions (cues.js) */
+.cues-card { margin: 0.6rem 0; }
+.cues-card summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+.cues-summary { font-weight: 400; color: var(--muted, #667); font-size: 0.85rem; }
+.cue-list { list-style: none; margin: 0.4rem 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+.cue-row { display: grid; grid-template-columns: 1.6rem 4.2rem 1fr; gap: 0 0.4rem; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line, #ddd); padding: 0.35rem 0.2rem; font: inherit; color: inherit; cursor: pointer; }
+.cue-row:hover, .cue-row:focus-visible { background: var(--hover-bg); }
+.cue-glyph { font-size: 1.1rem; text-align: center; }
+.cue-at { font-variant-numeric: tabular-nums; color: var(--muted, #667); font-size: 0.8rem; }
+.cue-leg { grid-column: 3; color: var(--muted, #667); font-size: 0.75rem; }

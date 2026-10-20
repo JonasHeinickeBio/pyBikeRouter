@@ -29,6 +29,8 @@ def to_geojson_feature(candidate: RouteCandidate) -> dict[str, Any]:
     weather = forecast.weather_of(candidate)
     if weather is not None:  # without a forecast the file is exactly what it always was
         properties["forecast"] = forecast.geojson_forecast(weather)
+    if candidate.cues:  # likewise: no cues, no key
+        properties["cues"] = [cue.model_dump(mode="json") for cue in candidate.cues]
     return {
         "type": "Feature",
         "geometry": candidate.geometry_geojson,

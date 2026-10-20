@@ -87,6 +87,10 @@ const els = {
   optimizeEffort: $("optimize-effort"),
   optimizeDetours: $("optimize-detours"),
   profileCard: $("profile-card"),
+  cuesCard: $("cues-card"),
+  cuesSummary: $("cues-summary"),
+  cuesList: $("cues-list"),
+  cuesDownload: $("cues-download"),
   profileChart: $("profile-chart"),
   profileHover: $("profile-hover"),
   profileFacts: $("profile-facts"),
@@ -127,6 +131,8 @@ const state = {
   placeMarkers: L.layerGroup(),
   pointLayer: L.layerGroup(), // the point picked by a click, with its menu
   profileLayer: L.layerGroup(), // where the elevation chart's cursor is on the route
+  cueLayer: L.layerGroup(), // the step picked in the directions list
+  cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
   profileMarker: null,
   foreignPopupClosedAt: 0, // when a popup that is not the point menu was last closed by a click
@@ -170,6 +176,7 @@ function initMap() {
   state.placeMarkers.addTo(state.map);
   state.pointLayer.addTo(state.map);
   state.profileLayer.addTo(state.map);
+  state.cueLayer.addTo(state.map);
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
@@ -786,6 +793,9 @@ function clearResults() {
   state.profile = null;
   clearProfileCursor();
   els.profileCard.hidden = true;
+  state.cueRows = [];
+  state.cueLayer.clearLayers();
+  els.cuesCard.hidden = true;
   els.alternatives.hidden = true;
   els.alternativesList.innerHTML = "";
   els.viewingNote.hidden = true;
@@ -1121,19 +1131,23 @@ function renderAlternativeDownload() {
   els.altDownloadLabel.textContent = `Download ${BikeAlternatives.styleLabel(active)}:`;
 }
 
+function saveFile(text, type, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function downloadActiveCandidate(format) {
   const active = state.candidates[state.activeIndex];
   if (!active) return;
   try {
     const file = BikeExport.build(active, format, `pyBikeRouter ${BikeAlternatives.styleLabel(active)}`);
-    const url = URL.createObjectURL(new Blob([file.text], { type: file.type }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveFile(file.text, file.type, file.filename);
   } catch (err) {
     setStatus("error", `Could not export this route: ${escapeHtml(String(err.message || err))}`);
   }
@@ -1215,6 +1229,49 @@ function renderCandidatesTable() {
       }
     });
   });
+}
+
+/* -------------------------------- directions -------------------------------- */
+
+/** The turn-by-turn list of the route shown (hidden when the engine gave no cues). */
+function renderCues(cand) {
+  state.cueLayer.clearLayers();
+  const rows = BikeCues.steps(cand.cues, cand.metrics && cand.metrics.distance_m);
+  state.cueRows = rows;
+  if (!rows.length) {
+    els.cuesCard.hidden = true;
+    return;
+  }
+  els.cuesCard.hidden = false;
+  els.cuesSummary.textContent = BikeCues.summary(rows);
+  els.cuesList.innerHTML = BikeCues.listHtml(rows);
+}
+
+/** Show where a step of the list is on the map. */
+function showCue(index) {
+  const row = state.cueRows[index];
+  const entry = state.candidateLayers[state.activeIndex];
+  if (!row || !entry) return;
+  state.cueLayer.clearLayers();
+  let at = null;
+  if (row.cue) at = [row.cue.lat, row.cue.lon];
+  else {
+    const coords = entry.candidate.geometry_geojson.coordinates || [];
+    const p = row.distanceM === 0 ? coords[0] : coords[coords.length - 1];
+    if (p) at = [p[1], p[0]];
+  }
+  if (!at) return;
+  L.circleMarker(at, { radius: 9, weight: 3, color: "#c43d32", fillColor: "#ffffff", fillOpacity: 1, interactive: false }).addTo(
+    state.cueLayer,
+  );
+  state.map.panTo(at);
+}
+
+function downloadCueSheet() {
+  const active = state.candidates[state.activeIndex];
+  if (!active || !state.cueRows.length) return;
+  const title = `pyBikeRouter ${BikeAlternatives.styleLabel(active)}`;
+  saveFile(BikeCues.sheetText(state.cueRows, title), "text/plain;charset=utf-8", BikeExport.filename(active, "txt").replace(/^route-/, "cues-"));
 }
 
 /* ----------------------------- elevation profile ----------------------------- */
@@ -1339,6 +1396,7 @@ function updateActiveView() {
     metric(escapeHtml(cand.provider_profile || "—"), "Profile");
 
   renderProfile(cand);
+  renderCues(cand);
   renderWeather(cand);
   schedulePoiRefresh();
   renderScoreBreakdown(cand.score_breakdown);
@@ -1582,6 +1640,11 @@ function wireEvents() {
   });
   els.resetBtn.addEventListener("click", resetAll);
   els.copyLinkBtn.addEventListener("click", copyPlanLink);
+  els.cuesList.addEventListener("click", (ev) => {
+    const button = ev.target.closest("button[data-cue]");
+    if (button) showCue(Number(button.dataset.cue));
+  });
+  els.cuesDownload.addEventListener("click", downloadCueSheet);
 
   for (const input of document.querySelectorAll("#places-panel input, #constraints-panel input, #constraints-panel select")) {
     input.addEventListener("keydown", (ev) => {

@@ -168,6 +168,7 @@
     };
     const weather = weatherOf(candidate);
     if (weather) properties.forecast = forecastProperties(weather);
+    if (Array.isArray(candidate.cues) && candidate.cues.length) properties.cues = candidate.cues;
     return JSON.stringify({ type: "Feature", geometry: candidate.geometry_geojson, properties }, null, 2);
   }
 
