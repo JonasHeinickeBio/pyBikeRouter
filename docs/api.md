@@ -445,12 +445,14 @@ is off and `502` when the map-data service could not be reached.
            "kind": "sight", "lon": 10.749, "lat": 47.557, "wikidata": "Q4152",
            "wikipedia": "de:Schloss Neuschwanstein", "website": null, "opening_hours": null,
            "fame": 93, "distance_from_route_m": 410.2, "along_route_km": 12.7}],
- "truncated": false, "fame_status": "ok"}
+ "truncated": false, "fame_status": "ok", "timezone": "Europe/Berlin"}
 ```
 
 Best-known first (`fame` = Wikidata sitelinks; `null` = not measured, never "obscure"),
 then the rest by distance. `fame_status`: `ok`, `partial`, `unavailable` (Wikidata
-unreachable: unranked), `skipped` (nothing to look up).
+unreachable: unranked), `skipped` (nothing to look up). `timezone` is the IANA zone at the middle of
+the route (what OSM opening hours are written in; `null` when not looked up, see
+[pois.md](pois.md#opening-hours)); `in-bbox` never has one.
 
 ### `GET /v1/pois/in-bbox`
 

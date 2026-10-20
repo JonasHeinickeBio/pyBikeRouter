@@ -74,12 +74,12 @@ async def test_directions_geojson_sends_coordinates_and_options():
 @respx.mock
 async def test_directions_json_and_gpx_hit_format_specific_urls():
     gpx_xml = "<?xml version='1.0'?><gpx/>"
-    json_route = respx.post(
-        f"{BASE_URL}/v2/directions/cycling-road/json"
-    ).mock(return_value=httpx.Response(200, json=DIRECTIONS_PAYLOAD))
-    gpx_route = respx.post(
-        f"{BASE_URL}/v2/directions/cycling-road/gpx"
-    ).mock(return_value=httpx.Response(200, text=gpx_xml))
+    json_route = respx.post(f"{BASE_URL}/v2/directions/cycling-road/json").mock(
+        return_value=httpx.Response(200, json=DIRECTIONS_PAYLOAD)
+    )
+    gpx_route = respx.post(f"{BASE_URL}/v2/directions/cycling-road/gpx").mock(
+        return_value=httpx.Response(200, text=gpx_xml)
+    )
 
     client = make_client()
     coords = [(10.5, 52.2), (10.55, 52.21)]
@@ -257,7 +257,10 @@ async def test_snap_json_suffix_merges_extra_options():
     route = respx.post(url).mock(return_value=httpx.Response(200, json={}))
 
     await make_client().snap(
-        "cycling-regular", [(10.5, 52.2)], search_radius=50.0, options={"elevation": True},
+        "cycling-regular",
+        [(10.5, 52.2)],
+        search_radius=50.0,
+        options={"elevation": True},
         format="json",
     )
 

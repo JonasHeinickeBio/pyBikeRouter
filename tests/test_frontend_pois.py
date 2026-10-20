@@ -75,6 +75,27 @@ def test_popup_escapes_everything_that_came_from_the_map():
     assert "<img" not in html and "&lt;img" in html and "<b>" not in html
 
 
+def test_popup_shows_the_opening_hours_verdict_above_the_raw_text():
+    cafe = poi(name="Cafe", opening_hours="Mo-Fr 09:00-18:00")
+    verdict = {"state": "closed", "text": "Closed when you pass (about 07:00), opens 09:00."}
+    html = run_js(f"P.popupHtml({json.dumps(cafe)}, CATS, {json.dumps(verdict)})")
+    assert 'class="poi-hours-check closed"' in html and "opens 09:00" in html
+    assert html.index("poi-hours-check") < html.index("Hours (OSM)")  # the verdict first
+    plain = run_js(f"P.popupHtml({json.dumps(cafe)}, CATS, null)")
+    assert "poi-hours-check" not in plain and "Hours (OSM): Mo-Fr 09:00-18:00" in plain
+
+
+def test_popup_only_trusts_the_two_known_verdict_states_and_escapes_the_text():
+    cafe = poi(opening_hours="Mo-Fr 09:00-18:00")
+    odd = {"state": "x onclick=alert(1)", "text": "<b>"}
+    assert "poi-hours-check" not in run_js(
+        f"P.popupHtml({json.dumps(cafe)}, CATS, {json.dumps(odd)})"
+    )
+    sneaky = {"state": "open", "text": "<img src=x>"}
+    html = run_js(f"P.popupHtml({json.dumps(cafe)}, CATS, {json.dumps(sneaky)})")
+    assert "<img" not in html and "&lt;img" in html
+
+
 def test_info_html_renders_text_links_and_attribution_and_nothing_executable():
     info = {
         "title": "Burg",

@@ -49,6 +49,7 @@ def encode_polyline6(points: list[tuple[float, float]]) -> str:
         prev_lat, prev_lon = lat_i, lon_i
     return "".join(out)
 
+
 # Decoded geometry of the fixture polylines (fixture encoding is pinned by
 # tests/providers/test_valhalla_adapter.py::test_polyline6_roundtrip).
 SHAPE_A = [[13.387208, 52.527742], [13.395315, 52.524799], [13.402966, 52.521284]]
@@ -566,9 +567,7 @@ async def test_unknown_bike_type_maps_to_bad_response(
 
 @respx.mock
 async def test_nonzero_trip_status_without_message_maps_to_bad_response() -> None:
-    respx.post(ROUTE_URL).mock(
-        return_value=httpx.Response(200, json={"trip": {"status": 442}})
-    )
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json={"trip": {"status": 442}}))
     adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
 
     with pytest.raises(ProviderBadResponseError) as exc_info:

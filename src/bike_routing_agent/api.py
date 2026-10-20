@@ -60,6 +60,7 @@ from bike_routing_agent.poi.models import (
 from bike_routing_agent.poi.service import PoiService
 from bike_routing_agent.poi.wikimedia import WikimediaResolver
 from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
+from bike_routing_agent.poi.zone import OpenMeteoZoneLookup
 from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
@@ -275,6 +276,18 @@ def build_poi_service(cfg: Settings, *, cache: CacheBackend | None = None) -> Po
     )
 
 
+def build_zone_lookup(
+    cfg: Settings, *, cache: CacheBackend | None = None
+) -> OpenMeteoZoneLookup | None:
+    """The time-zone lookup for opening hours, or ``None`` when POIs or the lookup are off."""
+    if not (cfg.poi_enabled and cfg.poi_timezone_lookup):
+        return None
+    return OpenMeteoZoneLookup(
+        base_url=cfg.weather_open_meteo_url,
+        cache=NamespacedCache(cache, "zone") if cache is not None else None,
+    )
+
+
 def build_providers(
     cfg: Settings, *, cache: CacheBackend | None = None
 ) -> tuple[GeocodeProvider, list[RoutingProvider]]:
@@ -471,6 +484,7 @@ _artifact_store, _history = build_storage(settings)
 _weather_service = build_weather_service(settings, cache=_cache)
 _llm_parser = build_llm_parser(settings)
 _poi_service = build_poi_service(settings, cache=_cache)
+_zone_lookup = build_zone_lookup(settings, cache=_cache)
 _segment_downloader = build_segment_downloader(settings)
 _optional_routing_providers = build_optional_routing_providers(settings, _routing_providers)
 
@@ -1100,8 +1114,15 @@ async def pois_along_route(request: PoiAlongRouteRequest) -> PoiSearchResponse:
         )
     except ProviderError as exc:
         raise _provider_unavailable(exc) from exc
+    zone = None
+    if _zone_lookup is not None and result.pois:
+        middle = line[len(line) // 2]
+        zone = await _zone_lookup.zone_at(middle[0], middle[1])
     return PoiSearchResponse(
-        pois=result.pois, truncated=result.truncated, fame_status=result.fame_status
+        pois=result.pois,
+        truncated=result.truncated,
+        fame_status=result.fame_status,
+        timezone=zone,
     )
 
 

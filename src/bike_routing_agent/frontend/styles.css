@@ -666,6 +666,9 @@ textarea {
 .poi-popup { max-width: 260px; font-size: 0.85rem; }
 .poi-popup .poi-title { display: block; font-size: 0.95rem; }
 .poi-popup .poi-meta, .poi-popup .poi-hours, .poi-popup .poi-attr { color: #555; font-size: 0.75rem; margin-top: 0.15rem; }
+.poi-popup .poi-hours-check { font-size: 0.8rem; font-weight: 600; margin-top: 0.2rem; }
+.poi-popup .poi-hours-check.open { color: #1d6b2f; }
+.poi-popup .poi-hours-check.closed { color: #a03323; }
 .poi-popup .poi-thumb { display: block; width: 100%; max-height: 140px; object-fit: cover; border-radius: 4px; margin: 0.35rem 0; }
 .poi-popup .poi-desc { font-style: italic; margin-top: 0.3rem; }
 .poi-popup .poi-extract { margin: 0.3rem 0; max-height: 9em; overflow-y: auto; }

@@ -339,3 +339,41 @@ async def test_a_well_formed_but_unknown_language_is_read_in_english(client, stu
     assert stub.calls[-1][1]["lang"] == "en"
     await client.get("/v1/pois/info?wikidata=Q1&lang=de")
     assert stub.calls[-1][1]["lang"] == "de"
+
+
+class StubZones:
+    def __init__(self, zone="Europe/Berlin"):
+        self.zone = zone
+        self.calls = []
+
+    async def zone_at(self, lon, lat):
+        self.calls.append((lon, lat))
+        return self.zone
+
+
+async def test_along_route_names_the_time_zone_at_the_middle_of_the_route(
+    client, stub, monkeypatch
+):
+    zones = StubZones()
+    monkeypatch.setattr(api_module, "_zone_lookup", zones)
+    body = (await client.post("/v1/pois/along-route", json={"coordinates": COORDS})).json()
+    assert body["timezone"] == "Europe/Berlin"
+    assert zones.calls == [(10.1, 47.51)]
+
+
+async def test_no_time_zone_without_a_lookup_or_without_sights(client, stub, monkeypatch):
+    monkeypatch.setattr(api_module, "_zone_lookup", None)
+    assert (await client.post("/v1/pois/along-route", json={"coordinates": COORDS})).json()[
+        "timezone"
+    ] is None
+    zones = StubZones()
+    monkeypatch.setattr(api_module, "_zone_lookup", zones)
+    stub.pois = []
+    body = (await client.post("/v1/pois/along-route", json={"coordinates": COORDS})).json()
+    assert body["timezone"] is None and zones.calls == []  # nothing to read hours of
+
+
+async def test_map_view_searches_have_no_time_zone(client, stub, monkeypatch):
+    monkeypatch.setattr(api_module, "_zone_lookup", StubZones())
+    body = (await client.get("/v1/pois/in-bbox?bbox=10,47.4,10.1,47.5")).json()
+    assert body["timezone"] is None

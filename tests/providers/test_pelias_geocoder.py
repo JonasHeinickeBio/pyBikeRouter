@@ -32,7 +32,11 @@ def pelias_response(features: list[dict]) -> dict:
 
 
 def feature(
-    lon: float, lat: float, *, label: str | None = None, name: str | None = None,
+    lon: float,
+    lat: float,
+    *,
+    label: str | None = None,
+    name: str | None = None,
     confidence: float = 0.8,
 ) -> dict:
     properties: dict = {"confidence": confidence}

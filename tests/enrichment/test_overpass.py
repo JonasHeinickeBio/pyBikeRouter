@@ -57,9 +57,7 @@ def test_build_overpass_query_renders_around_clause() -> None:
 
 
 def test_build_overpass_query_rounds_timeout_up_to_a_second() -> None:
-    assert "[timeout:21];" in build_overpass_query(
-        ROUTE_POINTS, buffer_m=25.0, timeout_s=20.1
-    )
+    assert "[timeout:21];" in build_overpass_query(ROUTE_POINTS, buffer_m=25.0, timeout_s=20.1)
 
 
 def test_build_overpass_query_decimates_long_shapes() -> None:
@@ -120,9 +118,7 @@ async def test_surface_profile_from_fixture(overpass_surface_response: dict) -> 
 
 @respx.mock
 async def test_surface_profile_posts_form_encoded_query() -> None:
-    call = respx.post(OVERPASS_URL).mock(
-        return_value=httpx.Response(200, json={"elements": []})
-    )
+    call = respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json={"elements": []}))
     await make_enricher().surface_profile(ROUTE_POINTS)
 
     request = call.calls[0].request
@@ -163,9 +159,7 @@ def test_out_of_range_geometry_point_skips_only_its_way() -> None:
 
 @respx.mock
 async def test_empty_corridor_is_fully_unknown(overpass_empty_response: dict) -> None:
-    respx.post(OVERPASS_URL).mock(
-        return_value=httpx.Response(200, json=overpass_empty_response)
-    )
+    respx.post(OVERPASS_URL).mock(return_value=httpx.Response(200, json=overpass_empty_response))
     summary = await make_enricher().surface_profile(ROUTE_POINTS)
     assert summary.coverage == {}
     assert summary.unknown_fraction == pytest.approx(1.0)
