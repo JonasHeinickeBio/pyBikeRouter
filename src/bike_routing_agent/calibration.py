@@ -33,12 +33,16 @@ from bike_routing_agent.models import (
     RouteMetrics,
     RoutingRequest,
 )
+from bike_routing_agent.scoring.alternatives import rank_candidates
 from bike_routing_agent.scoring.basic import (
     DISTANCE_WEIGHT,
     ELEVATION_WEIGHT,
     SURFACE_WEIGHT,
+    TRAFFIC_WEIGHT,
+    cap_traffic_detours,
     score_candidate,
     surface_active,
+    traffic_active,
     weighted_score,
 )
 
@@ -62,6 +66,10 @@ DEFAULT_WEIGHT_GRID: tuple[tuple[float, float], ...] = (
 # changes between 0.0 and a small weight is exactly the evidence needed to
 # decide whether (and how heavily) the component should be switched on.
 SURFACE_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.10, 0.20, 0.30)
+
+# The same for the traffic component. The range 0.4-1.0 is where the first
+# evidence run (docs/scoring-and-exports.md, "Traffic weight: evidence") was stable.
+TRAFFIC_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
 
 DEFAULT_BENCHMARK_PATH = Path(__file__).resolve().parents[2] / "benchmarks" / "core-v1.json"
 
@@ -147,6 +155,9 @@ class Expectations(BaseModel):
     ascent_m: MetricRange | None = None
     max_unknown_surface_fraction: float | None = Field(default=None, ge=0, le=1)
     surface: SurfaceExpectation | None = None
+    # Upper bound on the engine's traffic estimate (RouteMetrics.traffic_index): a route a
+    # careful person would call quiet. Skipped for a candidate without an estimate.
+    max_traffic_index: float | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
     def _check_not_empty(self) -> Expectations:
@@ -155,6 +166,7 @@ class Expectations(BaseModel):
             or self.ascent_m
             or self.max_unknown_surface_fraction is not None
             or self.surface
+            or self.max_traffic_index is not None
         ):
             raise ValueError("a case with no expectations judges nothing")
         return self
@@ -270,6 +282,8 @@ def evaluate_candidate(case: BenchmarkCase, candidate: RouteCandidate) -> CaseEv
         checks.append(_unknown_fraction_check(metrics, exp))
     if exp.surface:
         checks.extend(_surface_checks(metrics, exp.surface))
+    if exp.max_traffic_index is not None:
+        checks.append(_traffic_check(metrics, exp.max_traffic_index))
 
     return CaseEvaluation(case_id=case.case_id, provider=candidate.provider, checks=checks)
 
@@ -300,6 +314,19 @@ def _unknown_fraction_check(metrics: RouteMetrics, exp: Expectations) -> CaseChe
         name="unknown_surface_fraction",
         status="passed" if fraction <= limit + 1e-9 else "failed",
         detail=f"unknown={fraction:.2f} expected <= {limit:.2f}",
+    )
+
+
+def _traffic_check(metrics: RouteMetrics, limit: float) -> CaseCheck:
+    index = metrics.traffic_index
+    if index is None:
+        return CaseCheck(
+            name="traffic_index", status="skipped", detail="no traffic estimate to judge"
+        )
+    return CaseCheck(
+        name="traffic_index",
+        status="passed" if index <= limit + 1e-9 else "failed",
+        detail=f"traffic_index={index:.3f} expected <= {limit:.3f}",
     )
 
 
@@ -368,32 +395,40 @@ def ranked_candidates(
     distance_weight: float = DISTANCE_WEIGHT,
     elevation_weight: float = ELEVATION_WEIGHT,
     surface_weight: float | None = None,
+    traffic_weight: float | None = None,
 ) -> list[RouteCandidate]:
     """Score candidates and return them best-first, optionally re-weighted.
 
     Components come from ``score_candidate``'s breakdown, so the re-weighted
     view can never disagree with the production scorer about the components
     themselves -- only about how they trade off. Distance/elevation weights
-    need not sum to 1; the ranking is invariant to their common scale.
-    ``surface_weight`` (default: the shipped ``SURFACE_WEIGHT``) follows the
-    production rule: the surface term applies to the whole candidate set or
-    not at all, so a missing-evidence candidate never mixes formulas.
+    need not sum to 1; the ranking is invariant to their common scale. The order
+    is the production one (``scoring.alternatives.rank_candidates``).
+    ``surface_weight`` and ``traffic_weight`` (default: the shipped values)
+    follow the production rule: each term applies to the whole candidate set
+    or not at all, so a missing-evidence candidate never mixes formulas.
     """
-    weight = SURFACE_WEIGHT if surface_weight is None else surface_weight
-    breakdowns = [score_candidate(c, constraints)[1] for c in candidates]
-    use_surface = surface_active(breakdowns, weight)
+    s_weight = SURFACE_WEIGHT if surface_weight is None else surface_weight
+    t_weight = TRAFFIC_WEIGHT if traffic_weight is None else traffic_weight
+    scored_once = [score_candidate(c, constraints) for c in candidates]
+    breakdowns = cap_traffic_detours(scored_once, [c.metrics.distance_m for c in candidates])
+    use_surface = surface_active(breakdowns, s_weight)
+    use_traffic = traffic_active(breakdowns, t_weight)
     scored: list[RouteCandidate] = []
     for candidate, breakdown in zip(candidates, breakdowns, strict=True):
         score = weighted_score(
             breakdown,
             distance_weight=distance_weight,
             elevation_weight=elevation_weight,
-            surface_weight=weight,
+            surface_weight=s_weight,
             use_surface=use_surface,
+            traffic_weight=t_weight,
+            use_traffic=use_traffic,
         )
         scored.append(candidate.model_copy(update={"score": score, "score_breakdown": breakdown}))
-    scored.sort(key=lambda c: (-float(c.score or 0.0), c.provider))
-    return scored
+    # The production order, not a bare sort by score: an alternative profile must lead the
+    # route for the bike type by a margin, and ties go to the shorter route (scoring/alternatives).
+    return rank_candidates(scored)
 
 
 def weight_sensitivity(
@@ -431,6 +466,27 @@ def surface_weight_sensitivity(
     return {
         f"surface={w:.2f}": [
             c.provider for c in ranked_candidates(candidates, constraints, surface_weight=w)
+        ]
+        for w in grid
+    }
+
+
+def traffic_weight_sensitivity(
+    candidates: list[RouteCandidate],
+    constraints: RouteConstraints,
+    grid: tuple[float, ...] = TRAFFIC_WEIGHT_GRID,
+) -> dict[str, list[str]]:
+    """Ranking (provider/profile labels) per traffic weight, for the calibration report.
+
+    Distance/elevation/surface weights stay at their shipped values. When the request does not
+    ask to avoid traffic, or a candidate has no estimate, the term is inactive and every grid
+    point gives the same ranking -- reported as such, because "the data cannot speak to this" is
+    a finding too. Labels carry the profile because the engines' profiles are what differ.
+    """
+    return {
+        f"traffic={w:.2f}": [
+            f"{c.provider}/{c.provider_profile}"
+            for c in ranked_candidates(candidates, constraints, traffic_weight=w)
         ]
         for w in grid
     }

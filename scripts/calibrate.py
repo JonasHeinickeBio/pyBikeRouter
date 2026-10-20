@@ -43,6 +43,7 @@ from bike_routing_agent.calibration import (
     load_benchmark,
     ranked_candidates,
     surface_weight_sensitivity,
+    traffic_weight_sensitivity,
     weight_sensitivity,
 )
 from bike_routing_agent.config import Settings
@@ -104,6 +105,15 @@ async def run_case(
             provider_errors[provider.name] = f"{type(exc).__name__}: {exc}"
             continue
         candidates.append(await _enrich(candidate, enricher))
+        # The engine's own alternatives (BRouter: the other profiles), as in a real plan: the
+        # scorer ranks whole candidate sets, so calibrating on one route per engine says little.
+        extra = getattr(provider, "alternatives", None)
+        if extra is not None:
+            try:
+                for alternative in await extra(request):
+                    candidates.append(await _enrich(alternative, enricher))
+            except ProviderError as exc:
+                provider_errors[f"{provider.name} (alternatives)"] = f"{type(exc).__name__}: {exc}"
 
     scored = [
         c.model_copy(update={"score": score_candidate(c, constraints)[0]})
@@ -120,13 +130,25 @@ async def run_case(
         "provider_errors": provider_errors,
         "candidates": rows,
         "ranking": [c.provider for c in ranked],
+        "ranking_profiles": [f"{c.provider}/{c.provider_profile}" for c in ranked],
         "top_provider": top.provider if top else None,
+        "top_profile": f"{top.provider}/{top.provider_profile}" if top else None,
         "top_passes_judgement": bool(top_evaluation and top_evaluation.passed),
         "top_skipped_checks": (
             [c.name for c in top_evaluation.skipped] if top_evaluation else []
         ),
         "weight_sensitivity": weight_sensitivity(scored, constraints),
         "surface_sensitivity": surface_weight_sensitivity(scored, constraints),
+        "traffic_sensitivity": traffic_weight_sensitivity(scored, constraints),
+        "traffic_evidence": {
+            f"{c.provider}/{c.provider_profile}": {
+                "km": round(c.metrics.distance_m / 1000, 1),
+                "traffic_index": c.metrics.traffic_index,
+                "traffic_fit": breakdown.get("traffic_fit"),
+            }
+            for c in scored
+            for breakdown in [score_candidate(c, constraints)[1]]
+        },
         "surface_evidence": {
             c.provider: {
                 "fit": breakdown.get("surface_fit"),
@@ -166,6 +188,10 @@ def print_markdown(report: dict[str, Any]) -> None:
                 len({tuple(order) for order in case["surface_sensitivity"].values()}) > 1
             )
             flag += "  (surface-weight-sensitive!)" if surface_flip else ""
+            traffic_flip = (
+                len({tuple(order) for order in case["traffic_sensitivity"].values()}) > 1
+            )
+            flag += "  (traffic-weight-sensitive!)" if traffic_flip else ""
             with_data = sum(
                 1 for e in case["surface_evidence"].values() if e["fit"] is not None
             )
@@ -178,6 +204,12 @@ def print_markdown(report: dict[str, Any]) -> None:
                 f"passes_judgement={case['top_passes_judgement']} "
                 f"ranking={case['ranking']}{flag}"
             )
+    print("\nTraffic weight sweep (best profile per weight; * = differs from the shipped weight):")
+    for case in report["cases"]:
+        sweep = case.get("traffic_sensitivity") or {}
+        if sweep and any(e["traffic_index"] is not None for e in case["traffic_evidence"].values()):
+            tops = {label: order[0] for label, order in sweep.items()}
+            print(f"  {case['case']}: " + ", ".join(f"{k}: {v}" for k, v in tops.items()))
     judged = sum(1 for c in report["cases"] if c["candidates"])
     good = sum(1 for c in report["cases"] if c["top_passes_judgement"])
     print(f"\n{good}/{judged} judged cases: top-ranked engine matches local judgement.")
@@ -187,12 +219,16 @@ def print_markdown(report: dict[str, Any]) -> None:
     )
 
 
-async def main(benchmark_path: Path, out_path: str, limit: int | None) -> int:
+async def main(
+    benchmark_path: Path, out_path: str, limit: int | None, engines: list[str] | None = None
+) -> int:
     benchmark = load_benchmark(benchmark_path)
     settings = Settings()
     providers = build_routing_providers(
         settings.model_copy(update={"routing_provider": "all"})
     )
+    if engines:
+        providers = [p for p in providers if p.name in engines]
     enricher = build_surface_enricher(settings)
     print(
         f"engines: {[p.name for p in providers]} | enricher: "
@@ -232,5 +268,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--limit", type=int, default=None, help="run only the first N cases"
     )
+    parser.add_argument(
+        "--engines",
+        default=None,
+        help="comma separated engine names to run (e.g. brouter); the traffic component needs "
+        "every candidate to carry an estimate, so calibrate it with BRouter alone",
+    )
     args = parser.parse_args()
-    sys.exit(asyncio.run(main(Path(args.benchmark), args.out, args.limit)))
+    engines = [e.strip() for e in args.engines.split(",") if e.strip()] if args.engines else None
+    sys.exit(asyncio.run(main(Path(args.benchmark), args.out, args.limit, engines)))
