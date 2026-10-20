@@ -38,6 +38,7 @@
       <section class="panel" id="chat-panel" data-tab="plan" hidden>
         <details open>
           <summary><h2>Chat</h2></summary>
+          <div class="chat-tools"><button id="chat-new" type="button" class="link">New chat</button></div>
           <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation"></div>
           <div id="chat-chips" class="chat-chips"></div>
           <form id="chat-form" class="chat-form" autocomplete="off">
@@ -46,6 +47,11 @@
             <button id="chat-send" class="primary" type="submit">Send</button>
           </form>
           <p class="hint">Plan, change and compare routes by talking: a one-line request, your own words, or step by step. Routes appear on the map.</p>
+          <details id="chat-earlier-box" class="chat-earlier-box">
+            <summary>Earlier conversations</summary>
+            <ul id="chat-earlier" class="chat-earlier"></ul>
+            <p id="chat-earlier-empty" class="hint" hidden>No earlier conversations in this browser.</p>
+          </details>
         </details>
       </section>
 

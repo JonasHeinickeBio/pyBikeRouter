@@ -146,7 +146,22 @@ answers and the route when you open it again.
   layout after an upgrade) is dropped and starts over; a file that cannot be opened at all leaves the
   chat in memory with a log message instead of stopping the service.
 - It stores what people typed and the routes the chat drew, in plain text on disk: treat the file like
-  the exported routes. Deleting it forgets every conversation.
+  the exported routes. Deleting it forgets every conversation -- or one at a time, from the web panel
+  (below).
+
+### New chat, earlier conversations, delete
+
+The web panel has a **New chat** button (the old conversation stays stored, the map keeps its route) and
+an **Earlier conversations** list: title (the first thing asked), age, number of messages; click one to
+open it again -- its messages, quick answers and last route replace what is shown -- and **×** deletes it
+after asking (its messages and its file entry are removed from the server).
+
+The list is **this browser's**: the browser keeps only the ids of the conversations it has had
+(`localStorage`, at most 30) and asks the server about those ids (`POST /v1/chat/summaries`); ids the
+server no longer knows (expired, dropped for newer ones) disappear from the list. There is deliberately
+no endpoint that lists conversations nobody named, so a session id remains the one handle to a
+conversation (it is not discoverable by someone else who can reach the API) and a conversation started
+on the phone does not show up on the laptop.
 
 ## Evidence and limits
 

@@ -15,6 +15,12 @@ Four ways, all ending up in the same fields (Origin, Destination, the Via stops)
   (below).
 - **Chat** -- a route the chat plans fills the form with its request, so you can adjust it there.
 
+## Chat conversations
+
+The chat panel keeps its conversations (when the server stores them, see [chat.md](chat.md)): **New chat**
+starts a fresh one, **Earlier conversations** lists this browser's earlier ones to open again or delete.
+A page that is reopened shows the conversation it had.
+
 ## Click a point, then choose where it goes
 
 Click (or tap) any point on the map, including a point on a route that is drawn: a pin marks it and a

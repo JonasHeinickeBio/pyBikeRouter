@@ -75,14 +75,83 @@
     }
   }
 
-  /** Remember the session id (null forgets it); storage that is blocked just forgets. */
+  /** Remember the session id (null forgets it); storage that is blocked just forgets. A valid id
+   * also goes to the front of this browser's list of conversations (`knownSessions`). */
   function rememberSession(storage, id) {
     try {
-      if (id && SESSION_ID.test(id)) storage.setItem(SESSION_KEY, id);
-      else storage.removeItem(SESSION_KEY);
+      if (id && SESSION_ID.test(id)) {
+        storage.setItem(SESSION_KEY, id);
+        writeKnown(storage, [id, ...knownSessions(storage).filter((k) => k !== id)]);
+      } else storage.removeItem(SESSION_KEY);
     } catch {
       /* private window or blocked storage: the conversation is just not found again */
     }
+  }
+
+  /* The conversations this browser has had: only their ids, newest first. The server answers for
+   * these ids and lists nothing else, so a session id stays the one handle to a conversation. */
+  const KNOWN_KEY = "pybikerouter.chats";
+  const MAX_KNOWN = 30; // the server's limit per request
+
+  function knownSessions(storage) {
+    try {
+      const list = JSON.parse(storage.getItem(KNOWN_KEY));
+      if (!Array.isArray(list)) return [];
+      const seen = new Set();
+      return list.filter((id) => typeof id === "string" && SESSION_ID.test(id) && !seen.has(id) && seen.add(id)).slice(0, MAX_KNOWN);
+    } catch {
+      return [];
+    }
+  }
+
+  function writeKnown(storage, ids) {
+    try {
+      storage.setItem(KNOWN_KEY, JSON.stringify(ids.slice(0, MAX_KNOWN)));
+    } catch {
+      /* blocked storage: the list is just not kept */
+    }
+  }
+
+  /** Drop an id from the list (deleted, or the server no longer knows it). */
+  function forgetKnown(storage, id) {
+    writeKnown(storage, knownSessions(storage).filter((k) => k !== id));
+  }
+
+  /** Keep only the ids in `keep` (what the server still knows), in the order given. */
+  function keepKnown(storage, keep) {
+    writeKnown(storage, keep.filter((id) => typeof id === "string" && SESSION_ID.test(id)));
+  }
+
+  /** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", else the date. */
+  function relativeTime(thenSeconds, nowSeconds) {
+    if (thenSeconds === null || thenSeconds === undefined) return "";
+    const diff = Number(nowSeconds) - Number(thenSeconds);
+    if (!Number.isFinite(diff)) return "";
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} h ago`;
+    if (diff < 2 * 86400) return "yesterday";
+    if (diff < 7 * 86400) return `${Math.floor(diff / 86400)} days ago`;
+    return new Date(Number(thenSeconds) * 1000).toISOString().slice(0, 10);
+  }
+
+  /** The list of earlier conversations as HTML; `currentId` is marked. Empty without any. */
+  function conversationsHtml(summaries, nowSeconds, currentId) {
+    return (summaries || [])
+      .filter((s) => s && SESSION_ID.test(String(s.session_id)))
+      .map((s) => {
+        const meta = `${escapeHtml(relativeTime(s.updated, nowSeconds))} &middot; ${Number(s.messages) || 0} messages`;
+        const current = s.session_id === currentId;
+        return (
+          `<li class="chat-earlier-item${current ? " current" : ""}">` +
+          `<button type="button" class="chat-earlier-open" data-open="${s.session_id}"${current ? ' aria-current="true"' : ""}>` +
+          `<span class="chat-earlier-title">${escapeHtml(s.title || "Conversation")}</span>` +
+          `<span class="chat-earlier-meta">${meta}</span></button>` +
+          `<button type="button" class="chat-earlier-delete" data-delete="${s.session_id}" title="Delete this conversation" aria-label="Delete this conversation">&times;</button>` +
+          `</li>`
+        );
+      })
+      .join("");
   }
 
   /** The messages of a stored conversation that can be shown (a role and some text each). */
@@ -104,6 +173,11 @@
     storedSession,
     rememberSession,
     historyMessages,
+    knownSessions,
+    forgetKnown,
+    keepKnown,
+    relativeTime,
+    conversationsHtml,
   };
   root.BikeChat = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

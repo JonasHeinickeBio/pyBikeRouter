@@ -85,6 +85,10 @@ const els = {
   optimizeDetour: $("optimize-detour"),
   optimizeEffort: $("optimize-effort"),
   optimizeDetours: $("optimize-detours"),
+  chatNew: $("chat-new"),
+  chatEarlierBox: $("chat-earlier-box"),
+  chatEarlier: $("chat-earlier"),
+  chatEarlierEmpty: $("chat-earlier-empty"),
   optimizePoiOptions: $("optimize-poi-options"),
   optimizePoiCorridor: $("optimize-poi-corridor"),
   optimizePoiFame: $("optimize-poi-fame"),
@@ -1736,6 +1740,7 @@ async function sendChat(text) {
     const data = await resp.json();
     state.chatSession = data.session_id;
     BikeChat.rememberSession(window.localStorage, state.chatSession);
+    if (els.chatEarlierBox.open) refreshEarlier(); // the list shows this conversation's latest use
     chatSay("bot", data.reply);
     setChatChips(data.suggestions);
     if (data.plan) {
@@ -1776,31 +1781,108 @@ function drawChatPlan(plan, focusRank, secs, request) {
   if (request) applyInterpretation({ request, departure_time: request.departure_time });
 }
 
-/** Bring back the conversation of an earlier visit: its messages, quick answers and last route. */
-async function restoreChat() {
-  const id = BikeChat.storedSession(window.localStorage);
-  if (!id) return;
+const CHAT_GREETING =
+  'Hi! Tell me where you want to ride -- for example "from Braunschweig to Goslar by gravel bike" or "40 km loop from Goslar". Or say "plan a route" and I will ask.';
+
+/** The empty conversation: the greeting and the starting suggestions. */
+function chatGreeting() {
+  els.chatLog.innerHTML = "";
+  chatSay("bot", CHAT_GREETING);
+  setChatChips(["Plan a route", "40 km loop from Goslar", "Help"]);
+}
+
+/**
+ * Show a stored conversation: its messages, quick answers and last route.
+ * `explicit` (the person opened it) replaces the conversation and the map; otherwise (the
+ * page was just reopened) it only fills a conversation and a map that are still empty.
+ * Resolves true when it was shown, false when the server does not know it (it is then dropped
+ * from this browser's list).
+ */
+async function loadChat(id, explicit) {
   try {
     const resp = await fetch(`${API_BASE}/v1/chat/${id}`);
     if (resp.status === 404) {
-      BikeChat.rememberSession(window.localStorage, null); // expired or dropped: start afresh
-      return;
+      BikeChat.forgetKnown(window.localStorage, id);
+      if (BikeChat.storedSession(window.localStorage) === id) BikeChat.rememberSession(window.localStorage, null);
+      return false; // expired or dropped: start afresh
     }
-    if (!resp.ok) return;
+    if (!resp.ok) return false;
     const history = await resp.json();
     const messages = BikeChat.historyMessages(history);
-    // Anything typed meanwhile wins: only restore into a conversation that has not begun.
-    if (state.chatSession !== null || state.chatBusy || messages.length === 0) return;
+    // Anything typed meanwhile wins when the page was only reopened.
+    if (!explicit && (state.chatSession !== null || state.chatBusy || messages.length === 0)) return false;
+    if (state.chatBusy) return false;
     state.chatSession = history.session_id;
+    BikeChat.rememberSession(window.localStorage, state.chatSession);
     els.chatLog.innerHTML = "";
     for (const m of messages) chatSay(m.role, m.text);
     setChatChips(history.suggestions);
-    if (history.plan && !state.lastResponse) {
+    if (history.plan && (explicit || !state.lastResponse)) {
       drawChatPlan(history.plan, history.focus_rank, null, history.request);
     }
+    return true;
   } catch {
-    /* the server could not be reached: the chat just starts empty */
+    return false; // the server could not be reached: the chat just starts empty
   }
+}
+
+/** Bring back the conversation of an earlier visit, when the server still has it. */
+async function restoreChat() {
+  const id = BikeChat.storedSession(window.localStorage);
+  if (id) await loadChat(id, false);
+}
+
+/** A fresh conversation. The route on the map stays; the old conversation stays in the list. */
+function newChat() {
+  if (state.chatBusy) return;
+  state.chatSession = null;
+  BikeChat.rememberSession(window.localStorage, null);
+  chatGreeting();
+  if (els.chatEarlierBox.open) refreshEarlier();
+  els.chatInput.focus();
+}
+
+/** Fill the list of earlier conversations from what the server still knows of this browser's ids. */
+async function refreshEarlier() {
+  const ids = BikeChat.knownSessions(window.localStorage);
+  let sessions = [];
+  if (ids.length) {
+    try {
+      const resp = await fetch(`${API_BASE}/v1/chat/summaries`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_ids: ids }),
+      });
+      if (!resp.ok) return;
+      sessions = (await resp.json()).sessions || [];
+    } catch {
+      return; // offline: leave the list as it was
+    }
+    BikeChat.keepKnown(window.localStorage, sessions.map((s) => s.session_id));
+  }
+  els.chatEarlier.innerHTML = BikeChat.conversationsHtml(sessions, Date.now() / 1000, state.chatSession);
+  els.chatEarlierEmpty.hidden = sessions.length > 0;
+}
+
+async function openEarlier(id) {
+  if (state.chatBusy || id === state.chatSession) return;
+  const shown = await loadChat(id, true);
+  if (!shown) chatSay("bot", "That conversation is no longer stored.");
+  refreshEarlier();
+}
+
+async function deleteEarlier(id) {
+  if (state.chatBusy) return;
+  if (!window.confirm("Delete this conversation? Its messages are removed from the server.")) return;
+  try {
+    const resp = await fetch(`${API_BASE}/v1/chat/${id}`, { method: "DELETE" });
+    if (!resp.ok && resp.status !== 404) return; // not deleted: keep it in the list
+  } catch {
+    return;
+  }
+  BikeChat.forgetKnown(window.localStorage, id);
+  if (id === state.chatSession) newChat();
+  refreshEarlier();
 }
 
 /** Show the chat only when the server has one. */
@@ -1808,9 +1890,18 @@ async function initChat() {
   const caps = await getCapabilities();
   if (!caps.chat) return;
   els.chatPanel.hidden = false;
-  chatSay("bot", "Hi! Tell me where you want to ride -- for example \"from Braunschweig to Goslar by gravel bike\" or \"40 km loop from Goslar\". Or say \"plan a route\" and I will ask.");
-  setChatChips(["Plan a route", "40 km loop from Goslar", "Help"]);
+  chatGreeting();
   restoreChat(); // the conversation of an earlier visit, when the server still has it
+  els.chatNew.addEventListener("click", newChat);
+  els.chatEarlierBox.addEventListener("toggle", () => {
+    if (els.chatEarlierBox.open) refreshEarlier();
+  });
+  els.chatEarlier.addEventListener("click", (ev) => {
+    const open = ev.target.closest("[data-open]");
+    if (open) return openEarlier(open.dataset.open);
+    const del = ev.target.closest("[data-delete]");
+    if (del) deleteEarlier(del.dataset.delete);
+  });
   els.chatForm.addEventListener("submit", (ev) => {
     ev.preventDefault();
     const text = els.chatInput.value;

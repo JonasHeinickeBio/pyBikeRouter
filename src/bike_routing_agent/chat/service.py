@@ -12,8 +12,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Sequence
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -25,6 +27,7 @@ from bike_routing_agent.chat.models import (
     ChatHistory,
     ChatMessage,
     ChatReply,
+    ChatSummary,
     Planner,
     Sights,
 )
@@ -33,6 +36,14 @@ from bike_routing_agent.chat.store import LatestOnlyMemorySaver
 logger = logging.getLogger(__name__)
 
 SESSION_ID = re.compile(r"^[0-9a-f]{32}$")
+TITLE_CHARS = 60
+
+
+def _title(text: str) -> str:
+    """The first thing that was asked, shortened for a list."""
+    return text if len(text) <= TITLE_CHARS else text[: TITLE_CHARS - 1].rstrip() + "\u2026"
+
+
 FAILURE_REPLY = (
     "Something went wrong while planning that. Please try again, or rephrase "
     "('from A to B', '40 km loop from A')."
@@ -58,9 +69,12 @@ class ChatService:
         )
         self._max_sessions = max_sessions
         self._sessions: OrderedDict[str, asyncio.Lock] = OrderedDict()
+        self._updated: dict[str, float] = {}
         stored = getattr(self._checkpointer, "thread_ids", None)
+        when = getattr(self._checkpointer, "updated_at", None)
         for sid in stored() if callable(stored) else ():  # least recently used first
             self._touch(sid)
+            self._updated[sid] = (when(sid) if callable(when) else None) or time.time()
 
     @property
     def sessions(self) -> int:
@@ -90,7 +104,54 @@ class ChatService:
             finally:
                 self._keep_latest_only(sid)
                 self._save(sid)
+                self._updated[sid] = time.time()
         return self._reply(sid, result)
+
+    async def summaries(self, session_ids: Sequence[str]) -> list[ChatSummary]:
+        """The conversations among ``session_ids`` that are known, most recently used first.
+
+        Only the ids the caller names are looked up, so the service never lists conversations
+        nobody asked about: a session id stays the one handle to a conversation.
+        """
+        found: list[ChatSummary] = []
+        for sid in dict.fromkeys(session_ids):
+            lock = self._sessions.get(sid)
+            if lock is None:
+                continue
+            async with lock:
+                snapshot = await self._graph.aget_state({"configurable": {"thread_id": sid}})
+            humans = [
+                " ".join(str(m.content).split())
+                for m in (snapshot.values or {}).get("messages") or []
+                if m.type == "human" and str(m.content).strip()
+            ]
+            messages = sum(
+                1
+                for m in (snapshot.values or {}).get("messages") or []
+                if m.type in ("human", "ai") and str(m.content).strip()
+            )
+            found.append(
+                ChatSummary(
+                    session_id=sid,
+                    title=_title(humans[0]) if humans else "New conversation",
+                    updated=self._updated.get(sid, 0.0),
+                    messages=messages,
+                )
+            )
+        return sorted(found, key=lambda c: -c.updated)
+
+    async def delete(self, session_id: str) -> bool:
+        """Forget a conversation (memory and file); ``False`` when it is not known."""
+        lock = self._sessions.get(session_id)
+        if lock is None:
+            return False
+        async with lock:  # let a turn that is running finish first
+            self._sessions.pop(session_id, None)
+            self._updated.pop(session_id, None)
+            delete = getattr(self._checkpointer, "delete_thread", None)
+            if delete is not None:
+                delete(session_id)
+        return True
 
     async def history(self, session_id: str) -> ChatHistory | None:
         """What a stored conversation said so far, or ``None`` when it is not known."""
@@ -148,6 +209,7 @@ class ChatService:
         self._sessions.move_to_end(sid)
         while len(self._sessions) > self._max_sessions:
             old, _ = self._sessions.popitem(last=False)
+            self._updated.pop(old, None)
             delete = getattr(self._checkpointer, "delete_thread", None)
             if delete is not None:
                 delete(old)

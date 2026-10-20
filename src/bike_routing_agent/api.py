@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, StringConstraints, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from bike_routing_agent import __version__
 from bike_routing_agent.chat.models import (
@@ -746,6 +746,45 @@ class ChatHistoryResponse(BaseModel):
     focus_rank: int | None = None
     request: dict[str, Any] | None = None
     awaiting: str | None = None
+
+
+class ChatSummariesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The conversations this browser knows about: the service answers for these ids only.
+    session_ids: list[Annotated[str, Field(pattern=r"^[0-9a-f]{32}$")]] = Field(max_length=30)
+
+
+class ChatSummaryResponse(BaseModel):
+    session_id: str
+    title: str
+    updated: float
+    messages: int
+
+
+class ChatSummariesResponse(BaseModel):
+    sessions: list[ChatSummaryResponse]
+
+
+@app.post("/v1/chat/summaries", response_model=ChatSummariesResponse)
+async def chat_summaries(request: ChatSummariesRequest) -> ChatSummariesResponse:
+    """The conversations among the given ids that the service still knows (title, last use,
+    number of messages), most recent first; unknown ids are left out, so a client can drop them.
+    There is no endpoint that lists conversations nobody named."""
+    if _chat_service is None:
+        raise HTTPException(status_code=503, detail="the chat is switched off (CHAT_ENABLED)")
+    found = await _chat_service.summaries(request.session_ids)
+    return ChatSummariesResponse(sessions=[ChatSummaryResponse(**c.model_dump()) for c in found])
+
+
+@app.delete("/v1/chat/{session_id}", status_code=204)
+async def chat_delete(session_id: str) -> Response:
+    """Forget a conversation: its messages, its last route and its file entry. 404 when unknown."""
+    if _chat_service is None:
+        raise HTTPException(status_code=503, detail="the chat is switched off (CHAT_ENABLED)")
+    if not _PLAN_ID.match(session_id) or not await _chat_service.delete(session_id):
+        raise HTTPException(status_code=404, detail="unknown chat session")
+    return Response(status_code=204)
 
 
 @app.get("/v1/chat/{session_id}", response_model=ChatHistoryResponse)

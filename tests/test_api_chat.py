@@ -338,3 +338,66 @@ async def test_the_stored_history_carries_the_request_too(client, planned):
     first = (await client.post("/v1/chat", json={"message": "from Braunschweig to Goslar"})).json()
     history = (await client.get(f"/v1/chat/{first['session_id']}")).json()
     assert history["request"] == first["request"] and history["request"]["origin"] == "Braunschweig"
+
+
+# ------------------------------------------------- conversations: summaries and delete
+
+
+async def _start(client, text="from Braunschweig to Goslar"):
+    return (await client.post("/v1/chat", json={"message": text})).json()["session_id"]
+
+
+async def test_summaries_name_the_conversations_among_the_given_ids(client, planned):
+    first = await _start(client, "from Braunschweig to Goslar")
+    second = await _start(client, "40 km loop from Goslar")
+    response = await client.post(
+        "/v1/chat/summaries", json={"session_ids": [first, second, "c" * 32]}
+    )
+    assert response.status_code == 200
+    sessions = response.json()["sessions"]
+    assert {s["session_id"] for s in sessions} == {first, second}  # the unknown id is left out
+    by_id = {s["session_id"]: s for s in sessions}
+    assert by_id[first]["title"] == "from Braunschweig to Goslar" and by_id[first]["messages"] == 2
+    assert sessions[0]["updated"] >= sessions[1]["updated"]  # most recent first
+
+
+async def test_summaries_never_list_a_conversation_that_was_not_named(client, planned):
+    await _start(client)
+    mine = await _start(client, "40 km loop from Goslar")
+    body = (await client.post("/v1/chat/summaries", json={"session_ids": [mine]})).json()
+    assert [s["session_id"] for s in body["sessions"]] == [mine]
+    assert (await client.get("/v1/chat")).status_code in (404, 405)  # there is no list endpoint
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"session_ids": ["not-an-id"]},
+        {"session_ids": ["a" * 32] * 31},  # more than the limit
+        {"session_ids": ["a" * 32], "extra": 1},
+        {},
+    ],
+)
+async def test_summaries_reject_a_malformed_request(client, planned, body):
+    assert (await client.post("/v1/chat/summaries", json=body)).status_code == 422
+
+
+async def test_delete_forgets_the_conversation_and_then_it_is_unknown(client, planned):
+    sid = await _start(client)
+    assert (await client.delete(f"/v1/chat/{sid}")).status_code == 204
+    assert (await client.get(f"/v1/chat/{sid}")).status_code == 404
+    assert (await client.delete(f"/v1/chat/{sid}")).status_code == 404
+    again = await client.post("/v1/chat/summaries", json={"session_ids": [sid]})
+    assert again.json() == {"sessions": []}
+
+
+async def test_delete_of_a_malformed_id_is_404(client, planned):
+    assert (await client.delete("/v1/chat/not-an-id")).status_code == 404
+
+
+async def test_summaries_and_delete_are_503_when_the_chat_is_switched_off(client, monkeypatch):
+    monkeypatch.setattr(api_module, "_chat_service", None)
+    assert (
+        await client.post("/v1/chat/summaries", json={"session_ids": ["a" * 32]})
+    ).status_code == 503
+    assert (await client.delete(f"/v1/chat/{'a' * 32}")).status_code == 503
