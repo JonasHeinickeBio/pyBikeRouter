@@ -75,7 +75,8 @@ decisions still open.
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).
   Open follow-ups: a model-based intent step for follow-ups, free text verified against a real model,
-  filling the web form from the chat, a list of earlier conversations.
+  a list of earlier conversations. (The chat now fills the web form with the request behind each
+  route; the other direction -- the chat knowing what is in the form -- is not built.)
 
 ## Geocoding
 

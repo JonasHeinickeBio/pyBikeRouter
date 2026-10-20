@@ -304,3 +304,37 @@ def test_a_store_that_cannot_be_opened_falls_back_to_memory_instead_of_failing(t
     service = api_module.build_chat_service(cfg)
     assert service is not None and not hasattr(service._checkpointer, "persist")
     assert "chat sessions will not be kept" in caplog.text
+
+
+# ------------------------------------------------------ the request behind a plan (form filling)
+
+
+async def test_a_plan_comes_with_the_request_it_was_planned_from(client, planned):
+    body = (
+        await client.post("/v1/chat", json={"message": "from Braunschweig to Goslar by gravel"})
+    ).json()
+    assert body["request"]["origin"] == "Braunschweig"
+    assert body["request"]["destination"] == "Goslar"
+    assert body["request"]["constraints"]["bike_type"] == "gravel"
+
+
+async def test_a_reply_without_a_plan_has_no_request(client, planned):
+    body = (await client.post("/v1/chat", json={"message": "plan a route"})).json()
+    assert body["plan"] is None and body["request"] is None
+
+
+async def test_a_change_returns_the_changed_request(client, planned):
+    first = (await client.post("/v1/chat", json={"message": "40 km loop from Goslar"})).json()
+    again = (
+        await client.post(
+            "/v1/chat", json={"message": "make it shorter", "session_id": first["session_id"]}
+        )
+    ).json()
+    assert first["request"]["constraints"]["target_distance_km"] == 40.0
+    assert again["request"]["constraints"]["target_distance_km"] == 30.0  # what the form shows
+
+
+async def test_the_stored_history_carries_the_request_too(client, planned):
+    first = (await client.post("/v1/chat", json={"message": "from Braunschweig to Goslar"})).json()
+    history = (await client.get(f"/v1/chat/{first['session_id']}")).json()
+    assert history["request"] == first["request"] and history["request"]["origin"] == "Braunschweig"

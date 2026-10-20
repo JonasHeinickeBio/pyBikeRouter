@@ -79,6 +79,9 @@ class ChatReply(BaseModel):
     plan: dict[str, Any] | None = None
     # With ``plan``: the alternative (by rank) that was asked for.
     focus_rank: int | None = None
+    # With ``plan``: the request it was planned from (places, bike type, preferences ...), so a
+    # client can fill its form with it and let the person adjust and plan again.
+    request: dict[str, Any] | None = None
     intent: str | None = None
     awaiting: Awaiting | None = None
     # The turn could not do what was asked (no route, a failed lookup); a question back is not.
@@ -99,6 +102,7 @@ class ChatHistory(BaseModel):
     # The last route that was drawn, and the alternative that was in focus.
     plan: dict[str, Any] | None = None
     focus_rank: int | None = None
+    request: dict[str, Any] | None = None  # the request behind ``plan`` (see ChatReply)
     awaiting: Awaiting | None = None
 
 

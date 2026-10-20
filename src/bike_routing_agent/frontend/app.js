@@ -488,7 +488,7 @@ function settlePlan(generation, drawn) {
     const held = state.deferredChat;
     state.deferredChat = null;
     chatSay("bot", "(The form request did not give a route, so here is the one from our chat.)");
-    drawChatPlan(held.plan, held.focusRank, held.secs);
+    drawChatPlan(held.plan, held.focusRank, held.secs, held.request);
   }
 }
 
@@ -1606,12 +1606,12 @@ async function sendChat(text) {
       const stale = generation !== state.planGeneration; // the form asked for a route meanwhile
       if (!stale || (state.planPending === null && state.renderedGeneration !== state.planGeneration)) {
         // Current -- or the newer form request failed and left nothing on the map.
-        drawChatPlan(data.plan, data.focus_rank, secs);
+        drawChatPlan(data.plan, data.focus_rank, secs, data.request);
       } else {
         chatSay("bot", "(The map shows the route you asked for in the form meanwhile.)");
         // If that form request is still running and then fails, this route is shown after all.
         if (state.planPending !== null) {
-          state.deferredChat = { plan: data.plan, focusRank: data.focus_rank, secs };
+          state.deferredChat = { plan: data.plan, focusRank: data.focus_rank, secs, request: data.request };
         }
       }
     }
@@ -1625,8 +1625,9 @@ async function sendChat(text) {
   }
 }
 
-/** Draw the plan a chat turn produced; it is now the newest plan on the map. */
-function drawChatPlan(plan, focusRank, secs) {
+/** Draw the plan a chat turn produced; it is now the newest plan on the map. The request it was
+ * planned from fills the Plan form, so the person can adjust it there and plan again. */
+function drawChatPlan(plan, focusRank, secs, request) {
   state.planGeneration += 1;
   state.renderedGeneration = state.planGeneration;
   state.deferredChat = null;
@@ -1635,6 +1636,7 @@ function drawChatPlan(plan, focusRank, secs) {
   renderResponse(plan, secs);
   const index = BikeChat.candidateIndex(plan, focusRank);
   if (index >= 0) activateCandidate(index);
+  if (request) applyInterpretation({ request, departure_time: request.departure_time });
 }
 
 /** Bring back the conversation of an earlier visit: its messages, quick answers and last route. */
@@ -1657,7 +1659,7 @@ async function restoreChat() {
     for (const m of messages) chatSay(m.role, m.text);
     setChatChips(history.suggestions);
     if (history.plan && !state.lastResponse) {
-      drawChatPlan(history.plan, history.focus_rank, null);
+      drawChatPlan(history.plan, history.focus_rank, null, history.request);
     }
   } catch {
     /* the server could not be reached: the chat just starts empty */

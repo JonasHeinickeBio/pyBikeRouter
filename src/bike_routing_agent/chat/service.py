@@ -120,6 +120,7 @@ class ChatService:
             suggestions=suggestions,
             plan=values.get("last_plan"),
             focus_rank=values.get("focus_rank"),
+            request=values.get("last_request") if values.get("last_plan") else None,
             awaiting=awaiting,  # type: ignore[arg-type]
         )
 
@@ -170,6 +171,7 @@ class ChatService:
             suggestions=list(result.get("suggestions") or []),
             plan=result.get("plan"),
             focus_rank=result.get("focus_rank"),
+            request=result.get("last_request") if result.get("plan") else None,
             intent=result.get("intent"),
             awaiting="guided" if result.get("asking") else None,
             failed=bool(result.get("failed")),

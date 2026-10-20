@@ -88,3 +88,25 @@ def test_summary_of_a_point_to_point_ride():
     html = run_js(f"T.summaryHtml({json.dumps(interpretation)})")
     assert "<strong>A</strong> &rarr; <strong>B</strong>" in html
     assert "<ul" not in html
+
+
+def test_places_the_chat_picked_by_coordinates_become_text_the_form_can_read():
+    # The chat resolves an ambiguous place to a coordinate and plans with that.
+    request = {
+        "origin": {"lon": -72.6, "lat": 42.1},
+        "destination": "Boston",
+        "via": [{"lon": 10.5, "lat": 52.25}, "Goslar", None, {}],
+        "constraints": {"bike_type": "road"},
+    }
+    values = run_js(f"T.formValues({json.dumps({'request': request})})")
+    assert values["origin"] == "42.10000, -72.60000"  # "lat, lon": what the form parses back
+    assert values["destination"] == "Boston"
+    assert values["via"] == ["52.25000, 10.50000", "Goslar"]  # nothing readable is dropped
+
+
+@pytest.mark.parametrize(
+    "place, expected",
+    [("Goslar", "Goslar"), (None, ""), ({}, ""), ({"lat": "x", "lon": 1}, ""), (5, "")],
+)
+def test_place_text(place, expected):
+    assert run_js(f"T.placeText({json.dumps(place)})") == expected
