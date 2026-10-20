@@ -166,7 +166,8 @@ def test_a_trip_too_big_for_a_link_is_none():
         fragment_of('"text"'),
         fragment_of('{"origin": "A"}'),  # no destination
         fragment_of('{"origin": 5, "destination": 6}'),
-        "#plan=/w",  # not valid UTF-8
+        "#plan=/w",  # a character outside base64url
+        "#plan=_w",  # base64url for the byte 0xFF: not valid UTF-8
     ],
 )
 def test_anything_that_is_not_a_usable_trip_is_ignored(fragment):
@@ -193,4 +194,7 @@ def test_the_page_has_the_button_and_loads_the_link_before_the_chat_restores():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert app.index("  loadSharedPlan();") < app.index("  initChat();")
     assert "state.planPending === null" in app  # a restored chat does not draw over the link's trip
+    assert (
+        'window.addEventListener("hashchange", loadSharedPlan)' in app
+    )  # a link pasted into an open tab
     assert "state.engineOverride = keep;" in app  # copying a link is not a plan

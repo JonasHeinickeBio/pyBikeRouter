@@ -2399,6 +2399,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initSettingsPanel();
   initPois();
   loadSharedPlan(); // before the chat restores its route: a link's trip is the newest
+  // A link pasted into the address bar of a page that is already open is only a fragment change.
+  window.addEventListener("hashchange", loadSharedPlan);
   initChat();
   initStatus();
   initOptimizer();
