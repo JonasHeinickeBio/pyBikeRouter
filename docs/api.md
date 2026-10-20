@@ -74,6 +74,11 @@ alternative, and the better-scored one is kept.
 - **`max_alternatives = N`**: near-copies are dropped (still listed under the
   kept route's `duplicates`) and at most `N` distinct routes are returned.
   `route` is always `candidates[0]`, rank 1.
+- `cues` (BRouter routes; empty from other engines): the turn-by-turn instructions in route order,
+  `{"kind": "left", "distance_m": 412.3, "lon": ..., "lat": ..., "exit": null, "angle_deg": -90}`.
+  `kind` is `left`, `right`, `slight_left`, `slight_right`, `sharp_left`, `sharp_right`, `keep_left`,
+  `keep_right`, `uturn` or `roundabout` (then `exit` says which); `distance_m` is from the start. The
+  engine gives no street names ([providers.md](providers.md#brouter-providersbrouterpy)).
 - `rank_rationale` is built from facts only, e.g. `rank 2: score 0.84 (0.07
   below rank 1); 1.2 km longer; 40 m less ascent`. It never claims a route
   is safer or better for you; it states how the routes differ.

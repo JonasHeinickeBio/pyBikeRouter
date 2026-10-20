@@ -65,6 +65,10 @@ decisions still open.
   metrics. Anthropic structured outputs behind the `llm` extra, with a
   labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
   benchmark against a live model in CI, and more languages in the benchmark.
+- **Turn-by-turn directions** -- done for BRouter: its turn instructions on each route, a directions
+  list with a cue sheet in the web page, and the cues in the GeoJSON download
+  ([web-ui.md](web-ui.md#directions)). Open: street names (BRouter has none; would need an OSM lookup
+  per turn), cues from ORS and Valhalla, and a GPX/FIT form that devices read as turns.
 - **Route optimiser** -- done for BRouter: several routes fetched (profiles, its own 2nd/3rd routes,
   a traffic variant), measured, and the best fit for weighted goals selected with the numbers shown
   ([optimizer.md](optimizer.md)). Also: optional sideways detours (`detours`, off by default: on two trips they

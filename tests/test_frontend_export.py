@@ -217,6 +217,24 @@ def test_a_route_without_a_forecast_still_matches_and_has_no_forecast_parts():
     assert "forecast" not in json.loads(run_js(f"E.geojson({data})"))["properties"]
 
 
+def test_the_cues_are_in_the_geojson_the_same_in_both_and_absent_without_any():
+    from bike_routing_agent.models import RouteCue
+
+    cues = [
+        RouteCue(kind="left", distance_m=120.5, lon=10.5, lat=52.25, angle_deg=-90),
+        RouteCue(kind="roundabout", distance_m=900.0, lon=10.51, lat=52.26, exit=2, angle_deg=-124),
+    ]
+    cand = candidate(cues=cues)
+    mine = json.loads(run_js(f"E.geojson({json.dumps(cand.model_dump(mode='json'))})"))
+    assert mine == to_geojson_feature(cand)
+    assert [c["kind"] for c in mine["properties"]["cues"]] == ["left", "roundabout"]
+    plain = json.loads(run_js(f"E.geojson({json.dumps(candidate().model_dump(mode='json'))})"))
+    assert (
+        "cues" not in plain["properties"]
+        and "cues" not in to_geojson_feature(candidate())["properties"]
+    )
+
+
 @pytest.mark.parametrize("degrees", [0, 22.4, 22.5, 44, 337.5, 359.9, 360, -90, -22.5, 720])
 def test_the_compass_agrees_between_python_and_javascript(degrees):
     from bike_routing_agent.exporters.forecast import compass
