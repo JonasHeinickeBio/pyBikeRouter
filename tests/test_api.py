@@ -56,6 +56,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/export.js", "BikeExport"),
         ("/pois.js", "BikePois"),
         ("/waypoints.js", "BikeWaypoints"),
+        ("/status.js", "BikeStatus"),
+        ("/index.html", 'id="service-status"'),
         ("/index.html", 'src="waypoints.js"'),
         ("/coverage.js", "BikeCoverage"),
         ("/index.html", 'id="coverage-card"'),

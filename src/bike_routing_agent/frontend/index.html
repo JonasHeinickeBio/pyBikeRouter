@@ -24,7 +24,17 @@
   <div id="app">
     <aside id="sidebar">
       <header class="brand">
-        <h1>pyBikeRouter</h1>
+        <div class="brand-row">
+          <h1>pyBikeRouter</h1>
+          <button id="service-status" class="service-status" type="button" aria-expanded="false" aria-controls="service-status-panel" hidden>
+            <span class="status-dot" aria-hidden="true"></span><span class="visually-hidden" id="service-status-text">Service status</span>
+          </button>
+        </div>
+        <div id="service-status-panel" class="service-status-panel" hidden>
+          <p id="service-status-summary" class="status-summary"></p>
+          <ul id="service-status-list" class="service-list"></ul>
+          <p class="hint"><span id="service-status-checked">Checking&hellip;</span> The sight lookup uses a free public service that is often overloaded.</p>
+        </div>
         <p class="tagline">OSM bike routing with scored candidates</p>
         <p class="tagline"><a href="dashboard.html">Evaluation dashboard</a></p>
       </header>
@@ -333,6 +343,7 @@
   <script src="coverage.js"></script>
   <script src="settings.js"></script>
   <script src="chat.js"></script>
+  <script src="status.js"></script>
   <script src="text-planning.js"></script>
   <script src="app.js"></script>
 </body>

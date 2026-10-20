@@ -338,3 +338,72 @@ async def test_when_every_instance_answers_garbage_the_error_is_a_bad_response()
     respx.post(URL).mock(return_value=httpx.Response(200, json={"version": 0.6}))
     with pytest.raises(ProviderBadResponseError):
         await fetcher().in_bbox((10.0, 47.0, 10.2, 47.1), resolve_categories(None))
+
+
+# ------------------------------------------------------------------------------------ health
+
+STATUS = "https://overpass.example/api/status"
+SECOND = "https://second.example/api/interpreter"
+SECOND_STATUS = "https://second.example/api/status"
+STATUS_TEXT = "Connected as: 1\nCurrent time: 2026-10-20T12:00:00Z\n2 slots available now.\n"
+
+
+@respx.mock
+async def test_the_status_page_of_the_first_instance_answering_is_ok():
+    route = respx.get(STATUS).mock(return_value=httpx.Response(200, text=STATUS_TEXT))
+    assert await fetcher().health() == {"status": "ok"}
+    assert route.calls.last.request.headers["user-agent"].startswith("bike-routing-agent/")
+    assert respx.calls.call_count == 1  # a status page, not a search
+
+
+@respx.mock
+async def test_an_instance_that_only_answers_after_the_first_failed_is_degraded():
+    respx.get(STATUS).mock(side_effect=httpx.ConnectTimeout("slow"))
+    respx.get(SECOND_STATUS).mock(return_value=httpx.Response(200, text=STATUS_TEXT))
+    got = await OverpassPoiFetcher(base_urls=[URL, SECOND]).health()
+    assert got == {"status": "degraded"}  # the search falls back to it, but the first is down
+
+
+@respx.mock
+async def test_no_instance_answering_is_unavailable():
+    respx.get(STATUS).mock(side_effect=httpx.ReadTimeout("hangs"))
+    respx.get(SECOND_STATUS).mock(side_effect=httpx.ConnectError("refused"))
+    assert await OverpassPoiFetcher(base_urls=[URL, SECOND]).health() == {"status": "unavailable"}
+
+
+@respx.mock
+@pytest.mark.parametrize("code", [429, 502, 504])
+async def test_an_error_page_is_degraded_with_its_code(code):
+    respx.get(STATUS).mock(return_value=httpx.Response(code, text="busy"))
+    assert await fetcher().health() == {"status": "degraded", "status_code": code}
+
+
+@respx.mock
+async def test_a_later_instance_wins_over_an_earlier_error_page():
+    respx.get(STATUS).mock(return_value=httpx.Response(504))
+    respx.get(SECOND_STATUS).mock(return_value=httpx.Response(200, text=STATUS_TEXT))
+    assert await OverpassPoiFetcher(base_urls=[URL, SECOND]).health() == {"status": "degraded"}
+
+
+def test_the_status_url_is_derived_from_the_interpreter_url():
+    status = OverpassPoiFetcher._status_url
+    assert status("https://overpass-api.de/api/interpreter") == "https://overpass-api.de/api/status"
+    assert status("https://host.example/custom") == "https://host.example/custom"  # left alone
+
+
+@respx.mock
+async def test_the_probe_budget_is_short_even_though_a_search_waits_long():
+    from bike_routing_agent.poi.fetcher import HEALTH_PROBE_TIMEOUT_S
+
+    route = respx.get(STATUS).mock(return_value=httpx.Response(200, text=STATUS_TEXT))
+    await fetcher(timeout_s=25.0).health()
+    assert route.called and HEALTH_PROBE_TIMEOUT_S <= 5.0
+
+
+@respx.mock
+async def test_the_service_reports_the_health_of_its_fetcher():
+    from bike_routing_agent.poi.service import PoiService
+
+    respx.get(STATUS).mock(return_value=httpx.Response(200, text=STATUS_TEXT))
+    service = PoiService(fetcher(), resolver=None)  # type: ignore[arg-type]
+    assert await service.health() == {"status": "ok"}

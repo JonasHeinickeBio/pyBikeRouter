@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from bike_routing_agent.errors import ProviderError
 from bike_routing_agent.poi.categories import SERVICE_MAX_OFFSET_M, PoiCategory, resolve_categories
@@ -57,6 +57,10 @@ class PoiService:
         self._fetcher = fetcher
         self._resolver = resolver
         self._per_category_limit = per_category_limit
+
+    async def health(self) -> dict[str, Any]:
+        """Whether the sight search (Overpass) answers: see ``OverpassPoiFetcher.health``."""
+        return await self._fetcher.health()
 
     async def along_route(
         self,

@@ -85,6 +85,12 @@ const els = {
   optimizeDetour: $("optimize-detour"),
   optimizeEffort: $("optimize-effort"),
   optimizeDetours: $("optimize-detours"),
+  serviceStatus: $("service-status"),
+  serviceStatusText: $("service-status-text"),
+  serviceStatusPanel: $("service-status-panel"),
+  serviceStatusSummary: $("service-status-summary"),
+  serviceStatusList: $("service-status-list"),
+  serviceStatusChecked: $("service-status-checked"),
   chatNew: $("chat-new"),
   chatEarlierBox: $("chat-earlier-box"),
   chatEarlier: $("chat-earlier"),
@@ -1912,6 +1918,57 @@ async function initChat() {
   });
 }
 
+/* ------------------------------ service status ------------------------------ */
+
+const STATUS_POLL_MS = 60000;
+
+/** Ask /readyz which services are up and show it: a dot in the header and a list on click.
+ * The report comes with 200 and with 503; a server without /readyz (404) hides the dot. */
+async function refreshStatus() {
+  let report = null;
+  let unreachable = false;
+  try {
+    const resp = await fetch(`${API_BASE}/readyz`);
+    if (resp.status === 404) {
+      els.serviceStatus.hidden = true;
+      return;
+    }
+    report = await resp.json();
+  } catch {
+    unreachable = true; // the page was served by this server a moment ago: it is down or we are offline
+  }
+  const level = unreachable ? "unavailable" : BikeStatus.levelOf(report);
+  if (level === null) {
+    els.serviceStatus.hidden = true;
+    return;
+  }
+  const text = unreachable ? "Cannot reach the server" : BikeStatus.summaryText(report);
+  els.serviceStatus.hidden = false;
+  els.serviceStatus.dataset.level = level;
+  els.serviceStatus.title = text;
+  els.serviceStatusText.textContent = `Service status: ${text}`;
+  els.serviceStatusSummary.textContent = text;
+  els.serviceStatusList.innerHTML = unreachable ? "" : BikeStatus.rowsHtml(report);
+  const checked = report && report.checked_at ? Date.parse(report.checked_at) / 1000 : Date.now() / 1000;
+  els.serviceStatusChecked.textContent = `Checked ${BikeChat.relativeTime(checked, Date.now() / 1000)}.`;
+}
+
+function initStatus() {
+  els.serviceStatus.addEventListener("click", () => {
+    const open = els.serviceStatusPanel.hidden;
+    els.serviceStatusPanel.hidden = !open;
+    els.serviceStatus.setAttribute("aria-expanded", String(open));
+    if (open) refreshStatus();
+  });
+  refreshStatus();
+  setInterval(() => {
+    if (document.visibilityState === "visible") refreshStatus();
+  }, STATUS_POLL_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshStatus();
+  });
+}
+
 /* ------------------------------ optimiser tab ------------------------------ */
 
 const TAB_KEY = "pybikerouter.tab";
@@ -2181,5 +2238,6 @@ document.addEventListener("DOMContentLoaded", () => {
   initSettingsPanel();
   initPois();
   initChat();
+  initStatus();
   initOptimizer();
 });

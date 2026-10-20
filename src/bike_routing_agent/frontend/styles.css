@@ -837,3 +837,22 @@ body[data-tab="plan"] [data-tab="optimize"] { display: none !important; }
 
 /* A hidden grid stays hidden (display: grid would otherwise win over the hidden attribute). */
 .grid-2[hidden] { display: none; }
+
+/* ------------------------------ service status ------------------------------ */
+.brand-row { display: flex; align-items: center; gap: 0.5rem; }
+.brand-row h1 { margin: 0; }
+.service-status { display: inline-flex; align-items: center; padding: 0.25rem; border-radius: 999px; background: none; border: 1px solid var(--line); cursor: pointer; }
+.status-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--muted); display: block; }
+.service-status[data-level="ok"] .status-dot { background: #2e9d5f; }
+.service-status[data-level="degraded"] .status-dot { background: #d9961a; }
+.service-status[data-level="unavailable"] .status-dot { background: #c43d32; }
+.service-status-panel { margin: 0.4rem 0; padding: 0.5rem 0.6rem; border: 1px solid var(--line); border-radius: 10px; font-size: 0.85rem; }
+.status-summary { margin: 0 0 0.3rem; font-weight: 600; }
+.service-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.svc { display: flex; align-items: baseline; gap: 0.4rem; }
+.svc-dot { flex: 0 0 auto; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--muted); }
+.svc.ok .svc-dot { background: #2e9d5f; }
+.svc.degraded .svc-dot { background: #d9961a; }
+.svc.unavailable .svc-dot { background: #c43d32; }
+.svc-name { flex: 1; min-width: 0; }
+.svc-state { color: var(--muted); font-size: 0.78rem; text-align: right; }

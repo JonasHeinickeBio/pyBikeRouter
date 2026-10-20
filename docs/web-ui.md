@@ -15,6 +15,16 @@ Four ways, all ending up in the same fields (Origin, Destination, the Via stops)
   (below).
 - **Chat** -- a route the chat plans fills the form with its request, so you can adjust it there.
 
+## Service status
+
+A dot next to the title shows whether the services behind the planner are up -- green: all, amber: some
+are down but plans still work, red: cannot plan (or the server itself cannot be reached). Click it for the
+list: route engine, place search, weather, **sights**, route files (and history, cache when configured),
+each with its state and the server's short reason (`HTTP 502`, `unreachable`). It reads `GET /readyz`
+([api.md](api.md#get-readyz)) once a minute while the page is visible, and when you open the list. The
+sight lookup uses free public Overpass servers that are often overloaded: when markers or stops do not
+show up, this is where you see whether that is why. A server without `/readyz` shows no dot.
+
 ## Chat conversations
 
 The chat panel keeps its conversations (when the server stores them, see [chat.md](chat.md)): **New chat**

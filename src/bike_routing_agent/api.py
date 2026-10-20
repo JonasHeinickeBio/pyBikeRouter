@@ -481,6 +481,7 @@ _health_monitor = build_health_monitor(
     history=_history,
     cache=_cache,
     weather=_weather_service,
+    poi=_poi_service,
     # With the exports in the database a database outage fails plans, so it
     # gates readiness; otherwise history is best effort and only degrades.
     database_is_critical=settings.artifact_backend == "database",
