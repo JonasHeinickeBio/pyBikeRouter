@@ -1,9 +1,9 @@
 """Deterministic scoring.
 
 Distance and elevation fit are computed from provider metrics. A surface
-fit (issue #23) is computed from the OSM enrichment under the
-unknown-is-unknown policy and enters the score only through
-``surface_active``: when the caller stated surface preferences *and* every
+fit (issue #23) is computed from the OSM enrichment -- or, when there is none, from
+the engine's own surface shares -- under the unknown-is-unknown policy and enters the score
+only through ``surface_active``: when the caller stated surface preferences *and* every
 candidate being compared carries enough surface evidence. Anything less
 leaves the score exactly as it was -- unknown surface coverage is
 uncertainty, never a bonus and never a penalty -- and, because the decision
@@ -37,12 +37,14 @@ WARNING_PENALTY_PER_ITEM = 0.05
 # (1 + SURFACE_WEIGHT) - penalty, so the score stays in [0, 1] and a request
 # without surface preferences scores exactly as before.
 #
-# Deliberately 0.0 (inactive) until a calibration run justifies a value:
-# docs/scoring-and-exports.md ("Enabling the surface component") describes
-# how to produce that evidence with scripts/calibrate.py, and the weight is
-# then a one-line change here. The component is still computed and reported
-# in ``score_breakdown`` so the calibration harness can sweep it.
-SURFACE_WEIGHT = 0.0
+# 1.0, chosen from the calibration run in docs/scoring-and-exports.md
+# ("Surface weight: evidence"): on the seven preference cases of the benchmark the clearest
+# one -- a gravel bike asking for paved on Braunschweig -> Hannover, where the touring profile is
+# 65 % paved against the gravel profile's 26 % at the same length -- starts to flip at about 0.72
+# (with the traffic term on), and 1.0 gives headroom without moving any other case.
+# Only requests that state surface preferences are affected. 0.0 switches the term off; the
+# component is reported in ``score_breakdown`` either way.
+SURFACE_WEIGHT = 1.0
 
 # A candidate's surface evidence counts only when at least this share of its
 # length has a known surface category; below it the fit would describe a
@@ -70,27 +72,64 @@ TRAFFIC_INDEX_AT_ZERO_FIT = 0.4
 MAX_TRAFFIC_DETOUR = 0.5
 
 
+# The engine's surface classes (BRouter: brouter_tags.surface_shares) are coarser than the
+# categories of the surface vocabulary: "unpaved" is compacted + loose + natural_soft together.
+ENGINE_SURFACE_CLASS = {
+    "paved": "paved",
+    "masonry": "cobbles",
+    "compacted": "unpaved",
+    "loose": "unpaved",
+    "natural_soft": "unpaved",
+}
+
+
+def _engine_surface_fit(
+    shares: dict[str, float], preferred: frozenset[str], avoided: frozenset[str]
+) -> tuple[float, float] | None:
+    """The surface fit from the engine's coarse shares, or ``None`` when it cannot judge.
+
+    ``None`` when the engine gave no tags, or when the stated preferences cannot be told apart
+    at the engine's resolution: the same engine class preferred and avoided at once (prefer
+    ``compacted``, avoid ``loose``: both are "unpaved" to the engine) is a question it cannot
+    answer, so it is not guessed. A preference for one *part* of the unpaved class (``gravel``
+    only) is read as a preference for that class: the engine's "unpaved" is what it can say.
+    """
+    known = 1.0 - shares.get("unknown", 0.0)
+    wanted = {ENGINE_SURFACE_CLASS[c] for c in preferred}
+    unwanted = {ENGINE_SURFACE_CLASS[c] for c in avoided}
+    if not shares or known <= 0 or wanted & unwanted:
+        return None
+    terms: list[float] = []
+    if wanted:
+        terms.append(sum(shares.get(c, 0.0) for c in wanted) / known)
+    if unwanted:
+        terms.append(1.0 - sum(shares.get(c, 0.0) for c in unwanted) / known)
+    return min(1.0, max(0.0, sum(terms) / len(terms))), min(1.0, known)
+
+
 def surface_fit(
     candidate: RouteCandidate, constraints: RouteConstraints
 ) -> tuple[float, float] | None:
     """``(fit, known_share)`` for the stated surface preferences, or ``None``.
 
     ``None`` means there is nothing to judge: no (recognised) preference, or
-    no surface evidence. Shares in ``surface_coverage`` are of the whole
-    route and sum with ``unknown_surface_fraction`` to 1, so they are
-    re-based onto the *known* length -- a poorly mapped route is not
-    penalised for what is unknown, it just carries less evidence
-    (``known_share``).
+    no surface evidence. The evidence is the OSM enrichment when it ran, else the engine's own
+    surface shares (coarser: see ``_engine_surface_fit``). Shares in ``surface_coverage`` are
+    of the whole route and sum with ``unknown_surface_fraction`` to 1, so they are re-based
+    onto the *known* length -- a poorly mapped route is not penalised for what is unknown, it
+    just carries less evidence (``known_share``).
 
     ``fit`` is the mean of the stated terms: the share of known length on
     preferred categories, and one minus the share on avoided categories.
     """
     preferred, _ = resolve_surface_tokens(constraints.prefer_surfaces)
     avoided, _ = resolve_surface_tokens(constraints.avoid_surfaces)
+    if not (preferred or avoided):
+        return None
     coverage = candidate.metrics.surface_coverage
     known = sum(coverage.values())
-    if not (preferred or avoided) or known <= 0:
-        return None
+    if known <= 0:
+        return _engine_surface_fit(candidate.metrics.engine_surface_shares, preferred, avoided)
     terms: list[float] = []
     if preferred:
         terms.append(sum(coverage.get(c, 0.0) for c in preferred) / known)

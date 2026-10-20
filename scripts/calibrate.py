@@ -150,9 +150,11 @@ async def run_case(
             for breakdown in [score_candidate(c, constraints)[1]]
         },
         "surface_evidence": {
-            c.provider: {
+            f"{c.provider}/{c.provider_profile}": {
                 "fit": breakdown.get("surface_fit"),
                 "known_share": breakdown.get("surface_known_share"),
+                "km": round(c.metrics.distance_m / 1000, 1),
+                "engine_shares": c.metrics.engine_surface_shares,
             }
             for c in scored
             for breakdown in [score_candidate(c, constraints)[1]]

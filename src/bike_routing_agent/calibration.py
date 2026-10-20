@@ -65,7 +65,7 @@ DEFAULT_WEIGHT_GRID: tuple[tuple[float, float], ...] = (
 # the reference every non-zero point is compared against: a ranking that
 # changes between 0.0 and a small weight is exactly the evidence needed to
 # decide whether (and how heavily) the component should be switched on.
-SURFACE_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.10, 0.20, 0.30)
+SURFACE_WEIGHT_GRID: tuple[float, ...] = (0.0, 0.10, 0.20, 0.30, 0.50, 1.00)
 
 # The same for the traffic component. The range 0.4-1.0 is where the first
 # evidence run (docs/scoring-and-exports.md, "Traffic weight: evidence") was stable.
@@ -431,6 +431,16 @@ def ranked_candidates(
     return rank_candidates(scored)
 
 
+def _labels(candidates: list[RouteCandidate]) -> list[str]:
+    """What a ranking calls each candidate: the provider when they are all different engines,
+    ``provider/profile`` when one engine gave several routes (BRouter's profiles are what
+    differ -- a ranking that reads ``brouter, brouter, brouter`` says nothing)."""
+    providers = [c.provider for c in candidates]
+    if len(set(providers)) == len(providers):
+        return providers
+    return [f"{c.provider}/{c.provider_profile}" for c in candidates]
+
+
 def weight_sensitivity(
     candidates: list[RouteCandidate],
     constraints: RouteConstraints,
@@ -446,7 +456,7 @@ def weight_sensitivity(
     for w_distance, w_elevation in grid:
         label = f"{w_distance:.2f}/{w_elevation:.2f}"
         ranked = ranked_candidates(candidates, constraints, w_distance, w_elevation)
-        report[label] = [c.provider for c in ranked]
+        report[label] = _labels(ranked)
     return report
 
 
@@ -464,9 +474,7 @@ def surface_weight_sensitivity(
     this yet" is itself a calibration finding.
     """
     return {
-        f"surface={w:.2f}": [
-            c.provider for c in ranked_candidates(candidates, constraints, surface_weight=w)
-        ]
+        f"surface={w:.2f}": _labels(ranked_candidates(candidates, constraints, surface_weight=w))
         for w in grid
     }
 
@@ -484,10 +492,7 @@ def traffic_weight_sensitivity(
     a finding too. Labels carry the profile because the engines' profiles are what differ.
     """
     return {
-        f"traffic={w:.2f}": [
-            f"{c.provider}/{c.provider_profile}"
-            for c in ranked_candidates(candidates, constraints, traffic_weight=w)
-        ]
+        f"traffic={w:.2f}": _labels(ranked_candidates(candidates, constraints, traffic_weight=w))
         for w in grid
     }
 
