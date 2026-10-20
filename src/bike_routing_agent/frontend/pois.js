@@ -60,18 +60,22 @@
     return known ? known.label : poi.category;
   }
 
-  /** The popup: facts, a "more" button (only when the open services may know more), "add". */
-  function popupHtml(poi, categories) {
+  /** The popup: facts, a "more" button (only when the open services may know more), "add".
+   * `hours` is the opening-hours verdict for the time you pass ({state, text}, hours.js) or null. */
+  function popupHtml(poi, categories, hours) {
     const known = (categories || []).find((c) => c.key === poi.category);
     const meta = [known ? known.label : poi.category, fameText(poi.fame), distanceText(poi.distance_from_route_m)]
       .filter(Boolean)
       .map(escapeHtml)
       .join(" &middot; ");
-    const hours = poi.opening_hours ? `<div class="poi-hours">Hours (OSM): ${escapeHtml(poi.opening_hours)}</div>` : "";
+    const verdict = hours && (hours.state === "open" || hours.state === "closed")
+      ? `<div class="poi-hours-check ${hours.state}">${escapeHtml(hours.text)}</div>`
+      : "";
+    const raw = poi.opening_hours ? `<div class="poi-hours">Hours (OSM): ${escapeHtml(poi.opening_hours)}</div>` : "";
     const canInfo = Boolean(poi.wikidata || poi.wikipedia);
     return (
       `<div class="poi-popup"><strong class="poi-title">${icon(poi.category)} ${escapeHtml(title(poi, categories))}</strong>` +
-      `<div class="poi-meta">${meta}</div>${hours}<div class="poi-info" aria-live="polite"></div>` +
+      `<div class="poi-meta">${meta}</div>${verdict}${raw}<div class="poi-info" aria-live="polite"></div>` +
       '<div class="poi-actions">' +
       (canInfo ? '<button type="button" class="ghost" data-act="info">Read more</button>' : "") +
       '<button type="button" class="primary" data-act="add">Add to route</button></div></div>'

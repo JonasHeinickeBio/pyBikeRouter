@@ -30,9 +30,7 @@ benchmark = load_benchmark()
 
 @pytest.fixture(scope="module")
 def providers() -> list:
-    return build_routing_providers(
-        settings.model_copy(update={"routing_provider": "ors"})
-    )
+    return build_routing_providers(settings.model_copy(update={"routing_provider": "ors"}))
 
 
 @pytest.mark.skipif(not _has_ors_key, reason="ORS_API_KEY not set")

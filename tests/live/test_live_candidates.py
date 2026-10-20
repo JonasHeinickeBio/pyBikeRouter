@@ -100,9 +100,7 @@ async def test_live_multi_engine_candidates_compare_engines(client, monkeypatch)
     surface in candidates, and a down Valhalla degrades to a recorded error
     instead of sinking the request."""
     if not _brouter_reachable():
-        pytest.skip(
-            f"no local BRouter server at {settings.brouter_base_url} (see docker/brouter/)"
-        )
+        pytest.skip(f"no local BRouter server at {settings.brouter_base_url} (see docker/brouter/)")
     cfg = Settings(routing_provider="all")
     monkeypatch.setattr(api_module, "_graph", build_graph_for_settings(cfg))
 

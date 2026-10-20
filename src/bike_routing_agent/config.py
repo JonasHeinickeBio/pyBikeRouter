@@ -171,6 +171,9 @@ class Settings(BaseSettings):
     poi_default_buffer_m: float = 1500.0
     poi_max_buffer_m: float = 5000.0
     poi_per_category_limit: int = 40
+    # Ask Open-Meteo for the time zone of a route so opening hours can be read in local time
+    # (one small request per route, keyed by a coarse grid cell; false: hours are not checked).
+    poi_timezone_lookup: bool = True
 
     # Readiness endpoint (issue #25): each component is probed at most once
     # per TTL, with a hard per-probe timeout. The geocoder gets a longer TTL

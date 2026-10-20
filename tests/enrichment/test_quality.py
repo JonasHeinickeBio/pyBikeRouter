@@ -70,9 +70,7 @@ def test_classify_way_keeps_unknown_unknown(tags: dict) -> None:
 
 
 def test_explicit_surface_beats_tracktype_and_booleans() -> None:
-    way_class = classify_way(
-        {"surface": "asphalt", "tracktype": "grade5", "native": "yes"}
-    )
+    way_class = classify_way({"surface": "asphalt", "tracktype": "grade5", "native": "yes"})
     # native=yes + hard surface would conflict, but an explicit asphalt
     # surface outranks the fallback tags... except native is a *conflict*
     # rule here, so policy cancels it out instead of trusting either.
@@ -135,9 +133,7 @@ def test_access_tag_is_carried_through_but_never_changes_surface() -> None:
 
 def test_build_summary_weights_everything_by_length() -> None:
     paved = WayClass(category="paved", source=EXPLICIT, conflict=False, highway="residential")
-    loose_inferred = WayClass(
-        category="loose", source=INFERRED, conflict=False, highway="track"
-    )
+    loose_inferred = WayClass(category="loose", source=INFERRED, conflict=False, highway="track")
     conflict = WayClass(category=None, source=None, conflict=True, highway="path")
     summary = build_summary(
         [

@@ -87,3 +87,6 @@ class PoiSearchResponse(BaseModel):
     truncated: bool = False
     # How the fame ranking went: ok | partial | unavailable | skipped.
     fame_status: str = "ok"
+    # IANA zone at the middle of the route (along-route searches): what OSM opening hours are
+    # written in. None when not looked up or unknown.
+    timezone: str | None = None

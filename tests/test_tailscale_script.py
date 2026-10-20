@@ -17,9 +17,7 @@ def test_script_is_executable_and_syntactically_valid():
 
 def test_script_never_publishes_to_the_public_internet():
     # Only the comment explaining that it does not may mention funnel.
-    code = [
-        line for line in SCRIPT.read_text().splitlines() if not line.lstrip().startswith("#")
-    ]
+    code = [line for line in SCRIPT.read_text().splitlines() if not line.lstrip().startswith("#")]
     assert not any("funnel" in line for line in code)
 
 

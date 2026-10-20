@@ -22,9 +22,7 @@ def postgres_database():
     from bike_routing_agent.storage.postgres import PostgresDatabase
 
     with psycopg.connect(url, autocommit=True) as conn:
-        conn.execute(
-            "DROP TABLE IF EXISTS candidates, plans, artifacts, schema_migrations CASCADE"
-        )
+        conn.execute("DROP TABLE IF EXISTS candidates, plans, artifacts, schema_migrations CASCADE")
     database = PostgresDatabase(url, max_size=2)  # migrates (recreates the schema) on first use
     yield database
     database.close()
@@ -38,7 +36,5 @@ def empty_database_url():
         pytest.skip("TEST_DATABASE_URL not set")
     psycopg = pytest.importorskip("psycopg")
     with psycopg.connect(url, autocommit=True) as conn:
-        conn.execute(
-            "DROP TABLE IF EXISTS candidates, plans, artifacts, schema_migrations CASCADE"
-        )
+        conn.execute("DROP TABLE IF EXISTS candidates, plans, artifacts, schema_migrations CASCADE")
     return url

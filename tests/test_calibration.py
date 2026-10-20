@@ -49,11 +49,7 @@ def _candidate(provider: str, metrics: RouteMetrics, warnings=()) -> RouteCandid
 def _good_metrics(case) -> RouteMetrics:
     """Metrics sitting at the centre of the case's judged envelopes."""
     exp = case.expectations
-    distance = (
-        (exp.distance_m.minimum + exp.distance_m.maximum) / 2
-        if exp.distance_m
-        else 5_000.0
-    )
+    distance = (exp.distance_m.minimum + exp.distance_m.maximum) / 2 if exp.distance_m else 5_000.0
     ascent = (exp.ascent_m.minimum + exp.ascent_m.maximum) / 2 if exp.ascent_m else 10.0
 
     coverage: dict[str, float] = {}
@@ -64,9 +60,7 @@ def _good_metrics(case) -> RouteMetrics:
             coverage[category] = max(coverage.get(category, 0.0), share)
         if surf.min_combined:
             group = surf.min_combined.categories
-            deficit = surf.min_combined.share - sum(
-                coverage.get(c, 0.0) for c in group
-            )
+            deficit = surf.min_combined.share - sum(coverage.get(c, 0.0) for c in group)
             if deficit > 0:
                 coverage[group[0]] = coverage.get(group[0], 0.0) + deficit
         known = sum(coverage.values())
@@ -89,13 +83,20 @@ def _good_metrics(case) -> RouteMetrics:
             if add > 0:
                 coverage[category] = coverage.get(category, 0.0) + add
                 known += add
-    unknown = max_unknown if max_unknown is not None and not surf else (
-        1.0 - sum(coverage.values()) if surf else None
+    unknown = (
+        max_unknown
+        if max_unknown is not None and not surf
+        else (1.0 - sum(coverage.values()) if surf else None)
     )
     traffic = exp.max_traffic_index / 2 if exp.max_traffic_index is not None else None
-    return RouteMetrics(distance_m=distance, duration_s=3600, ascent_m=ascent,
-                        surface_coverage=coverage, unknown_surface_fraction=unknown,
-                        traffic_index=traffic)
+    return RouteMetrics(
+        distance_m=distance,
+        duration_s=3600,
+        ascent_m=ascent,
+        surface_coverage=coverage,
+        unknown_surface_fraction=unknown,
+        traffic_index=traffic,
+    )
 
 
 def _silly_metrics(case) -> RouteMetrics:
@@ -283,18 +284,13 @@ def test_weight_grid_flips_a_borderline_ranking():
     B: 15 % longer but comfortably under the cap.
     """
     constraints = RouteConstraints(target_distance_km=10, max_ascent_m=200)
-    a = _candidate(
-        "a-exact-flat-violation", RouteMetrics(distance_m=10_000, ascent_m=300)
-    )
+    a = _candidate("a-exact-flat-violation", RouteMetrics(distance_m=10_000, ascent_m=300))
     b = _candidate("b-longer-gentle", RouteMetrics(distance_m=11_500, ascent_m=50))
 
     default_order = [c.provider for c in ranked_candidates([a, b], constraints)]
     assert default_order == ["b-longer-gentle", "a-exact-flat-violation"]
 
-    distance_heavy = [
-        c.provider
-        for c in ranked_candidates([a, b], constraints, 0.80, 0.20)
-    ]
+    distance_heavy = [c.provider for c in ranked_candidates([a, b], constraints, 0.80, 0.20)]
     assert distance_heavy == ["a-exact-flat-violation", "b-longer-gentle"]
 
 
@@ -313,17 +309,14 @@ def test_ranked_candidates_matches_production_scoring_at_default_weights():
 
     constraints = RouteConstraints(target_distance_km=8)
     candidate = _candidate("p", RouteMetrics(distance_m=9_000, ascent_m=40))
-    (score, _), = [
-        (c.score, c) for c in ranked_candidates([candidate], constraints)
-    ]
+    ((score, _),) = [(c.score, c) for c in ranked_candidates([candidate], constraints)]
     assert score == pytest.approx(score_candidate(candidate, constraints)[0])
 
 
 def test_build_request_mirrors_case():
     case = load_benchmark().cases[0]
     request = build_request(case)
-    assert request.origin == Coordinate(lon=case.request.origin.lon,
-                                        lat=case.request.origin.lat)
+    assert request.origin == Coordinate(lon=case.request.origin.lon, lat=case.request.origin.lat)
     assert request.destination == case.request.destination
     assert request.constraints == case.request.constraints
 

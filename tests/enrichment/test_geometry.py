@@ -60,9 +60,7 @@ def test_point_segment_distance_projects_and_clamps() -> None:
     beyond = Coordinate(lon=b.lon + 50.0 / LON_METERS_AT_525, lat=LAT)
     assert point_segment_distance_m(beyond, a, b) == pytest.approx(50.0, rel=1e-6)
     # degenerate zero-length segment
-    assert point_segment_distance_m(point, a, a) == pytest.approx(
-        math.hypot(50.0, 10.0), rel=1e-6
-    )
+    assert point_segment_distance_m(point, a, a) == pytest.approx(math.hypot(50.0, 10.0), rel=1e-6)
 
 
 def test_point_to_way_distance_uses_nearest_polyline_element() -> None:

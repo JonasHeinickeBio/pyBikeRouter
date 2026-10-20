@@ -139,6 +139,10 @@ in the settings.
   languages"), the distance from the route and the opening hours as mapped.
   *Read more* loads the Wikipedia summary, a thumbnail and links to Wikipedia,
   Wikivoyage, Commons, Wikidata, OpenStreetMap and the website.
+- With a route on screen **and a departure time** (so there is a forecast and an arrival), the popup
+  also says whether the sight is open when you pass it: *Open when you pass (about 14:20) until
+  18:00.* or *Closed when you pass (about 07:00), opens 10:00.*, above the hours as mapped. See
+  [Opening hours](#opening-hours).
 - *Add to route* fills an empty origin, then an empty destination, otherwise adds
   a via point **between the via points it lies between along the route**, and
   plans again when a route is shown.
@@ -155,9 +159,29 @@ in the settings.
 | `POI_TIMEOUT_S` / `POI_MAX_RETRIES` | per-request timeout; extra rounds over the instances after a failure | `25` / `1` |
 | `POI_CACHE_TTL_S` | how long a search is reused (Redis if `CACHE_BACKEND=redis`) | `86400` |
 | `POI_DEFAULT_BUFFER_M` / `POI_MAX_BUFFER_M` | how far from the route a sight may be, and the cap | `1500` / `5000` |
+| `POI_TIMEZONE_LOOKUP` | `false`: no time-zone request, the opening hours are not compared with your arrival | `true` |
 | `POI_PER_CATEGORY_LIMIT` | most POIs returned per kind (best-known first) | `40` |
 
-## Which hosts are ever contacted
+## Opening hours
+
+OSM writes opening hours in the *local* time of the place, so the check needs two things: when you
+pass the sight and in which time zone. The browser takes the departure and the arrival of the
+active candidate (the forecast's, which is the engine's duration) and puts the sight at its share
+of the ride (`along_route_km` over the route length); `POST /v1/pois/along-route` answers with
+`timezone`, the IANA zone at the middle of the route, which the server asks Open-Meteo for
+(`timezone=auto`, one small request per route and 0.1 degree cell, cached for 30 days; it needs
+no key and `POI_TIMEZONE_LOOKUP=false` switches it off). The weekday and the time are then read
+in that zone with the browser's `Intl`, which also gets the daylight-saving offset of that day
+right.
+
+`frontend/hours.js` reads the common part of the language: `Mo-Fr 09:00-18:00`, day lists and
+ranges (also across the weekend, `Fr-Mo`), several stretches a day, hours past midnight
+(`Fr,Sa 20:00-02:00`), `off`/`closed`/`open`, `24/7`, and a later rule replacing an earlier one
+for the days it names. **It never guesses**: months, weeks, `sunrise`/`sunset`, open ends
+(`10:00+`), quoted comments, nth weekdays and rules chained with a comma give *no verdict* and only
+the raw text is shown. Public and school holidays are not known: a text that mentions them is
+answered for an ordinary day with "Public holidays are not checked".
+
 
 Overpass (`POI_OVERPASS_URLS`), Wikidata (`POI_WIKIDATA_URL`) and
 `{lang}.wikipedia.org` (`POI_WIKIPEDIA_URL`). The language is the only client-influenced
@@ -233,7 +257,12 @@ page that does not exist). The front-end helpers in `frontend/pois.js` run under
   run reported it; the cause could not be reproduced afterwards, so it is not understood.
 - Stops are chosen near the **straight line** origin -> destination; on a winding trip a
   stop can add a long detour. A loop's stops are looked for along the circuit (see above).
-- Opening hours are shown as mapped and not compared with the arrival time.
+- The opening-hours verdict is an estimate of when you pass, not a promise: the time comes from the
+  engine's duration (not the wind-adjusted one) and a ride is never exactly on schedule; the zone is
+  one per route, so a ride across a zone border reads the far side an hour off; and it needs a
+  departure time. Overpass was unreachable on the day this was built, so the browser walk-through
+  used a stand-in for the sight search (real route, forecast, Open-Meteo zone and `Intl`); the
+  parser is tested on constructed texts, not on a sample of real OSM tags.
 - No self-hosted Overpass, no pageview-based fame, no scoring effect -- see the roadmap.
 - The Overpass quirks above are those of one day's public instance; if they no longer
   occur, `POI_OVERPASS_URLS` with a single URL is fine.

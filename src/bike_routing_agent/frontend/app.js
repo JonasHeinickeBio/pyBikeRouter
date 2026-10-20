@@ -134,6 +134,7 @@ const state = {
   poiStopLayer: L.layerGroup(), // the famous sights the plan was routed past
   poiCategories: [], // [{key, label, kind}] from the server
   poiPrefs: { enabled: true, keys: [] },
+  poiTimezone: null, // IANA zone the server named for the active route's sights (opening hours)
   poiRequest: 0, // bumped by every refresh and clear, so a slow answer cannot redraw stale POIs
   poiTimer: null,
   engineOverride: null, // engines for the next plan only (set by "plan with openrouteservice")
@@ -774,6 +775,7 @@ function clearResults() {
   state.poiLayer.clearLayers();
   state.poiStopLayer.clearLayers();
   state.poiRequest++;
+  state.poiTimezone = null;
   els.coverageCard.hidden = true;
   els.coverageCard.innerHTML = "";
   els.poiStopsNote.hidden = true;
@@ -1703,6 +1705,7 @@ async function refreshPois() {
     }
     const data = await resp.json();
     if (request !== state.poiRequest) return;
+    state.poiTimezone = (entry && data.timezone) || null;
     drawPois(data);
   } catch {
     if (request === state.poiRequest) setPoiStatus("Points of interest could not be loaded.");
@@ -1739,9 +1742,22 @@ function addPoiMarker(poi, layer, isStop) {
   marker.bindPopup(() => poiPopup(poi), { maxWidth: 280 });
 }
 
+/** What the opening-hours check needs: when the active route is ridden, how long it is, where. */
+function rideForHours() {
+  const entry = state.candidateLayers[state.activeIndex];
+  const cand = entry && entry.candidate;
+  if (!cand || !cand.weather || !state.poiTimezone) return null;
+  return {
+    departure: cand.weather.departure,
+    arrival: cand.weather.arrival,
+    distance_m: cand.metrics && cand.metrics.distance_m,
+    timezone: state.poiTimezone,
+  };
+}
+
 function poiPopup(poi) {
   const el = document.createElement("div");
-  el.innerHTML = BikePois.popupHtml(poi, state.poiCategories);
+  el.innerHTML = BikePois.popupHtml(poi, state.poiCategories, BikeHours.check(poi, rideForHours()));
   const infoBox = el.querySelector(".poi-info");
   const infoBtn = el.querySelector('[data-act="info"]');
   if (infoBtn) {
