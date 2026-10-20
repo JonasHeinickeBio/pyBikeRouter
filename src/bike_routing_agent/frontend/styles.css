@@ -627,6 +627,7 @@ textarea {
 .opt-rain.dry { color: var(--accent); }
 .opt-rain.wet { color: #3b82f6; }
 .opt-wind { margin-left: auto; font-variant-numeric: tabular-nums; }
+.opt-windtime { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.78rem; }
 .opt-tag { font-size: 0.7rem; padding: 0 0.35rem; border-radius: 999px; background: var(--accent); color: #fff; }
 
 /* ------------------------------ alternative routes ------------------------------ */

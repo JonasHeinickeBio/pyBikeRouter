@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate
+from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate, RouteConstraints
 from bike_routing_agent.state import RouteAgentState
 from bike_routing_agent.weather.analysis import (
     ESTIMATED_SPEED_KMH,
@@ -85,6 +85,9 @@ def build_weather_node(
             return {"weather_status": "not_covered"}
 
         candidates = [RouteCandidate.model_validate(c) for c in raw_candidates]
+        bike_type = str(
+            RouteConstraints.model_validate(state.get("constraints", {})).bike_type.value
+        )
         plans: list[tuple[list[RoutePoint], float, str]] = []
         for candidate in candidates:
             points = sample_route(
@@ -134,6 +137,8 @@ def build_weather_node(
                 sources=forecast.sources,
                 option_offsets_h=offsets,
                 earliest=current,
+                bike_type=bike_type,
+                ascent_m=candidate.metrics.ascent_m,
             )
             any_weather = any_weather or weather is not None
             updated.append(

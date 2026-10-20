@@ -137,6 +137,24 @@
       : { kind: "tail", text: `${speed.toFixed(0)} km/h tailwind on average` };
   }
 
+  /** Minutes as "+12 min" / "−5 min" (a real minus sign), rounded. */
+  function signedMinutes(seconds) {
+    const minutes = Math.round(Math.abs(seconds) / 60);
+    return `${seconds < 0 ? "\u2212" : "+"}${minutes} min`;
+  }
+
+  /**
+   * The wind's effect on the travel time as text -- "+12 min (9\u201315)" -- or null when it is
+   * not worth stating (under 3 minutes or 3 % of the ride: below what the forecast supports).
+   */
+  function windEffectText(effect) {
+    if (!effect || !Number.isFinite(effect.effect_s)) return null;
+    if (Math.abs(effect.effect_s) < Math.max(180, 0.03 * (effect.still_air_s || 0))) return null;
+    const range = Array.isArray(effect.range_s) ? effect.range_s.map((x) => Math.round(Math.abs(x) / 60)).sort((a, b) => a - b) : [];
+    const span = range.length === 2 && range[0] !== range[1] ? ` (${range[0]}\u2013${range[1]})` : "";
+    return `${signedMinutes(effect.effect_s)}${span}`;
+  }
+
   function pad(n) {
     return String(n).padStart(2, "0");
   }
@@ -219,6 +237,8 @@
     if (wet !== null) facts.push(["Precipitation", wet]);
     const sun = daylightText(weather.daylight);
     if (sun !== null) facts.push(["Sunrise / sunset", sun]);
+    const windTime = windEffectText(weather.wind_effect);
+    if (windTime !== null) facts.push(["Wind on your time", windTime]);
 
     const headShare = typeof s.headwind_share === "number" ? s.headwind_share : null;
     const tailShare = typeof s.tailwind_share === "number" ? s.tailwind_share : null;
@@ -282,6 +302,10 @@
     const dark = option.after_dark
       ? '<span class="opt-dark" title="Starts before sunrise or ends after sunset">🌙</span>'
       : "";
+    const windTime = windEffectText({ effect_s: option.wind_effect_s });
+    const windTimeCell = windTime
+      ? `<span class="opt-windtime" title="Estimated effect of the wind on the travel time (same effort as in still air)">${escapeHtml(signedMinutes(option.wind_effect_s))}</span>`
+      : "";
     const isSuggested = suggestedIso && new Date(suggestedIso).getTime() === new Date(option.departure).getTime();
     const classes = ["opt-row"];
     if (option.offset_minutes === 0) classes.push("requested");
@@ -293,6 +317,7 @@
       `<span class="opt-offset">${offsetLabel(option.offset_minutes)}</span>` +
       rain +
       `<span class="opt-wind wind-${head.kind}" title="${escapeHtml(head.title)}">${escapeHtml(head.text)}</span>` +
+      windTimeCell +
       dark +
       (isSuggested ? '<span class="opt-tag">suggested</span>' : "") +
       "</button></li>"
@@ -356,6 +381,8 @@
     wetStretchText,
     daylightText,
     windVsRoute,
+    windEffectText,
+    signedMinutes,
     clock,
     dayAndClock,
     providerCredit,

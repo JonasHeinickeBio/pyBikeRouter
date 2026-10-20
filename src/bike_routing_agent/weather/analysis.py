@@ -29,7 +29,10 @@ from bike_routing_agent.weather.models import (
     WeatherSample,
     WeatherSummary,
     WetStretch,
+    WindEffect,
 )
+from bike_routing_agent.weather.wind_time import Rider, WindTime, rider_for, wind_time
+from bike_routing_agent.weather.wind_time import describe as describe_wind_effect
 
 EARTH_RADIUS_M = 6_371_008.8
 # Assumed when the routing engine reported no duration. The forecast hours
@@ -415,6 +418,29 @@ def _is_dark(daylight: Daylight | None, summary: WeatherSummary) -> bool | None:
     return summary.after_dark
 
 
+@dataclass(frozen=True)
+class WindInputs:
+    """What the wind effect needs besides the forecast: the route's facts and the rider."""
+
+    distance_m: float
+    duration_s: float
+    ascent_m: float | None
+    rider: Rider
+
+
+def wind_effect_for(samples: Sequence[WeatherSample], wind: WindInputs | None) -> WindTime | None:
+    """The wind's effect on the travel time for these samples, or ``None`` (no inputs, no wind)."""
+    if wind is None:
+        return None
+    return wind_time(
+        distance_m=wind.distance_m,
+        duration_s=wind.duration_s,
+        ascent_m=wind.ascent_m,
+        points=[(s.fraction, s.headwind_kmh) for s in samples],
+        rider=wind.rider,
+    )
+
+
 def departure_options(
     points: Sequence[RoutePoint],
     series_per_point: Sequence[Sequence[HourlyWeather]],
@@ -423,6 +449,7 @@ def departure_options(
     duration_s: float,
     offsets_h: Sequence[int],
     earliest: datetime | None = None,
+    wind: WindInputs | None = None,
 ) -> list[DepartureOption]:
     """The route at the requested departure and at ``offsets_h`` hours around it.
 
@@ -440,6 +467,7 @@ def departure_options(
             continue
         summary = summarize(samples)
         arrival = start + timedelta(seconds=duration_s)
+        effect = wind_effect_for(samples, wind)
         options.append(
             DepartureOption(
                 departure=start,
@@ -452,6 +480,7 @@ def departure_options(
                 temperature_max_c=summary.temperature_max_c,
                 wind_speed_max_kmh=summary.wind_speed_max_kmh,
                 headwind_mean_kmh=summary.headwind_mean_kmh,
+                wind_effect_s=effect.effect_s if effect is not None else None,
                 after_dark=_is_dark(daylight_for(points, start, arrival), summary),
             )
         )
@@ -509,8 +538,14 @@ def build_route_weather(
     sources: Sequence[str] = (),
     option_offsets_h: Sequence[int] = (),
     earliest: datetime | None = None,
+    bike_type: str | None = None,
+    ascent_m: float | None = None,
 ) -> RouteWeather | None:
-    """Weather for one route, or ``None`` when the forecast covers none of it."""
+    """Weather for one route, or ``None`` when the forecast covers none of it.
+
+    ``bike_type`` (and the route's ``ascent_m``) let the wind's effect on the travel time be
+    estimated; it needs the engine's own duration (``duration_source == "provider"``).
+    """
     samples = _samples_at(points, series_per_point, departure, duration_s)
     if not samples:
         return None
@@ -518,6 +553,13 @@ def build_route_weather(
     summary = summarize(samples, distance_m=distance_m)
     daylight = daylight_for(points, departure, arrival)
     notes = advisories(summary, daylight)
+    rider = rider_for(bike_type) if bike_type else None
+    wind: WindInputs | None = None
+    if rider is not None and duration_source == "provider" and distance_m:
+        wind = WindInputs(distance_m, duration_s, ascent_m, rider)
+    effect = wind_effect_for(samples, wind)
+    if effect is not None and (note := describe_wind_effect(effect)):
+        notes.append(note)
     options: list[DepartureOption] = []
     suggested: DepartureOption | None = None
     if option_offsets_h:
@@ -528,6 +570,7 @@ def build_route_weather(
             duration_s=duration_s,
             offsets_h=option_offsets_h,
             earliest=earliest,
+            wind=wind,
         )
         suggested = suggest_departure(options)
         if suggested is not None:
@@ -540,6 +583,16 @@ def build_route_weather(
         departure=departure,
         arrival=arrival,
         duration_source="provider" if duration_source == "provider" else "estimated",
+        wind_effect=(
+            WindEffect(
+                still_air_s=effect.still_air_s,
+                adjusted_s=effect.adjusted_s,
+                effect_s=effect.effect_s,
+                range_s=(effect.low_s, effect.high_s),
+            )
+            if effect is not None
+            else None
+        ),
         retrieved_at=retrieved_at,
         samples=samples,
         summary=summary,
