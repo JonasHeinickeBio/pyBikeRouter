@@ -289,3 +289,18 @@ def test_the_place_markers_can_be_dragged_and_a_drop_moves_that_place_and_plans_
     move = app[app.index("function movePlace") :]
     assert "BikeWaypoints.coordText(ll.lat, ll.lng)" in move  # a wrapped, 5-decimal coordinate
     assert "latlng.wrap()" in move and "planRoute();" in move
+
+
+def test_the_click_that_ends_a_drag_is_swallowed_for_both_kinds_of_drag():
+    """A drop over a map control makes the browser click the map: that must not open the menu."""
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    click = app[app.index("function onMapClick") :]
+    assert click.index("performance.now() < state.ignoreMapClickUntil") < click.index(
+        "openPointMenu"
+    )
+    assert "ignoreMapClickUntil: 0" in app  # starts open: a first plain click still works
+    guard = app[app.index("function guardClickAfterDrag") :]
+    assert "performance.now() + DRAG_CLICK_GUARD_MS" in guard
+    # the guard is set by the place markers' drag and by the route handle's drag
+    assert app[app.index("function redrawPlaceMarkers") :].count("guardClickAfterDrag();") >= 1
+    assert app[app.index("function showReshapeHandle") :].count("guardClickAfterDrag();") >= 1
