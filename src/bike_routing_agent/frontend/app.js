@@ -1670,12 +1670,12 @@ function redrawPlaceMarkers() {
   const points = [];
   const originCoord = parseInputCoordinate(els.origin.value);
   const destCoord = parseInputCoordinate(els.destination.value);
-  if (originCoord) points.push({ ...originCoord, label: "A", cls: "" });
+  if (originCoord) points.push({ ...originCoord, label: "A", cls: "", input: els.origin });
   viaInputs().forEach((input, idx) => {
     const c = parseInputCoordinate(input.value);
-    if (c) points.push({ ...c, label: String(idx + 1), cls: "" });
+    if (c) points.push({ ...c, label: String(idx + 1), cls: "", input });
   });
-  if (destCoord) points.push({ ...destCoord, label: "B", cls: "dest" });
+  if (destCoord) points.push({ ...destCoord, label: "B", cls: "dest", input: els.destination });
 
   for (const p of points) {
     const icon = L.divIcon({
@@ -1684,8 +1684,19 @@ function redrawPlaceMarkers() {
       iconSize: [22, 22],
       iconAnchor: [11, 11],
     });
-    L.marker([p.lat, p.lon], { icon }).addTo(state.placeMarkers);
+    const marker = L.marker([p.lat, p.lon], { icon, draggable: true, title: "Drag to move this place" }).addTo(state.placeMarkers);
+    marker.on("dragend", () => movePlace(p.input, marker.getLatLng()));
   }
+}
+
+/** A place marker was dropped somewhere else: that place becomes the dropped point, and the trip is
+ * planned again (the same as typing the coordinates in its field and pressing Plan route). */
+function movePlace(input, latlng) {
+  const ll = latlng.wrap();
+  input.value = BikeWaypoints.coordText(ll.lat, ll.lng);
+  markCoordInput(input);
+  if (els.origin.value.trim() && els.destination.value.trim()) planRoute(); // redraws the markers
+  else redrawPlaceMarkers();
 }
 
 /* -------------------------------- helpers -------------------------------- */
