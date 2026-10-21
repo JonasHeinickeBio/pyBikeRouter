@@ -69,6 +69,11 @@ many turns there are): a start, each turn with the distance from the start, how 
 ("then 230 m"), and the arrival. Clicking a step shows where it is on the map. *Cue sheet (.txt)*
 downloads the same list as plain text to print or send.
 
+- With a **departure time** (so there is a forecast) every step also shows when you are expected there
+  (`~10:42`, your local time, as on the weather card), and the cue sheet gets a time column. The time is
+  the departure plus the step's share of the ride at an **even pace** over the whole route, so it is an
+  estimate: climbs, stops, the wind and traffic lights all move it, and it uses the engine's duration,
+  not the wind-adjusted one. Without a departure time there are no times.
 - The instructions are the routing engine's (BRouter only; other engines show no list). BRouter knows
   no street names, so a step says "Turn left", not "onto Hauptstrasse".
 - Steps are measured along the drawn route; a step the engine placed past the end of the route, or out

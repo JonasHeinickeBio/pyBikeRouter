@@ -1310,7 +1310,8 @@ function renderColours(cand) {
 /** The turn-by-turn list of the route shown (hidden when the engine gave no cues). */
 function renderCues(cand) {
   state.cueLayer.clearLayers();
-  const rows = BikeCues.steps(cand.cues, cand.metrics && cand.metrics.distance_m);
+  const ride = cand.weather ? { departure: cand.weather.departure, arrival: cand.weather.arrival } : null;
+  const rows = BikeCues.steps(cand.cues, cand.metrics && cand.metrics.distance_m, ride);
   state.cueRows = rows;
   if (!rows.length) {
     els.cuesCard.hidden = true;

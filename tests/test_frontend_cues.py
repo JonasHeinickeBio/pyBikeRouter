@@ -1,6 +1,7 @@
 """frontend/cues.js: wording the turn-by-turn steps and the cue sheet, under node."""
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,12 +14,15 @@ FRONTEND = Path(__file__).resolve().parents[1] / "src" / "bike_routing_agent" / 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def run_js(expression: str):
+def run_js(expression: str, tz: str = "Europe/Berlin"):
     script = (
         f"const C = require({json.dumps(str(FRONTEND / 'cues.js'))});\n"
         f"process.stdout.write(JSON.stringify({expression}));"
     )
-    result = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30)
+    env = {**os.environ, "TZ": tz}  # the clock is the viewer's local time: pin it
+    result = subprocess.run(
+        [NODE, "-e", script], capture_output=True, text=True, timeout=30, env=env
+    )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 
@@ -135,6 +139,53 @@ def test_the_cue_sheet_is_plain_text_with_a_title_and_a_note():
     assert run_js("C.sheetText([], null)").startswith("Cue sheet\n")
 
 
+RIDE = {"departure": "2026-10-21T08:00:00Z", "arrival": "2026-10-21T12:00:00Z"}
+
+
+def timed(cues, total, ride=RIDE, tz="Europe/Berlin"):
+    return run_js(f"C.steps({json.dumps(cues)}, {json.dumps(total)}, {json.dumps(ride)})", tz)
+
+
+def test_with_a_ride_each_step_has_the_time_you_are_expected_there():
+    rows = timed([cue("left", 1000), cue("right", 3000)], 4000)
+    # 08:00 UTC is 10:00 in Berlin (CEST); the ride is four hours at an even pace
+    assert [r["clock"] for r in rows] == ["10:00", "11:00", "13:00", "14:00"]
+
+
+def test_the_clock_is_the_viewers_local_time():
+    rows = timed([cue("left", 1000)], 4000, tz="America/New_York")  # EDT, UTC-4
+    assert [r["clock"] for r in rows] == ["04:00", "05:00", "08:00"]
+
+
+def test_without_a_usable_ride_the_rows_carry_no_time():
+    for ride in (None, {}, {"departure": "x", "arrival": "y"},
+                 {"departure": RIDE["arrival"], "arrival": RIDE["departure"]}):  # fmt: skip
+        assert {r["clock"] for r in timed([cue("left", 1000)], 4000, ride)} == {""}
+    assert {r["clock"] for r in steps([cue("left", 1000)], 4000)} == {""}  # the two-argument form
+
+
+def test_without_a_total_the_last_cue_ends_the_ride():
+    rows = timed([cue("left", 1000)], None)  # 1000 m is then the whole route: the cue is the end
+    assert [r["clock"] for r in rows] == ["10:00", "14:00", "14:00"]
+
+
+def test_the_list_and_the_sheet_show_the_times_only_when_there_are_some():
+    rows = timed([cue("left", 1000)], 4000)
+    html = run_js(f"C.listHtml({json.dumps(rows)})")
+    assert html.count('class="cue-time"') == 3 and "~11:00" in html
+    sheet = run_js(f"C.sheetText({json.dumps(rows)}, 'Ride')")
+    assert "~10:00" in sheet and "~11:00  Turn left" in sheet
+    assert "Times (~) are estimates at an even pace" in sheet
+    plain = steps([cue("left", 1000)], 4000)
+    assert "cue-time" not in run_js(f"C.listHtml({json.dumps(plain)})")
+    plain_sheet = run_js(f"C.sheetText({json.dumps(plain)}, 'Ride')")
+    assert "~" not in plain_sheet and "Times (~)" not in plain_sheet
+
+
+def test_the_clock_text_pads_to_two_digits():
+    assert run_js("C.clockText(Date.UTC(2026, 9, 21, 7, 5))", "UTC") == "07:05"
+
+
 # ------------------------------------------------------------------------------ page wiring
 
 
@@ -145,3 +196,4 @@ def test_the_page_has_the_card_and_the_app_fills_and_clears_it():
     app = (FRONTEND / "app.js").read_text(encoding="utf-8")
     assert "renderCues(cand);" in app
     assert "els.cuesCard.hidden = true;" in app and "state.cueRows = [];" in app
+    assert "BikeCues.steps(cand.cues, cand.metrics && cand.metrics.distance_m, ride)" in app
