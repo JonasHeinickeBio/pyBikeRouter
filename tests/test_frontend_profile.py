@@ -339,3 +339,30 @@ def test_the_page_offers_gradient_where_there_is_a_profile_and_remembers_it():
     assert '...(profile ? ["gradient"] : [])' in app
     assert '["surface", "traffic", "gradient"].includes(saved)' in app
     assert "BikeProfile.bandPieces(profile)" in app
+
+
+@pytest.mark.parametrize("km", [0.5, 3, 12, 40])
+def test_the_map_and_the_chart_are_coloured_by_the_same_runs(km):
+    """Short and long routes alike (the chart caps its samples, the map must cap them the same)."""
+
+    def wavy(d):
+        # steep ramps of 150 m on a gentle rolling background: narrow bands the cap could lose
+        return (
+            100.0
+            + 5.0 * math.sin(d / 900.0)
+            + (30.0 if (d % 2000) < 150 else 0.0) * (d % 2000) / 150
+        )
+
+    geometry = long_route(wavy, km)
+    pieces = pieces_of(geometry)
+    svg = js("P.chartSvg(P.build(g))", g=geometry)
+    fills = re.findall(r'<polygon fill="(#[0-9a-f]{6})"', svg)
+    runs = [c for i, c in enumerate(fills) if i == 0 or c != fills[i - 1]]
+    assert [p["color"] for p in pieces] == runs
+    # and the same boundaries, to the metre of one sampling step
+    total = js("P.build(g).totalM", g=geometry)
+    chart_edges = [i for i in range(1, len(fills)) if fills[i] != fills[i - 1]]
+    step = total / len(fills)
+    assert [p["fromM"] for p in pieces[1:]] == pytest.approx(
+        [e * step for e in chart_edges], abs=1e-6
+    )

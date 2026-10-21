@@ -17,6 +17,10 @@
   const GRADE_WINDOW_M = 100; // "the steepest 100 m"
   const MIN_ROUTE_M = 200; // shorter than this is not worth a chart
   const MIN_Y_RANGE_M = 40; // a flat route must look flat, not like a mountain range
+  // The chart and the map are cut into grade colours at the same points: one per 25 m of route,
+  // at most this many for a long one (more would be a heavy drawing nobody can tell apart).
+  const PIECE_STEP_M = 25;
+  const MAX_SAMPLES = 240;
   const COLOR_WINDOW_M = 300; // the grade a stretch of the chart is coloured by is taken over this much
 
   // A climb: at least this much gain, this long and this steep on average; a dip of up to DIP_M
@@ -82,6 +86,11 @@
     }
     const span = cum[hi] - cum[lo];
     return span === 0 ? values[lo] : values[lo] + ((values[hi] - values[lo]) * (d - cum[lo])) / span;
+  }
+
+  /** The number of sample points the chart and the map colouring share (intervals = points - 1). */
+  function sampleCount(profile) {
+    return Math.min(MAX_SAMPLES, Math.max(2, Math.round(profile.totalM / PIECE_STEP_M) + 1));
   }
 
   /**
@@ -225,7 +234,7 @@
     const y = (m) => pad.top + plotH - ((m - low) / (high - low)) * plotH;
     const base = pad.top + plotH;
 
-    const samples = Math.min(240, Math.max(2, Math.round(profile.totalM / 25)));
+    const samples = sampleCount(profile);
     const pts = [];
     for (let i = 0; i < samples; i++) {
       const m = (profile.totalM * i) / (samples - 1);
@@ -276,7 +285,6 @@
     );
   }
 
-  const PIECE_STEP_M = 25; // how finely the route is cut into grade colours
   const MIN_LEGEND_M = 25; // a band of a few metres is not a legend row
 
   /**
@@ -288,7 +296,7 @@
     const lons = profile.coords.map((p) => p[0]);
     const lats = profile.coords.map((p) => p[1]);
     const point = (m) => [interpolate(profile.cum, lats, m), interpolate(profile.cum, lons, m)];
-    const steps = Math.max(1, Math.round(profile.totalM / PIECE_STEP_M));
+    const steps = sampleCount(profile) - 1;
     const runs = [];
     for (let i = 0; i < steps; i++) {
       const from = (profile.totalM * i) / steps;
