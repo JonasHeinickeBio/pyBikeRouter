@@ -78,12 +78,22 @@
     return `${(meters / 1000).toFixed(1)} km`;
   }
 
+  /** "09:05" in the viewer's local time (the forecast card reads the same way). */
+  function clockText(ms) {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
   /**
    * The rows of the list: a start, one per usable cue, a finish. Each row has `at` (distance from
    * the start, as text), `text`, `glyph`, `legM` (to the next row) and `leg` (as text); a cue row
    * also has `cue`. Cues out of order or past the end of the route are dropped, not trusted.
+   *
+   * With `ride` ({departure, arrival}, ISO times: the forecast's) each row also has `clock`, when
+   * the rider is expected there at an even pace over the whole ride -- an estimate; the rows
+   * carry no time without a usable ride.
    */
-  function steps(cues, totalM) {
+  function steps(cues, totalM, ride) {
     const total = Number.isFinite(totalM) && totalM > 0 ? totalM : null;
     const usable = [];
     let last = -1;
@@ -100,10 +110,14 @@
       rows.push({ at: distanceText(cue.distance_m), text: text(cue), glyph: glyph(cue), distanceM: cue.distance_m, cue });
     }
     rows.push({ at: distanceText(end), text: "Arrive", glyph: FINISH_GLYPH, distanceM: end, cue: null });
+    const start = ride ? Date.parse(ride.departure) : NaN;
+    const finish = ride ? Date.parse(ride.arrival) : NaN;
+    const timed = Number.isFinite(start) && Number.isFinite(finish) && finish >= start && end > 0;
     rows.forEach((row, i) => {
       const next = rows[i + 1];
       row.legM = next ? Math.max(0, next.distanceM - row.distanceM) : null;
       row.leg = row.legM === null ? "" : distanceText(row.legM);
+      row.clock = timed ? clockText(start + (row.distanceM / end) * (finish - start)) : "";
     });
     return rows;
   }
@@ -118,11 +132,12 @@
   function listHtml(rows) {
     const items = (rows || []).map((row, i) => {
       const leg = row.leg ? `<span class="cue-leg">then ${escapeHtml(row.leg)}</span>` : "";
+      const time = row.clock ? `<span class="cue-time">~${escapeHtml(row.clock)}</span>` : "";
       return (
         `<li><button type="button" class="cue-row" data-cue="${i}">` +
         `<span class="cue-glyph" aria-hidden="true">${escapeHtml(row.glyph)}</span>` +
         `<span class="cue-at">${escapeHtml(row.at)}</span>` +
-        `<span class="cue-text">${escapeHtml(row.text)}</span>${leg}</button></li>`
+        `<span class="cue-text">${escapeHtml(row.text)}</span>${time}${leg}</button></li>`
       );
     });
     return `<ol class="cue-list">${items.join("")}</ol>`;
@@ -131,15 +146,18 @@
   /** The same steps as a plain-text cue sheet. */
   function sheetText(rows, title) {
     const lines = [title || "Cue sheet", ""];
+    const timed = (rows || []).some((row) => row.clock);
     for (const row of rows || []) {
       const leg = row.leg ? `  (then ${row.leg})` : "";
-      lines.push(`${row.at.padStart(8)}  ${row.text}${leg}`);
+      const time = timed ? `${row.clock ? `~${row.clock}` : ""}`.padEnd(8) : "";
+      lines.push(`${row.at.padStart(8)}  ${time}${row.text}${leg}`.replace(/\s+$/, ""));
     }
     lines.push("", "Turn instructions are the routing engine's. They carry no street names.");
+    if (timed) lines.push("Times (~) are estimates at an even pace from the planned departure, in your local time.");
     return lines.join("\n") + "\n";
   }
 
-  const api = { text, glyph, distanceText, steps, summary, listHtml, sheetText };
+  const api = { text, glyph, distanceText, clockText, steps, summary, listHtml, sheetText };
   root.BikeCues = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
