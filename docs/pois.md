@@ -153,7 +153,7 @@ in the settings.
 | Variable | Meaning | Default |
 | --- | --- | --- |
 | `POI_ENABLED` | `false` switches POIs off (no request leaves the service; endpoints answer `503`) | `true` |
-| `POI_OVERPASS_URLS` | comma-separated Overpass instances, tried in order -- the public one is often overloaded | `https://overpass-api.de/api/interpreter` |
+| `POI_OVERPASS_URLS` | comma-separated Overpass instances, tried in order -- the public one is often overloaded or unreachable from some networks, so a second one helps. Every instance you list receives the shape of the routes you search along and your server's IP address: list only operators you trust, or run your own | `https://overpass-api.de/api/interpreter` |
 | `POI_WIKIDATA_URL` / `POI_WIKIPEDIA_URL` | Wikimedia endpoints (`{lang}` is the article language) | public URLs |
 | `POI_USER_AGENT` | identifies your deployment to Wikimedia and Overpass | `bike-routing-agent/0.1 (+https://github.com/...)` |
 | `POI_TIMEOUT_S` / `POI_MAX_RETRIES` | per-request timeout; extra rounds over the instances after a failure | `25` / `1` |
@@ -182,12 +182,28 @@ right.
 
 `frontend/hours.js` reads the common part of the language: `Mo-Fr 09:00-18:00`, day lists and
 ranges (also across the weekend, `Fr-Mo`), several stretches a day, hours past midnight
-(`Fr,Sa 20:00-02:00`), `off`/`closed`/`open`, `24/7`, and a later rule replacing an earlier one
-for the days it names. **It never guesses**: months, weeks, `sunrise`/`sunset`, open ends
-(`10:00+`), quoted comments, nth weekdays and rules chained with a comma give *no verdict* and only
-the raw text is shown. Public and school holidays are not known: a text that mentions them is
-answered for an ordinary day with "Public holidays are not checked".
+(`Fr,Sa 20:00-02:00`), `off`/`closed`/`open`, `24/7`, a later rule replacing an earlier one for the
+days it names, and -- added after measuring real tags -- spaces anywhere (`Mo, Th 10:00 - 18:00`),
+**month ranges** (`Apr-Oct Mo-Su ...`, also across the year end, with or without a colon), **open
+ends** (`17:00+`: open from then, "no closing time given"; `12:00-23:00+`: "until at least 23:00",
+and no verdict after it) and **rules added after a comma** (`Mo-Fr 10:00-18:00, Sa 10:00-14:00`, which
+add to the rule before instead of replacing it). **It never guesses**: weeks, `sunrise`/`sunset`, days
+of the month (`Dec 24 off`), nth weekdays (`Fr[1]`), `easter`, quoted comments, `PH unknown` and a
+start equal to the end give *no verdict* and only the raw text is shown. Public and school holidays
+are not known: a text that mentions them is answered for an ordinary day with "Public holidays are
+not checked".
 
+**Measured on real data.** 950 `opening_hours` tags of museums, sights, cafes, restaurants and
+churches around Hannover (OSM, via Overpass): the first version read 81.6 % of them, this one 96.2 %;
+what is left is nearly all free text (`"zur CeBIT"`, `"nach Vereinbarung"`), days of the month and
+nth weekdays. A 191-text sample of them is in `tests/fixtures/osm_opening_hours_sample.json` (OSM
+contributors, ODbL) and a test requires at least 92 % to be read and every answer to be one of open,
+closed or unknown. Live, on a ride leaving Hannover at 17:00 on a Thursday, 22 of 27 sights with hours
+got a verdict, all of them as the hours say (for example *We-Su 10:00-18:00*: "open until 18:00";
+*Tu-Su 10:00-17:00* at 17:22: "closed"; a church with `Mar 21-Dec 15 ...` day-of-month ranges: no
+verdict).
+
+## Which hosts are ever contacted
 
 Overpass (`POI_OVERPASS_URLS`), Wikidata (`POI_WIKIDATA_URL`) and
 `{lang}.wikipedia.org` (`POI_WIKIPEDIA_URL`). The language is the only client-influenced
@@ -266,9 +282,9 @@ page that does not exist). The front-end helpers in `frontend/pois.js` run under
 - The opening-hours verdict is an estimate of when you pass, not a promise: the time comes from the
   engine's duration (not the wind-adjusted one) and a ride is never exactly on schedule; the zone is
   one per route, so a ride across a zone border reads the far side an hour off; and it needs a
-  departure time. Overpass was unreachable on the day this was built, so the browser walk-through
-  used a stand-in for the sight search (real route, forecast, Open-Meteo zone and `Intl`); the
-  parser is tested on constructed texts, not on a sample of real OSM tags.
+  departure time. Mapped hours are only as current as the mapper: a museum tagged `closed` may be
+  closed for a season. The parser was checked on real tags from one city (see above), not on other
+  countries' habits.
 - No self-hosted Overpass, no pageview-based fame, no scoring effect -- see the roadmap.
 - The Overpass quirks above are those of one day's public instance; if they no longer
   occur, `POI_OVERPASS_URLS` with a single URL is fine.
