@@ -113,6 +113,20 @@ The chat panel keeps its conversations (when the server stores them, see [chat.m
 starts a fresh one, **Earlier conversations** lists this browser's earlier ones to open again or delete.
 A page that is reopened shows the conversation it had.
 
+## Drag the route to reshape it
+
+With a mouse, a round handle follows the pointer along the **active** route. Press it and drag it to
+another place: the place you drop it becomes a **new stop**, inserted among your stops at the position
+along the trip where you *grabbed* the route (not where you dropped it), and the trip is planned again
+through it. It is the same as *Add & plan* in the menu below, without the menu.
+
+- A drag shorter than about 25 pixels is ignored (a slip, not a new stop). It needs a start and an end
+  already, and room for another stop (10 at most); otherwise the page says so.
+- The handle only follows the active route (pick another alternative first) and not while you are
+  picking a point for a field. It is a mouse feature: a touch screen has no hovering, so use the click
+  menu below, which also works by keyboard.
+- Each drag adds one stop; to move one later, change or delete it in the form.
+
 ## Click a point, then choose where it goes
 
 Click (or tap) any point on the map, including a point on a route that is drawn: a pin marks it and a

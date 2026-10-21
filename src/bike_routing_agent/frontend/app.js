@@ -138,6 +138,10 @@ const state = {
   profileLayer: L.layerGroup(), // where the elevation chart's cursor is on the route
   cueLayer: L.layerGroup(), // the step picked in the directions list
   colourLayer: L.layerGroup(), // the active route cut into surface / traffic colours
+  reshapeLayer: L.layerGroup(), // the handle that follows the pointer over the route and can be dragged
+  reshapeMarker: null,
+  reshapeHideTimer: null,
+  reshapeDragging: false,
   colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
@@ -185,6 +189,7 @@ function initMap() {
   state.profileLayer.addTo(state.map);
   state.cueLayer.addTo(state.map);
   state.colourLayer.addTo(state.map);
+  state.reshapeLayer.addTo(state.map);
   state.colourMode = loadColourMode();
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
@@ -307,6 +312,85 @@ function openPointMenu(latlng) {
   marker.on("popupclose", closePointMenu);
   marker.openPopup();
   select.focus({ preventScroll: true });
+}
+
+/* ----------------------------- drag to reshape ----------------------------- */
+
+const RESHAPE_MIN_DRAG_PX = 25; // a shorter drag is a slip, not a new stop
+const RESHAPE_HIDE_MS = 350;
+
+function hideReshapeHandle() {
+  clearTimeout(state.reshapeHideTimer);
+  state.reshapeLayer.clearLayers();
+  state.reshapeMarker = null;
+  state.reshapeDragging = false;
+}
+
+function scheduleReshapeHide() {
+  clearTimeout(state.reshapeHideTimer);
+  if (state.reshapeDragging) return;
+  state.reshapeHideTimer = setTimeout(hideReshapeHandle, RESHAPE_HIDE_MS);
+}
+
+/** The handle follows the pointer along the active route; drag it to pull the route through a new place. */
+function showReshapeHandle(latlng) {
+  if (state.reshapeDragging) return;
+  clearTimeout(state.reshapeHideTimer);
+  if (state.reshapeMarker) {
+    state.reshapeMarker.setLatLng(latlng);
+    return;
+  }
+  const marker = L.marker(latlng, {
+    draggable: true,
+    keyboard: false,
+    bubblingMouseEvents: true, // a plain click on the route still reaches the map's point menu
+    zIndexOffset: 900,
+    title: "Drag to reshape the route",
+    icon: L.divIcon({ className: "", html: '<span class="reshape-handle"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+  }).addTo(state.reshapeLayer);
+  let grab = null;
+  marker.on("dragstart", () => {
+    state.reshapeDragging = true;
+    clearTimeout(state.reshapeHideTimer);
+    grab = marker.getLatLng();
+  });
+  marker.on("dragend", () => {
+    const drop = marker.getLatLng();
+    const moved = grab ? state.map.latLngToContainerPoint(grab).distanceTo(state.map.latLngToContainerPoint(drop)) : 0;
+    const from = grab;
+    hideReshapeHandle();
+    if (!from || moved < RESHAPE_MIN_DRAG_PX) return;
+    reshapeThrough(from, drop.wrap());
+  });
+  marker.on("mouseover", () => clearTimeout(state.reshapeHideTimer));
+  marker.on("mouseout", scheduleReshapeHide);
+  state.reshapeMarker = marker;
+}
+
+/** Route the trip through `drop`, as a stop placed where the route was grabbed at `grab`. */
+function reshapeThrough(grab, drop) {
+  const g = grab.wrap();
+  const placement = BikeWaypoints.reshape({
+    ...currentPlaces(),
+    route: activeRouteLine(),
+    grab: { lat: g.lat, lon: g.lng },
+    drop: { lat: drop.lat, lon: drop.lng },
+  });
+  if (!placement) {
+    setStatus("error", "Add a start and an end first (and at most " + BikeWaypoints.MAX_VIA + " stops fit) to reshape the route by dragging it.");
+    return;
+  }
+  applyPoint(placement.key, placement.text, true);
+}
+
+/** Make a route line show the drag handle while it is the active one; returns the layer. */
+function attachReshape(layer, index) {
+  layer.on("mousemove", (ev) => {
+    if (index !== state.activeIndex || state.pickingTarget) return;
+    showReshapeHandle(ev.latlng);
+  });
+  layer.on("mouseout", scheduleReshapeHide);
+  return layer;
 }
 
 /** Put the picked point into the place fields at `key` and, if asked, plan again. */
@@ -807,6 +891,7 @@ function clearResults() {
   els.cuesCard.hidden = true;
   state.colourLayer.clearLayers();
   els.coloursCard.hidden = true;
+  hideReshapeHandle();
   els.alternatives.hidden = true;
   els.alternativesList.innerHTML = "";
   els.viewingNote.hidden = true;
@@ -1034,7 +1119,7 @@ function renderRoute(data) {
 
   state.candidateLayers = list.map((candidate, i) => ({
     candidate,
-    layer: L.geoJSON(candidate.geometry_geojson, { style: candidateStyle(i) }).addTo(state.map),
+    layer: attachReshape(L.geoJSON(candidate.geometry_geojson, { style: candidateStyle(i) }).addTo(state.map), i),
     color: colorForIndex(i, selectedIndex),
     selected: i === selectedIndex,
   }));

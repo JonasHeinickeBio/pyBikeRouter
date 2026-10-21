@@ -897,3 +897,7 @@ body[data-tab="plan"] [data-tab="optimize"] { display: none !important; }
 .stretch-swatch { width: 0.9rem; height: 0.6rem; border-radius: 3px; display: inline-block; }
 .stretch-share { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .colours-longest { margin: 0.3rem 0 0; font-size: 0.85rem; }
+
+/* drag to reshape the route */
+.reshape-handle { display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 3px solid var(--accent); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4); cursor: grab; }
+.leaflet-marker-draggable:active .reshape-handle { cursor: grabbing; }

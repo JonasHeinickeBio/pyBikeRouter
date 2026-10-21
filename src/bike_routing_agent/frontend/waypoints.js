@@ -63,6 +63,21 @@
   }
 
   /**
+   * Dragging the route: the stop that reshapes it, or null when there is none to add.
+   * The stop goes where the route was *grabbed* (so it lies between the right stops along the
+   * trip, whatever the drop point is) and is the *drop* point. Needs a start and an end already
+   * and room for one more stop. Same inputs as `suggest`, with `grab` and `drop` as { lat, lon }.
+   * Returns { key: "via:<index>", text } -- the text is what the form holds for the new stop.
+   */
+  function reshape({ hasOrigin, hasDestination, origin, destination, vias, route, grab, drop }) {
+    if (!hasOrigin || !hasDestination || !grab || !drop) return null;
+    if ((vias || []).length >= MAX_VIA) return null;
+    const key = suggest({ hasOrigin, hasDestination, origin, destination, vias, route, point: grab });
+    if (!/^via:\d+$/.test(key)) return null;
+    return { key, text: coordText(drop.lat, drop.lon) };
+  }
+
+  /**
    * The places after the point is added at `key`: `{ origin, destination, vias, label }` (the
    * strings the form holds; `vias` as a new list). `label` names what the point became.
    */
@@ -77,7 +92,7 @@
     return { origin, destination, vias: list, label: `stop ${index + 1}` };
   }
 
-  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, place };
+  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, reshape, place };
   root.BikeWaypoints = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

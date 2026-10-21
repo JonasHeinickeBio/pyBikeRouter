@@ -65,6 +65,9 @@ decisions still open.
   metrics. Anthropic structured outputs behind the `llm` extra, with a
   labelled benchmark; see [llm-parser.md](llm-parser.md). Open: running the
   benchmark against a live model in CI, and more languages in the benchmark.
+- **Reshaping by dragging** -- done in the web page: drag the active route to a new place and it is
+  planned again through it ([web-ui.md](web-ui.md#drag-the-route-to-reshape-it)). Open: dragging an
+  existing stop to move it, touch support, and a preview line while dragging.
 - **Route colours** -- done for BRouter: the active route on the map coloured by surface or by traffic
   exposure, with a legend and the longest unpaved/busy stretch ([web-ui.md](web-ui.md#colour-the-route)).
   Also by gradient, from the elevation (any engine that returns it). Open: surface/traffic from other engines
