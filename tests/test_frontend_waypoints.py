@@ -272,6 +272,8 @@ def test_the_page_wires_the_drag_handle_to_the_route_lines_and_clears_it_with_th
         and "applyPoint(placement.key, placement.text, true)" in app
     )
     assert "RESHAPE_MIN_DRAG_PX" in app  # a slip of the pointer is not a new stop
+    # the handle sits under the pointer on the route: a plain click must still reach the map menu
+    assert "bubblingMouseEvents: true" in app[app.index("function showReshapeHandle") :]
     # the handle only follows the active route, never while a point is being picked
     assert "index !== state.activeIndex || state.pickingTarget" in app
     assert "hideReshapeHandle();" in app[app.index("function clearResults") :]

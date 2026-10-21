@@ -343,6 +343,7 @@ function showReshapeHandle(latlng) {
   const marker = L.marker(latlng, {
     draggable: true,
     keyboard: false,
+    bubblingMouseEvents: true, // a plain click on the route still reaches the map's point menu
     zIndexOffset: 900,
     title: "Drag to reshape the route",
     icon: L.divIcon({ className: "", html: '<span class="reshape-handle"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }),
