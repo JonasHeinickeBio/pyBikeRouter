@@ -125,7 +125,9 @@ through it. It is the same as *Add & plan* in the menu below, without the menu.
 - The handle only follows the active route (pick another alternative first) and not while you are
   picking a point for a field. It is a mouse feature: a touch screen has no hovering, so use the click
   menu below, which also works by keyboard.
-- Each drag adds one stop; to move one later, change or delete it in the form.
+- Each drag of the route adds one stop. To **move a place you already have**, drag its marker (A, B or
+  a numbered stop): the field takes the dropped point as `lat, lon` and the trip is planned again. This
+  works with touch too, since markers are ordinary draggable pins; delete a stop in the form.
 
 ## Click a point, then choose where it goes
 

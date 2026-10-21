@@ -277,3 +277,30 @@ def test_the_page_wires_the_drag_handle_to_the_route_lines_and_clears_it_with_th
     # the handle only follows the active route, never while a point is being picked
     assert "index !== state.activeIndex || state.pickingTarget" in app
     assert "hideReshapeHandle();" in app[app.index("function clearResults") :]
+
+
+def test_the_place_markers_can_be_dragged_and_a_drop_moves_that_place_and_plans_again():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    markers = app[app.index("function redrawPlaceMarkers") : app.index("function movePlace")]
+    assert "draggable: true" in markers and 'marker.on("dragend"' in markers
+    # each marker knows its own field: A the origin, 1..n the stops in order, B the destination
+    assert "input: els.origin" in markers and "input: els.destination" in markers
+    assert 'idx + 1), cls: "", input }' in markers
+    move = app[app.index("function movePlace") :]
+    assert "BikeWaypoints.coordText(ll.lat, ll.lng)" in move  # a wrapped, 5-decimal coordinate
+    assert "latlng.wrap()" in move and "planRoute();" in move
+
+
+def test_the_click_that_ends_a_drag_is_swallowed_for_both_kinds_of_drag():
+    """A drop over a map control makes the browser click the map: that must not open the menu."""
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    click = app[app.index("function onMapClick") :]
+    assert click.index("performance.now() < state.ignoreMapClickUntil") < click.index(
+        "openPointMenu"
+    )
+    assert "ignoreMapClickUntil: 0" in app  # starts open: a first plain click still works
+    guard = app[app.index("function guardClickAfterDrag") :]
+    assert "performance.now() + DRAG_CLICK_GUARD_MS" in guard
+    # the guard is set by the place markers' drag and by the route handle's drag
+    assert app[app.index("function redrawPlaceMarkers") :].count("guardClickAfterDrag();") >= 1
+    assert app[app.index("function showReshapeHandle") :].count("guardClickAfterDrag();") >= 1

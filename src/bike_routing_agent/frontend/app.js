@@ -146,6 +146,7 @@ const state = {
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
   profileMarker: null,
+  ignoreMapClickUntil: 0, // a click before this time is the tail of a drag, not a choice of point
   foreignPopupClosedAt: 0, // when a popup that is not the point menu was last closed by a click
   weatherMarkers: L.layerGroup(), // forecast points along the active candidate
   poiLayer: L.layerGroup(), // points of interest (along the active route, or in the map view)
@@ -206,7 +207,16 @@ function initMap() {
   });
 }
 
+const DRAG_CLICK_GUARD_MS = 350;
+
+/** A drag that ends over a map control (zoom buttons, a popup) makes the browser send a click to the
+ * map, which would open the point menu: swallow the click that follows a drag. */
+function guardClickAfterDrag() {
+  state.ignoreMapClickUntil = performance.now() + DRAG_CLICK_GUARD_MS;
+}
+
 function onMapClick(ev) {
+  if (performance.now() < state.ignoreMapClickUntil) return;
   if (!state.pickingTarget) {
     if (performance.now() - state.foreignPopupClosedAt > 80) openPointMenu(ev.latlng);
     return;
@@ -355,6 +365,7 @@ function showReshapeHandle(latlng) {
     grab = marker.getLatLng();
   });
   marker.on("dragend", () => {
+    guardClickAfterDrag();
     const drop = marker.getLatLng();
     const moved = grab ? state.map.latLngToContainerPoint(grab).distanceTo(state.map.latLngToContainerPoint(drop)) : 0;
     const from = grab;
@@ -1670,12 +1681,12 @@ function redrawPlaceMarkers() {
   const points = [];
   const originCoord = parseInputCoordinate(els.origin.value);
   const destCoord = parseInputCoordinate(els.destination.value);
-  if (originCoord) points.push({ ...originCoord, label: "A", cls: "" });
+  if (originCoord) points.push({ ...originCoord, label: "A", cls: "", input: els.origin });
   viaInputs().forEach((input, idx) => {
     const c = parseInputCoordinate(input.value);
-    if (c) points.push({ ...c, label: String(idx + 1), cls: "" });
+    if (c) points.push({ ...c, label: String(idx + 1), cls: "", input });
   });
-  if (destCoord) points.push({ ...destCoord, label: "B", cls: "dest" });
+  if (destCoord) points.push({ ...destCoord, label: "B", cls: "dest", input: els.destination });
 
   for (const p of points) {
     const icon = L.divIcon({
@@ -1684,8 +1695,22 @@ function redrawPlaceMarkers() {
       iconSize: [22, 22],
       iconAnchor: [11, 11],
     });
-    L.marker([p.lat, p.lon], { icon }).addTo(state.placeMarkers);
+    const marker = L.marker([p.lat, p.lon], { icon, draggable: true, title: "Drag to move this place" }).addTo(state.placeMarkers);
+    marker.on("dragend", () => {
+      guardClickAfterDrag();
+      movePlace(p.input, marker.getLatLng());
+    });
   }
+}
+
+/** A place marker was dropped somewhere else: that place becomes the dropped point, and the trip is
+ * planned again (the same as typing the coordinates in its field and pressing Plan route). */
+function movePlace(input, latlng) {
+  const ll = latlng.wrap();
+  input.value = BikeWaypoints.coordText(ll.lat, ll.lng);
+  markCoordInput(input);
+  if (els.origin.value.trim() && els.destination.value.trim()) planRoute(); // redraws the markers
+  else redrawPlaceMarkers();
 }
 
 /* -------------------------------- helpers -------------------------------- */
