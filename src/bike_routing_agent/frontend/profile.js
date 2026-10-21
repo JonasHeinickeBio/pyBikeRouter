@@ -276,6 +276,53 @@
     );
   }
 
+  const PIECE_STEP_M = 25; // how finely the route is cut into grade colours
+  const MIN_LEGEND_M = 25; // a band of a few metres is not a legend row
+
+  /**
+   * The route cut into runs of one grade band, for colouring it on the map: [{key, label, color,
+   * latlngs, fromM, toM}], neighbours of one band merged. The grade is the one the chart is coloured
+   * by (taken over COLOR_WINDOW_M around each point), so the two agree.
+   */
+  function bandPieces(profile) {
+    const lons = profile.coords.map((p) => p[0]);
+    const lats = profile.coords.map((p) => p[1]);
+    const point = (m) => [interpolate(profile.cum, lats, m), interpolate(profile.cum, lons, m)];
+    const steps = Math.max(1, Math.round(profile.totalM / PIECE_STEP_M));
+    const runs = [];
+    for (let i = 0; i < steps; i++) {
+      const from = (profile.totalM * i) / steps;
+      const to = (profile.totalM * (i + 1)) / steps;
+      const mid = (from + to) / 2;
+      const lo = Math.max(0, mid - COLOR_WINDOW_M / 2);
+      const hi = Math.min(profile.totalM, mid + COLOR_WINDOW_M / 2);
+      const grade =
+        (interpolate(profile.cum, profile.ele, hi) - interpolate(profile.cum, profile.ele, lo)) / Math.max(1, hi - lo);
+      const band = bandOf(grade);
+      const last = runs[runs.length - 1];
+      if (last && last.band === band) last.toM = to;
+      else runs.push({ band, fromM: from, toM: to });
+    }
+    return runs.map((run) => {
+      const latlngs = [point(run.fromM)];
+      for (let v = 0; v < profile.cum.length; v++) {
+        if (profile.cum[v] > run.fromM && profile.cum[v] < run.toM) latlngs.push([lats[v], lons[v]]);
+      }
+      latlngs.push(point(run.toM));
+      return { key: run.band.label, label: run.band.label, color: run.band.color, latlngs, fromM: run.fromM, toM: run.toM };
+    });
+  }
+
+  /** What each grade band covers: [{key, label, color, meters, share}] from steep descent to very steep climb. */
+  function bandLegend(pieces) {
+    const total = (pieces || []).reduce((sum, p) => sum + (p.toM - p.fromM), 0);
+    if (!(total > 0)) return [];
+    return GRADE_BANDS.map((b) => {
+      const meters = pieces.filter((p) => p.key === b.label).reduce((sum, p) => sum + (p.toM - p.fromM), 0);
+      return { key: b.label, label: b.label.charAt(0).toUpperCase() + b.label.slice(1), color: b.color, meters, share: meters / total };
+    }).filter((row) => row.meters >= MIN_LEGEND_M);
+  }
+
   /** The distance (m) along the route under a pointer at `fraction` (0..1) of the plot's width. */
   function distanceAtFraction(profile, fraction) {
     return Math.max(0, Math.min(1, fraction)) * profile.totalM;
@@ -295,6 +342,8 @@
     bandOf,
     tickStepKm,
     chartSvg,
+    bandPieces,
+    bandLegend,
     distanceAtFraction,
   };
   root.BikeProfile = api;

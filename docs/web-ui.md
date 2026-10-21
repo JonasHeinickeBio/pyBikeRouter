@@ -44,7 +44,7 @@ How it is made (`frontend/profile.js`):
 
 Under the metrics, *Colour the route* switches the active route on the map between **Plain**,
 **Surface** (paved / unpaved / cobbles / not mapped) and **Traffic** (busy / some traffic / quiet /
-off-road and bike paths / not mapped). The legend gives what each colour covers in km and percent, and
+off-road and bike paths / not mapped) or **Gradient** (steep descent ... very steep climb). The legend gives what each colour covers in km and percent, and
 one line names the longest unpaved (or busy) stretch with where it starts. The choice is remembered in
 this browser.
 
@@ -55,7 +55,11 @@ this browser.
 - **Not mapped** is a missing tag, which says nothing about the surface or the road. Traffic is the
   same estimate as the *Busy roads* number (road class, bike lanes, speed limits), not a count of cars,
   and it is "not mapped" everywhere when too little of the route carries road tags.
-- Routes from engines that give no tags (ORS, Valhalla) show no card. Classes of a few metres are left
+- **Gradient** needs elevation on every vertex (as the elevation chart does), so it works for any engine
+  that returns it. It uses the chart's colours and the chart's grade -- taken over about 300 m around each
+  point of the smoothed elevation, in 25 m steps -- so a short steep ramp inside a gentler climb does
+  not flicker, and the map and the chart always agree. The legend leaves out bands of a few metres.
+- Routes from engines that give no tags (ORS, Valhalla) have no Surface or Traffic mode. Classes of a few metres are left
   out of the legend, and a "longest stretch" under 300 m is not mentioned.
 
 ## Directions

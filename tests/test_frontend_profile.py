@@ -269,3 +269,73 @@ def test_the_page_shows_the_card_draws_the_chart_and_links_the_cursor_to_the_map
     assert "renderProfile(cand);" in app[app.index("function updateActiveView") :]
     cleared = app[app.index("function clearResults") :]
     assert "clearProfileCursor();" in cleared[: cleared.index("\n}\n")]
+
+
+# --------------------------------------------------------------- colouring the route on the map
+
+
+def hill(d):
+    """Flat for 1 km, then a 8 % climb for 1 km, then flat again."""
+    if d < 1000:
+        return 100.0
+    if d < 2000:
+        return 100.0 + (d - 1000) * 0.08
+    return 180.0
+
+
+def pieces_of(geometry):
+    return js("P.bandPieces(P.build(g))", g=geometry)
+
+
+def test_the_route_is_cut_into_runs_of_one_grade_band():
+    pieces = pieces_of(long_route(hill, 3))
+    assert [p["key"] for p in pieces] == ["flat", "climb", "steep climb", "climb", "flat"]
+    # the climb is coloured by the grade over 300 m around each point, so the edges blend
+    assert pieces[0]["fromM"] == 0 and pieces[-1]["toM"] == pytest.approx(3000, rel=0.01)
+    assert all(a["toM"] == b["fromM"] for a, b in zip(pieces, pieces[1:], strict=False))
+    steep = next(p for p in pieces if p["key"] == "steep climb")
+    assert steep["fromM"] > 1000 and steep["toM"] < 2000  # the 8 % section is inside the hill
+
+
+def test_a_piece_ends_exactly_where_the_next_begins_on_the_map():
+    pieces = pieces_of(long_route(hill, 3))
+    for a, b in zip(pieces, pieces[1:], strict=False):
+        assert a["latlngs"][-1] == b["latlngs"][0]  # no gap between the coloured lines
+    assert pieces[0]["latlngs"][0] == [52.0, 10.0]  # latitude first, as the map wants it
+
+
+def test_the_pieces_hold_the_vertices_between_their_ends():
+    pieces = pieces_of(long_route(hill, 3))
+    inside = sum(len(p["latlngs"]) - 2 for p in pieces)
+    assert inside == pytest.approx(3000 / STEP_M, abs=len(pieces) + 2)  # every vertex once
+
+
+def test_a_steady_descent_is_one_piece():
+    pieces = pieces_of(long_route(lambda d: 200.0 - d * 0.05, 2))
+    assert [p["key"] for p in pieces] == ["descent"]
+
+
+def test_the_band_legend_adds_up_and_leaves_out_tiny_bands():
+    pieces = pieces_of(long_route(hill, 3))
+    legend = js("P.bandLegend(p)", p=pieces)
+    assert [r["key"] for r in legend] == ["flat", "climb", "steep climb"]  # steepest descent first
+    assert sum(r["share"] for r in legend) == pytest.approx(1.0)
+    assert legend[0]["label"] == "Flat" and legend[2]["label"] == "Steep climb"
+    flat = next(r for r in legend if r["key"] == "flat")
+    assert flat["meters"] == pytest.approx(2000, rel=0.15)
+    tiny = [{"key": "flat", "toM": 10, "fromM": 0}, {"key": "climb", "fromM": 10, "toM": 5000}]
+    assert [r["key"] for r in js("P.bandLegend(p)", p=tiny)] == ["climb"]
+    assert js("P.bandLegend(null)") == [] and js("P.bandLegend([])") == []
+
+
+def test_the_colours_are_the_charts_colours():
+    pieces = pieces_of(long_route(hill, 3))
+    bands = {b["label"]: b["color"] for b in js("P.GRADE_BANDS")}
+    assert all(p["color"] == bands[p["key"]] for p in pieces)
+
+
+def test_the_page_offers_gradient_where_there_is_a_profile_and_remembers_it():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert '...(profile ? ["gradient"] : [])' in app
+    assert '["surface", "traffic", "gradient"].includes(saved)' in app
+    assert "BikeProfile.bandPieces(profile)" in app

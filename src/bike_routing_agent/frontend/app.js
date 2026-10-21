@@ -1249,7 +1249,7 @@ const COLOUR_KEY = "pybikerouter.colour";
 function loadColourMode() {
   try {
     const saved = window.localStorage.getItem(COLOUR_KEY);
-    return saved === "surface" || saved === "traffic" ? saved : "none";
+    return ["surface", "traffic", "gradient"].includes(saved) ? saved : "none";
   } catch {
     return "none"; // storage blocked: just not remembered
   }
@@ -1266,18 +1266,22 @@ function setColourMode(mode) {
   if (entry) renderColours(entry.candidate);
 }
 
-/** The active route cut into surface or traffic colours, with what each covers (hidden when the
- * engine gave no tags for this route). */
+const GRADIENT_NOTE =
+  "The grade over about 300 m of the route, from the smoothed elevation; the same colours as the chart below.";
+
+/** The active route cut into surface, traffic or gradient colours, with what each covers (hidden
+ * when the route has no tags and no elevation). */
 function renderColours(cand) {
   state.colourLayer.clearLayers();
-  const modes = BikeStretches.modes(cand);
+  const profile = BikeProfile.build(cand.geometry_geojson);
+  const modes = [...BikeStretches.modes(cand), ...(profile ? ["gradient"] : [])];
   if (!modes.length) {
     els.coloursCard.hidden = true;
     return;
   }
   els.coloursCard.hidden = false;
   const mode = modes.includes(state.colourMode) ? state.colourMode : "none";
-  const choices = [["none", "Plain"], ...modes.map((m) => [m, BikeStretches.MODES[m].label])];
+  const choices = [["none", "Plain"], ...modes.map((m) => [m, m === "gradient" ? "Gradient" : BikeStretches.MODES[m].label])];
   els.coloursModes.innerHTML = choices
     .map(
       ([key, label]) =>
@@ -1289,12 +1293,16 @@ function renderColours(cand) {
   els.coloursLongest.hidden = !shown;
   els.coloursNote.hidden = !shown;
   if (!shown) return;
-  for (const piece of BikeStretches.pieces(cand, mode)) {
+  const gradient = mode === "gradient";
+  const pieces = gradient ? BikeProfile.bandPieces(profile) : BikeStretches.pieces(cand, mode);
+  for (const piece of pieces) {
     L.polyline(piece.latlngs, { color: piece.color, weight: 6, opacity: 0.95, interactive: false }).addTo(state.colourLayer);
   }
-  els.coloursLegend.innerHTML = BikeStretches.legendHtml(BikeStretches.legend(cand, mode));
-  els.coloursLongest.textContent = BikeStretches.longestText(BikeStretches.longest(cand, mode));
-  els.coloursNote.textContent = BikeStretches.MODES[mode].note;
+  els.coloursLegend.innerHTML = BikeStretches.legendHtml(
+    gradient ? BikeProfile.bandLegend(pieces) : BikeStretches.legend(cand, mode),
+  );
+  els.coloursLongest.textContent = gradient ? "" : BikeStretches.longestText(BikeStretches.longest(cand, mode));
+  els.coloursNote.textContent = gradient ? GRADIENT_NOTE : BikeStretches.MODES[mode].note;
 }
 
 /* -------------------------------- directions -------------------------------- */
