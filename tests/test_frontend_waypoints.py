@@ -206,3 +206,72 @@ def test_the_page_loads_the_module_and_the_map_click_opens_the_menu():
     assert "BikeWaypoints.slots(" in app and "BikeWaypoints.suggest(" in app
     assert "BikeWaypoints.place(" in app and "insertViaRow(" in app
     assert "latlng.wrap()" in app  # a map panned across the date line reports a longitude > 180
+
+
+# ------------------------------------------------------------------------ dragging the route
+
+EAST = [[10.0 + i * 0.1, 52.0] for i in range(11)]  # a route from (10, 52) east to (11, 52)
+TRIP = {
+    "hasOrigin": True,
+    "hasDestination": True,
+    "origin": {"lat": 52.0, "lon": 10.0},
+    "destination": {"lat": 52.0, "lon": 11.0},
+    "vias": [],
+    "route": EAST,
+}
+
+
+def reshape(**changes):
+    return call("reshape", {**TRIP, **changes})
+
+
+def test_dragging_a_route_adds_a_stop_at_the_drop_point_in_the_right_place():
+    got = reshape(grab={"lat": 52.0, "lon": 10.5}, drop={"lat": 52.05, "lon": 10.5})
+    assert got == {"key": "via:0", "text": "52.05000, 10.50000"}
+
+
+def test_the_stop_goes_where_the_route_was_grabbed_not_where_it_was_dropped():
+    one = [{"lat": 52.0, "lon": 10.5}]
+    # grabbed before the existing stop, dropped far beyond it: still the first stop
+    early = reshape(vias=one, grab={"lat": 52.0, "lon": 10.2}, drop={"lat": 52.1, "lon": 10.9})
+    assert early["key"] == "via:0"
+    late = reshape(vias=one, grab={"lat": 52.0, "lon": 10.8}, drop={"lat": 52.1, "lon": 10.1})
+    assert late["key"] == "via:1"
+
+
+def test_dragging_with_a_stop_that_is_only_a_name_puts_the_new_one_last():
+    got = reshape(vias=[None], grab={"lat": 52.0, "lon": 10.2}, drop={"lat": 52.1, "lon": 10.3})
+    assert got["key"] == "via:1"
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"hasOrigin": False},
+        {"hasDestination": False},
+        {"grab": None},
+        {"drop": None},
+        {"vias": [{"lat": 52.0, "lon": 10.1 + i * 0.05} for i in range(10)]},  # no room: 10 stops
+    ],
+)
+def test_nothing_to_add_without_a_trip_a_grab_a_drop_or_room(changes):
+    base = {"grab": {"lat": 52.0, "lon": 10.5}, "drop": {"lat": 52.1, "lon": 10.5}}
+    assert reshape(**{**base, **changes}) is None
+
+
+def test_a_drop_past_the_antimeridian_is_written_wrapped():
+    got = reshape(grab={"lat": 52.0, "lon": 10.5}, drop={"lat": 52.0, "lon": 190.5})
+    assert got["text"] == "52.00000, -169.50000"
+
+
+def test_the_page_wires_the_drag_handle_to_the_route_lines_and_clears_it_with_the_results():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "attachReshape(L.geoJSON(candidate.geometry_geojson" in app
+    assert (
+        "BikeWaypoints.reshape({" in app
+        and "applyPoint(placement.key, placement.text, true)" in app
+    )
+    assert "RESHAPE_MIN_DRAG_PX" in app  # a slip of the pointer is not a new stop
+    # the handle only follows the active route, never while a point is being picked
+    assert "index !== state.activeIndex || state.pickingTarget" in app
+    assert "hideReshapeHandle();" in app[app.index("function clearResults") :]
