@@ -162,6 +162,12 @@ in the settings.
 | `POI_TIMEZONE_LOOKUP` | `false`: no time-zone request, the opening hours are not compared with your arrival | `true` |
 | `POI_PER_CATEGORY_LIMIT` | most POIs returned per kind (best-known first) | `40` |
 
+**The public Overpass instances are shared and often at capacity** -- the main one answers *"currently
+at capacity"* and says automated use should run a local instance -- and every instance you list
+learns the shape of the routes you search along. `scripts/self-hosted-bootstrap.sh --only pois`
+([self-hosted.md](self-hosted.md#self-hosted-overpass-the-sight-search)) imports your regional extract
+into a local Overpass at `http://127.0.0.1:8083/api/interpreter`; put that in `POI_OVERPASS_URLS`.
+
 ## Opening hours
 
 OSM writes opening hours in the *local* time of the place, so the check needs two things: when you
