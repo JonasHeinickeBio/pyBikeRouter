@@ -17,6 +17,10 @@
   const GRADE_WINDOW_M = 100; // "the steepest 100 m"
   const MIN_ROUTE_M = 200; // shorter than this is not worth a chart
   const MIN_Y_RANGE_M = 40; // a flat route must look flat, not like a mountain range
+  // The chart and the map are cut into grade colours at the same points: one per 25 m of route,
+  // at most this many for a long one (more would be a heavy drawing nobody can tell apart).
+  const PIECE_STEP_M = 25;
+  const MAX_SAMPLES = 240;
   const COLOR_WINDOW_M = 300; // the grade a stretch of the chart is coloured by is taken over this much
 
   // A climb: at least this much gain, this long and this steep on average; a dip of up to DIP_M
@@ -82,6 +86,11 @@
     }
     const span = cum[hi] - cum[lo];
     return span === 0 ? values[lo] : values[lo] + ((values[hi] - values[lo]) * (d - cum[lo])) / span;
+  }
+
+  /** The number of sample points the chart and the map colouring share (intervals = points - 1). */
+  function sampleCount(profile) {
+    return Math.min(MAX_SAMPLES, Math.max(2, Math.round(profile.totalM / PIECE_STEP_M) + 1));
   }
 
   /**
@@ -225,7 +234,7 @@
     const y = (m) => pad.top + plotH - ((m - low) / (high - low)) * plotH;
     const base = pad.top + plotH;
 
-    const samples = Math.min(240, Math.max(2, Math.round(profile.totalM / 25)));
+    const samples = sampleCount(profile);
     const pts = [];
     for (let i = 0; i < samples; i++) {
       const m = (profile.totalM * i) / (samples - 1);
@@ -276,6 +285,52 @@
     );
   }
 
+  const MIN_LEGEND_M = 25; // a band of a few metres is not a legend row
+
+  /**
+   * The route cut into runs of one grade band, for colouring it on the map: [{key, label, color,
+   * latlngs, fromM, toM}], neighbours of one band merged. The grade is the one the chart is coloured
+   * by (taken over COLOR_WINDOW_M around each point), so the two agree.
+   */
+  function bandPieces(profile) {
+    const lons = profile.coords.map((p) => p[0]);
+    const lats = profile.coords.map((p) => p[1]);
+    const point = (m) => [interpolate(profile.cum, lats, m), interpolate(profile.cum, lons, m)];
+    const steps = sampleCount(profile) - 1;
+    const runs = [];
+    for (let i = 0; i < steps; i++) {
+      const from = (profile.totalM * i) / steps;
+      const to = (profile.totalM * (i + 1)) / steps;
+      const mid = (from + to) / 2;
+      const lo = Math.max(0, mid - COLOR_WINDOW_M / 2);
+      const hi = Math.min(profile.totalM, mid + COLOR_WINDOW_M / 2);
+      const grade =
+        (interpolate(profile.cum, profile.ele, hi) - interpolate(profile.cum, profile.ele, lo)) / Math.max(1, hi - lo);
+      const band = bandOf(grade);
+      const last = runs[runs.length - 1];
+      if (last && last.band === band) last.toM = to;
+      else runs.push({ band, fromM: from, toM: to });
+    }
+    return runs.map((run) => {
+      const latlngs = [point(run.fromM)];
+      for (let v = 0; v < profile.cum.length; v++) {
+        if (profile.cum[v] > run.fromM && profile.cum[v] < run.toM) latlngs.push([lats[v], lons[v]]);
+      }
+      latlngs.push(point(run.toM));
+      return { key: run.band.label, label: run.band.label, color: run.band.color, latlngs, fromM: run.fromM, toM: run.toM };
+    });
+  }
+
+  /** What each grade band covers: [{key, label, color, meters, share}] from steep descent to very steep climb. */
+  function bandLegend(pieces) {
+    const total = (pieces || []).reduce((sum, p) => sum + (p.toM - p.fromM), 0);
+    if (!(total > 0)) return [];
+    return GRADE_BANDS.map((b) => {
+      const meters = pieces.filter((p) => p.key === b.label).reduce((sum, p) => sum + (p.toM - p.fromM), 0);
+      return { key: b.label, label: b.label.charAt(0).toUpperCase() + b.label.slice(1), color: b.color, meters, share: meters / total };
+    }).filter((row) => row.meters >= MIN_LEGEND_M);
+  }
+
   /** The distance (m) along the route under a pointer at `fraction` (0..1) of the plot's width. */
   function distanceAtFraction(profile, fraction) {
     return Math.max(0, Math.min(1, fraction)) * profile.totalM;
@@ -295,6 +350,8 @@
     bandOf,
     tickStepKm,
     chartSvg,
+    bandPieces,
+    bandLegend,
     distanceAtFraction,
   };
   root.BikeProfile = api;

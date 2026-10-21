@@ -67,7 +67,8 @@ decisions still open.
   benchmark against a live model in CI, and more languages in the benchmark.
 - **Route colours** -- done for BRouter: the active route on the map coloured by surface or by traffic
   exposure, with a legend and the longest unpaved/busy stretch ([web-ui.md](web-ui.md#colour-the-route)).
-  Open: other engines (they give no tags), colouring by gradient, and the OSM-enrichment surface (finer
+  Also by gradient, from the elevation (any engine that returns it). Open: surface/traffic from other engines
+  (they give no tags), and the OSM-enrichment surface (finer
   categories) once Overpass is stable.
 - **Turn-by-turn directions** -- done for BRouter: its turn instructions on each route, a directions
   list with a cue sheet in the web page, and the cues in the GeoJSON download
