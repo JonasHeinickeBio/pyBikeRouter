@@ -71,6 +71,8 @@ your LAN), then run the same script.
 - Reshape a route with your finger: **press and hold the route**, then drag the round handle that
   appears (tap elsewhere to drop it); drag a numbered marker to move a stop
   ([web-ui.md](web-ui.md#drag-the-route-to-reshape-it)).
+- **Remember my choices** (settings, off by default) keeps your bike type, surface preferences and
+  the like on the phone, so the form is ready next time ([web-ui.md](web-ui.md#remember-my-choices-opt-in)).
 - Small landscape phones put the map beside the form; larger ones use the
   desktop layout.
 

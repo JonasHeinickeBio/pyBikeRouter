@@ -81,6 +81,37 @@ downloads the same list as plain text to print or send.
 - Not turned into GPX: see [scoring-and-exports.md](scoring-and-exports.md#geojson). The GeoJSON
   download does carry the cues.
 
+## Remember my choices (opt-in)
+
+The settings panel (the gear) has **Remember my choices**, **off until you switch it on**. When on, the
+planner remembers what you tick, in this browser, and puts it back in the form on your next visit:
+
+| Kind | What it holds | Ticked at first |
+| --- | --- | --- |
+| Bike type | the bike | yes |
+| Surface preferences | prefer / avoid surfaces | yes |
+| Busy roads and ferries | the two "avoid" boxes | yes |
+| Distance and climbing limits | target distance, maximum distance, maximum ascent | no |
+| Start place | the Origin field | no |
+
+The defaults are a rider's habits, not the trip of the day; the limits and the start place are one tick
+away for those who always ride "about 50 km from home". Never remembered: the destination, the stops, the
+departure time.
+
+- It saves as you fill in the form (a moment after you stop typing) and after a plan that worked, and
+  nothing is saved while it is off. Unticking a kind forgets what it held at once; **Forget what is
+  stored** empties it and keeps the switch; switching off erases everything it stored.
+- **It stays in this browser** (`localStorage`, one entry). Nothing is sent to the server, not even
+  that it is on. A private window or blocked storage just does not remember, and the panel says so.
+- **A shared link always wins.** Opening a link (or pasting one into an open tab) fills the form from
+  the link only, and the link's trip is *not* written over what you had remembered until you edit the form
+  yourself: somebody else's trip does not become your habits.
+- What is read back is checked like any text from outside (`frontend/memory.js`): only the known fields,
+  of the right type and in range, reach the form; a value of a kind that is not ticked is ignored even if
+  something stored it.
+- This is a browser memory, not an account: another browser or device starts empty, and clearing the
+  site's data clears it.
+
 ## Share a trip with a link
 
 **Copy link** (next to *Reset*) copies a link that opens the planner with this form's trip in it:

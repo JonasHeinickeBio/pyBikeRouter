@@ -59,6 +59,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/link.js", "BikeLink"),
         ("/cues.js", "BikeCues"),
         ("/stretches.js", "BikeStretches"),
+        ("/memory.js", "BikeMemory"),
+        ("/index.html", 'id="memory-settings"'),
         ("/index.html", 'id="colours-card"'),
         ("/index.html", 'id="cues-card"'),
         ("/index.html", 'id="copy-link-btn"'),

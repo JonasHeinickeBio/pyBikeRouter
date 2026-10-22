@@ -68,6 +68,10 @@ const els = {
   settingsPanel: $("settings-panel"),
   settingsClose: $("settings-close"),
   settingsEmpty: $("settings-empty"),
+  memoryEnabled: $("memory-enabled"),
+  memoryKinds: $("memory-kinds"),
+  memoryStatus: $("memory-status"),
+  memoryClear: $("memory-clear"),
   poiStopsEnabled: $("poi-stops-enabled"),
   poiStopsField: $("poi-stops-field"),
   poiStopsCount: $("poi-stops-count"),
@@ -144,6 +148,9 @@ const state = {
   reshapeHideTimer: null,
   reshapeDragging: false,
   reshapeSticky: false, // a long press placed the handle: it stays until the next tap instead of following a mouse
+  memory: { enabled: false, keep: {}, values: {} }, // BikeMemory state, loaded in initMemory
+  memoryStorageFailed: false, // the last save was refused by the browser
+  memoryHoldBack: false, // the form holds a shared link's trip: not remembered until the person edits it
   colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
@@ -794,6 +801,7 @@ async function planRoute() {
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
     renderResponse(data, secs);
     drawn = true;
+    if (!state.memoryHoldBack) rememberNow(); // a plan that worked: its choices are what to remember
   } catch (err) {
     if (err.name === "AbortError") return;
     setStatus("error", `Network error: ${escapeHtml(String(err))}`);
@@ -1104,6 +1112,7 @@ async function copyPlanLink() {
 function loadSharedPlan() {
   const request = BikeLink.decode(window.location.hash);
   if (!request) return;
+  state.memoryHoldBack = true; // somebody else's trip must not rewrite what this browser remembers
   if (request.max_alternatives) els.maxAlternatives.value = String(request.max_alternatives);
   applyInterpretation({ request, departure_time: request.departure_time });
   planRoute();
@@ -2670,6 +2679,133 @@ async function initOptimizer() {
   setTab(remembered);
 }
 
+/* ----------------------- remember my choices (opt-in) ----------------------- */
+
+/** The form as the memory sees it: the constraint fields of the request, and the start place. */
+function formForMemory() {
+  const c = buildConstraints();
+  return {
+    bike_type: c.bike_type,
+    prefer_surfaces: c.prefer_surfaces,
+    avoid_surfaces: c.avoid_surfaces,
+    avoid_high_traffic_roads: c.avoid_high_traffic_roads,
+    avoid_ferries: c.avoid_ferries,
+    target_distance_km: c.target_distance_km,
+    max_distance_km: c.max_distance_km,
+    max_ascent_m: c.max_ascent_m,
+    origin: els.origin.value.trim(),
+  };
+}
+
+// A browser can throw merely for *looking at* window.localStorage (blocked site data): this is then
+// a storage that refuses everything, which memory.js already treats as "not remembered".
+const BLOCKED_STORAGE = {
+  getItem() {
+    throw new Error("storage blocked");
+  },
+  setItem() {
+    throw new Error("storage blocked");
+  },
+  removeItem() {
+    throw new Error("storage blocked");
+  },
+};
+
+function memoryStorage() {
+  try {
+    return window.localStorage || BLOCKED_STORAGE;
+  } catch {
+    return BLOCKED_STORAGE;
+  }
+}
+
+/** What the settings panel says about the memory: the state, or that nothing can be stored. */
+function memoryStatusText() {
+  if (state.memory.enabled && state.memoryStorageFailed) {
+    return "This browser would not store it (a private window or blocked storage), so nothing is remembered.";
+  }
+  return BikeMemory.describe(state.memory);
+}
+
+function renderMemory() {
+  els.memoryEnabled.checked = state.memory.enabled;
+  els.memoryKinds.hidden = !state.memory.enabled;
+  els.memoryClear.hidden = !state.memory.enabled;
+  els.memoryKinds.innerHTML = BikeMemory.KINDS.map(
+    (k) =>
+      `<label class="check"><input type="checkbox" data-kind="${k.key}" ${state.memory.keep[k.key] ? "checked" : ""} /> ${escapeHtml(k.label)}</label>`,
+  ).join("");
+  els.memoryStatus.textContent = memoryStatusText();
+}
+
+function storeMemory() {
+  state.memoryStorageFailed = !BikeMemory.save(memoryStorage(), state.memory);
+}
+
+/** Remember what the form holds now (a no-op while memory is off). */
+function rememberNow() {
+  if (!state.memory.enabled) return;
+  state.memory = BikeMemory.remember(state.memory, formForMemory());
+  storeMemory();
+  els.memoryStatus.textContent = memoryStatusText();
+}
+
+/** Put what was remembered into the form (fields that are not remembered are left alone). */
+function applyRemembered() {
+  const v = BikeMemory.recall(state.memory);
+  const setNum = (el, value) => {
+    if (value !== undefined) el.value = String(value);
+  };
+  if (v.bike_type && [...els.bikeType.options].some((o) => o.value === v.bike_type)) els.bikeType.value = v.bike_type;
+  if (v.prefer_surfaces) els.preferSurfaces.value = v.prefer_surfaces.join(", ");
+  if (v.avoid_surfaces) els.avoidSurfaces.value = v.avoid_surfaces.join(", ");
+  if (v.avoid_high_traffic_roads !== undefined) els.avoidTraffic.checked = v.avoid_high_traffic_roads;
+  if (v.avoid_ferries !== undefined) els.avoidFerries.checked = v.avoid_ferries;
+  setNum(els.targetDistance, v.target_distance_km);
+  setNum(els.maxDistance, v.max_distance_km);
+  setNum(els.maxAscent, v.max_ascent_m);
+  if (v.origin && !els.origin.value.trim()) {
+    els.origin.value = v.origin;
+    markCoordInput(els.origin);
+    redrawPlaceMarkers();
+  }
+}
+
+function initMemory() {
+  state.memory = BikeMemory.load(memoryStorage());
+  renderMemory();
+  // A shared link is the trip somebody meant: it is not mixed with what this browser remembers.
+  if (state.memory.enabled && !window.location.hash.startsWith(`#${BikeLink.KEY}=`)) applyRemembered();
+  let timer = null;
+  const later = () => {
+    state.memoryHoldBack = false; // the person is editing the form: it is theirs again
+    clearTimeout(timer);
+    timer = setTimeout(rememberNow, 600);
+  };
+  for (const el of [els.bikeType, els.targetDistance, els.maxDistance, els.maxAscent, els.preferSurfaces, els.avoidSurfaces, els.avoidTraffic, els.avoidFerries, els.origin]) {
+    el.addEventListener("input", later);
+    el.addEventListener("change", later);
+  }
+  els.memoryEnabled.addEventListener("change", () => {
+    state.memory = BikeMemory.setEnabled(state.memory, els.memoryEnabled.checked);
+    if (state.memory.enabled) rememberNow(); // what is in the form now is the first thing remembered
+    else BikeMemory.erase(memoryStorage());
+    renderMemory();
+  });
+  els.memoryKinds.addEventListener("change", (ev) => {
+    const box = ev.target.closest("input[data-kind]");
+    if (!box) return;
+    state.memory = BikeMemory.setKept(state.memory, box.dataset.kind, box.checked);
+    rememberNow(); // a kind just ticked takes what the form holds
+    renderMemory();
+  });
+  els.memoryClear.addEventListener("click", () => {
+    state.memory = { ...state.memory, values: {} };
+    storeMemory();
+    renderMemory();
+  });
+}
+
 /* --------------------------- settings panel (right) --------------------------- */
 
 function updateSettingsEmpty() {
@@ -2711,6 +2847,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTextPlanning();
   initSettingsPanel();
   initPois();
+  initMemory(); // before the link: a link overrides it, but the controls must exist either way
   loadSharedPlan(); // before the chat restores its route: a link's trip is the newest
   // A link pasted into the address bar of a page that is already open is only a fragment change.
   window.addEventListener("hashchange", loadSharedPlan);

@@ -144,6 +144,7 @@ input.set-by-coord { border-left: 4px solid var(--accent); }
 
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
 .check-grid { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.2rem; }
+.check-grid[hidden], .settings-group button[hidden] { display: none; } /* an author rule must not override `hidden` */
 .check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.88rem; }
 .check input { accent-color: var(--accent); }
 
