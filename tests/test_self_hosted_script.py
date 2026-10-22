@@ -186,7 +186,9 @@ def test_status_only_reports_and_judges_the_selected_service(tmp_path):
     assert "nominatim" in down.stdout and "openrouteservice" not in down.stdout
 
 
-@pytest.mark.parametrize("args", [["--only", "everything"], ["--only"]])
+@pytest.mark.parametrize(
+    "args", [["--only", "everything"], ["--only"], ["--only="], ["--only", ""]]
+)
 def test_bad_only_values_are_usage_errors(tmp_path, args):
     result, calls, _ = run(tmp_path, *args)
     assert result.returncode == 2

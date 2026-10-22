@@ -161,7 +161,7 @@ an import, so you ask for it (`--only`, or the compose profile `self-hosted-pois
 
 | What | Value |
 | --- | --- |
-| First start until it answers | ~6 min (368 s): the conversion of the PBF to the XML the image reads, then the import |
+| First start until it answers | 4-6 min (255 s and 368 s in two runs; the machine was not otherwise idle): the conversion of the PBF to the XML the image reads, then the import |
 | Database | 80.5 MB (the extract is 21 MB) |
 | Memory | ~70 MiB idle; the compose limit is 2 GB (`OVERPASS_MEM_LIMIT`) |
 | Image | 368 MB on disk (134 MB to pull) |
@@ -199,10 +199,13 @@ Things worth knowing, all found while building it:
 
   Do the same after changing the region or bumping the pinned image tag (the database format is
   version specific).
-- **The import is slow in one place:** the image reads one bzip2-compressed XML file, so the
-  PBF is converted first; dropping the metadata the database does not keep (`add_metadata=false`)
-  made that step about three times faster in isolation (1 min 45 s instead of 5 min 47 s), and the
-  whole first start about a fifth shorter (6 min instead of 7.5).
+- **The import is slow in one place:** the image reads one bzip2-compressed XML file, so the PBF is
+  converted first, and compressing that XML is most of the time (5 min 47 s of a 7.5 min first start
+  with all metadata). The conversion keeps only the **timestamps** (`add_metadata=timestamp`): about
+  4x faster (79 s in isolation), and the image reads the data version from them. Dropping *all*
+  metadata (`add_metadata=false`) is a little faster still but is wrong: the version then becomes
+  `1970-01-01T00:00:01Z` (found in review, checked with `osmium fileinfo`); with the timestamps kept
+  the database reports the extract's real one in `osm3s.timestamp_osm_base`.
 - **Where it was tested.** On a machine whose Docker could not publish container ports to the host,
   so the compose file's `127.0.0.1:8083` mapping itself was *not* exercised there. The same image and
   database were queried inside the container and through a host-network container listening on

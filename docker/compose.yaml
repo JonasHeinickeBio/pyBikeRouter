@@ -169,12 +169,14 @@ services:
       OVERPASS_META: "no"            # Geofabrik extracts carry no metadata
       OVERPASS_COMPRESSION: gz
       # The image reads one planet.osm.bz2; osmium converts the PBF extract.
-      # add_metadata=false (the database keeps no metadata, see OVERPASS_META) makes
-      # the conversion, the slowest step of the import, about 3x faster.
+      # add_metadata=timestamp keeps only the object timestamps: the image reads the
+      # data version (osm3s.timestamp_osm_base, and the start of any diff updates) from
+      # them -- with add_metadata=false it would be 1970-01-01 -- and the conversion, the
+      # slowest step of the import, is still about 4x faster than with all metadata.
       OVERPASS_PLANET_URL: file:///pbf/region.osm.pbf
       OVERPASS_PLANET_PREPROCESS: >-
         mv /db/planet.osm.bz2 /db/planet.osm.pbf &&
-        osmium cat -f osm.bz2,add_metadata=false -o /db/planet.osm.bz2 /db/planet.osm.pbf &&
+        osmium cat -f osm.bz2,add_metadata=timestamp -o /db/planet.osm.bz2 /db/planet.osm.pbf &&
         rm /db/planet.osm.pbf
       # Keep serving after the import instead of exiting (the default) -- the
       # restart policy would bring it back, but this is quicker and clearer.

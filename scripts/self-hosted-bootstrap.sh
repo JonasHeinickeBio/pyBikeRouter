@@ -51,6 +51,7 @@ OVERPASS_STATUS="http://127.0.0.1:${OVERPASS_PORT}/api/status"
 ACTION="up"
 FORCE=0
 ONLY=""
+ONLY_GIVEN=0   # --only was passed, even with an empty value (which is an error, not "everything")
 USAGE="use: up | status | --force | --only routing,geocoding,pois (any mix)"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -58,8 +59,8 @@ while [ $# -gt 0 ]; do
     --force) FORCE=1 ;;
     --only)
       [ $# -ge 2 ] || { echo "error: --only needs a value ($USAGE)" >&2; exit 2; }
-      ONLY="$2"; shift ;;
-    --only=*) ONLY="${1#--only=}" ;;
+      ONLY="$2"; ONLY_GIVEN=1; shift ;;
+    --only=*) ONLY="${1#--only=}"; ONLY_GIVEN=1 ;;
     -h|--help) awk 'NR > 1 { if (/^#/) print; else exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "error: unknown argument '$1' ($USAGE)" >&2; exit 2 ;;
   esac
@@ -71,6 +72,10 @@ done
 WANT_ORS=1
 WANT_NOMINATIM=1
 WANT_OVERPASS=0
+if [ "$ONLY_GIVEN" = 1 ] && [ -z "$ONLY" ]; then
+  echo "error: --only needs a value ($USAGE)" >&2
+  exit 2
+fi
 if [ -n "$ONLY" ]; then
   WANT_ORS=0
   WANT_NOMINATIM=0

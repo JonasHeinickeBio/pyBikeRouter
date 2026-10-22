@@ -34,9 +34,11 @@ def test_it_imports_the_extract_the_other_services_share_read_only():
     assert ENV["OVERPASS_MODE"] == "init"
     assert ENV["OVERPASS_PLANET_URL"] == "file:///pbf/region.osm.pbf"
     assert "./self-hosted/data:/pbf:ro" in SERVICE["volumes"]
-    # PBF -> the bz2 XML the image reads; the metadata the database does not keep is dropped
+    # PBF -> the bz2 XML the image reads. The timestamps must be kept: the image takes the data
+    # version from them, and with add_metadata=false it is 1970-01-01 (found in review).
     preprocess = " ".join(str(ENV["OVERPASS_PLANET_PREPROCESS"]).split())
-    assert "osmium cat -f osm.bz2,add_metadata=false -o /db/planet.osm.bz2" in preprocess
+    assert "osmium cat -f osm.bz2,add_metadata=timestamp -o /db/planet.osm.bz2" in preprocess
+    assert "add_metadata=false" not in preprocess
     assert ENV["OVERPASS_META"] == "no"
 
 
