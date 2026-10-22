@@ -149,6 +149,7 @@ const state = {
   reshapeDragging: false,
   reshapeSticky: false, // a long press placed the handle: it stays until the next tap instead of following a mouse
   memory: { enabled: false, keep: {}, values: {} }, // BikeMemory state, loaded in initMemory
+  memoryStorageFailed: false, // the last save was refused by the browser
   memoryHoldBack: false, // the form holds a shared link's trip: not remembered until the person edits it
   colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
@@ -2696,6 +2697,36 @@ function formForMemory() {
   };
 }
 
+// A browser can throw merely for *looking at* window.localStorage (blocked site data): this is then
+// a storage that refuses everything, which memory.js already treats as "not remembered".
+const BLOCKED_STORAGE = {
+  getItem() {
+    throw new Error("storage blocked");
+  },
+  setItem() {
+    throw new Error("storage blocked");
+  },
+  removeItem() {
+    throw new Error("storage blocked");
+  },
+};
+
+function memoryStorage() {
+  try {
+    return window.localStorage || BLOCKED_STORAGE;
+  } catch {
+    return BLOCKED_STORAGE;
+  }
+}
+
+/** What the settings panel says about the memory: the state, or that nothing can be stored. */
+function memoryStatusText() {
+  if (state.memory.enabled && state.memoryStorageFailed) {
+    return "This browser would not store it (a private window or blocked storage), so nothing is remembered.";
+  }
+  return BikeMemory.describe(state.memory);
+}
+
 function renderMemory() {
   els.memoryEnabled.checked = state.memory.enabled;
   els.memoryKinds.hidden = !state.memory.enabled;
@@ -2704,13 +2735,11 @@ function renderMemory() {
     (k) =>
       `<label class="check"><input type="checkbox" data-kind="${k.key}" ${state.memory.keep[k.key] ? "checked" : ""} /> ${escapeHtml(k.label)}</label>`,
   ).join("");
-  els.memoryStatus.textContent = BikeMemory.describe(state.memory);
+  els.memoryStatus.textContent = memoryStatusText();
 }
 
 function storeMemory() {
-  if (!BikeMemory.save(window.localStorage, state.memory)) {
-    els.memoryStatus.textContent = "This browser would not store it (a private window or blocked storage).";
-  }
+  state.memoryStorageFailed = !BikeMemory.save(memoryStorage(), state.memory);
 }
 
 /** Remember what the form holds now (a no-op while memory is off). */
@@ -2718,7 +2747,7 @@ function rememberNow() {
   if (!state.memory.enabled) return;
   state.memory = BikeMemory.remember(state.memory, formForMemory());
   storeMemory();
-  els.memoryStatus.textContent = BikeMemory.describe(state.memory);
+  els.memoryStatus.textContent = memoryStatusText();
 }
 
 /** Put what was remembered into the form (fields that are not remembered are left alone). */
@@ -2743,7 +2772,7 @@ function applyRemembered() {
 }
 
 function initMemory() {
-  state.memory = BikeMemory.load(window.localStorage);
+  state.memory = BikeMemory.load(memoryStorage());
   renderMemory();
   // A shared link is the trip somebody meant: it is not mixed with what this browser remembers.
   if (state.memory.enabled && !window.location.hash.startsWith(`#${BikeLink.KEY}=`)) applyRemembered();
@@ -2760,7 +2789,7 @@ function initMemory() {
   els.memoryEnabled.addEventListener("change", () => {
     state.memory = BikeMemory.setEnabled(state.memory, els.memoryEnabled.checked);
     if (state.memory.enabled) rememberNow(); // what is in the form now is the first thing remembered
-    else BikeMemory.erase(window.localStorage);
+    else BikeMemory.erase(memoryStorage());
     renderMemory();
   });
   els.memoryKinds.addEventListener("change", (ev) => {

@@ -227,3 +227,35 @@ def test_the_page_has_the_group_loads_the_script_and_wires_it_before_the_link():
     )
     assert "state.memoryHoldBack = false;" in app[app.index("function initMemory") :]
     assert "if (!state.memory.enabled) return;" in app
+
+
+def test_a_refused_save_stays_visible_and_a_blocked_storage_lookup_cannot_stop_startup():
+    """Both found in review: the failure text was overwritten by the next status update, and merely
+    looking at window.localStorage can throw."""
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "state.memoryStorageFailed = !BikeMemory.save(memoryStorage(), state.memory);" in app
+    status = app[app.index("function memoryStatusText") : app.index("function renderMemory")]
+    assert "state.memoryStorageFailed" in status and "would not store it" in status
+    # every status update reads it (no caller sets the status from describe() alone any more)
+    assert app.count("els.memoryStatus.textContent = memoryStatusText();") >= 2
+    assert "els.memoryStatus.textContent = BikeMemory.describe(" not in app
+    # no direct window.localStorage in the memory code: it all goes through the guard
+    memory = app[
+        app.index("function formForMemory") : app.index(
+            "/* --------------------------- settings panel"
+        )
+    ]
+    code = "\n".join(line for line in memory.splitlines() if not line.lstrip().startswith("//"))
+    assert "window.localStorage" not in code.replace(
+        "return window.localStorage || BLOCKED_STORAGE;", ""
+    )
+    guard = memory[
+        memory.index("function memoryStorage") : memory.index("/** What the settings panel")
+    ]
+    assert "try {" in guard and "catch {" in guard and "BLOCKED_STORAGE" in guard
+
+
+def test_hidden_memory_controls_are_really_hidden():
+    """.check-grid is display:flex, which beats the browser's own [hidden] (found in review)."""
+    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    assert ".check-grid[hidden]" in css and ".settings-group button[hidden]" in css
