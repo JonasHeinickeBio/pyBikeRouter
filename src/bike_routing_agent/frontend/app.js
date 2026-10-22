@@ -200,6 +200,7 @@ function initMap() {
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
   state.map.on("click", onMapClick);
+  state.map.getContainer().addEventListener("contextmenu", onLongPress);
   // A click that only closes another popup (a sight, a weather marker) must not open the menu.
   state.map.on("popupclose", (ev) => {
     if (!ev.popup || ev.popup.options.className !== "point-popup") {
@@ -403,6 +404,33 @@ function reshapeThrough(grab, drop) {
   applyPoint(placement.key, placement.text, true);
 }
 
+const LONG_PRESS_REACH_PX = 28; // a finger lands this close to a line, not on it
+
+/**
+ * Touch: no hovering, so a long press near the active route puts the handle on the route and leaves
+ * it. A plain DOM listener, not a Leaflet one: Leaflet cancels the browser's menu for every
+ * `contextmenu` it hands to a listener, which would take a mouse's right click away. Only a
+ * simulated long press (Leaflet's tapHold) or a touch/pen contextmenu counts; a mouse's does not.
+ */
+function onLongPress(ev) {
+  const touch = ev._simulated || (ev.pointerType && ev.pointerType !== "mouse");
+  if (!touch || state.pickingTarget) return;
+  const line = activeRouteLine();
+  if (!line) return;
+  const at = BikeWaypoints.nearestOnRoute(
+    line,
+    state.map.mouseEventToContainerPoint(ev),
+    (lon, lat) => state.map.latLngToContainerPoint([lat, lon]),
+    LONG_PRESS_REACH_PX,
+  );
+  if (!at) return;
+  ev.preventDefault();
+  hideReshapeHandle();
+  state.reshapeSticky = true;
+  showReshapeHandle(L.latLng(at.lat, at.lon));
+  state.reshapeSticky = true; // showReshapeHandle must not be able to clear it
+}
+
 /** Make a route line show the drag handle while it is the active one; returns the layer. */
 function attachReshape(layer, index) {
   layer.on("mousemove", (ev) => {
@@ -410,17 +438,6 @@ function attachReshape(layer, index) {
     showReshapeHandle(ev.latlng);
   });
   layer.on("mouseout", scheduleReshapeHide);
-  // Touch: no hovering, so a long press on the active route puts the handle there and leaves it.
-  // A mouse's right click is left alone (the browser's own menu, and the handle already follows it).
-  layer.on("contextmenu", (ev) => {
-    if (index !== state.activeIndex || state.pickingTarget) return;
-    if (ev.originalEvent && ev.originalEvent.pointerType === "mouse") return;
-    L.DomEvent.preventDefault(ev.originalEvent || ev);
-    hideReshapeHandle();
-    state.reshapeSticky = true;
-    showReshapeHandle(ev.latlng);
-    state.reshapeSticky = true; // showReshapeHandle must not be able to clear it
-  });
   return layer;
 }
 
@@ -501,6 +518,7 @@ function useMyLocation() {
 }
 
 function startPicking(target, kindLabel, btn) {
+  hideReshapeHandle(); // the first tap of a picker must pick, not just drop a long-pressed handle
   state.pickingTarget = target;
   els.map.classList.add("picking");
   els.mapModeKind.textContent = kindLabel;
@@ -1222,6 +1240,7 @@ function boundsOfAllCandidates() {
 
 function activateCandidate(index) {
   if (!state.candidateLayers[index]) return;
+  if (index !== state.activeIndex) hideReshapeHandle(); // a handle belongs to the route it was put on
   state.activeIndex = index;
   state.candidateLayers.forEach((entry, i) => entry.layer.setStyle(candidateStyle(i)));
   state.candidateLayers[index].layer.bringToFront();

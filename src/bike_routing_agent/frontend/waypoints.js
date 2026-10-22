@@ -78,6 +78,35 @@
   }
 
   /**
+   * The point of a route nearest to `target`, when it is within `reach` -- for a long press, which
+   * lands a finger's width from the line, not on it. Everything is in the same plane (screen
+   * pixels): `route` is [lon, lat] pairs, `project` turns one into {x, y}, `target` is {x, y}.
+   * Returns { lon, lat, distance } (the position is on a segment, between two vertices), or null.
+   */
+  function nearestOnRoute(route, target, project, reach) {
+    if (!Array.isArray(route) || route.length < 2 || !target || typeof project !== "function") return null;
+    let best = null;
+    let a = project(route[0][0], route[0][1]);
+    for (let i = 1; i < route.length; i++) {
+      const b = project(route[i][0], route[i][1]);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const length2 = dx * dx + dy * dy;
+      const t = length2 === 0 ? 0 : Math.max(0, Math.min(1, ((target.x - a.x) * dx + (target.y - a.y) * dy) / length2));
+      const distance = Math.hypot(target.x - (a.x + t * dx), target.y - (a.y + t * dy));
+      if (best === null || distance < best.distance) {
+        best = {
+          lon: route[i - 1][0] + t * (route[i][0] - route[i - 1][0]),
+          lat: route[i - 1][1] + t * (route[i][1] - route[i - 1][1]),
+          distance,
+        };
+      }
+      a = b;
+    }
+    return best !== null && best.distance <= reach ? best : null;
+  }
+
+  /**
    * The places after the point is added at `key`: `{ origin, destination, vias, label }` (the
    * strings the form holds; `vias` as a new list). `label` names what the point became.
    */
@@ -92,7 +121,7 @@
     return { origin, destination, vias: list, label: `stop ${index + 1}` };
   }
 
-  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, reshape, place };
+  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, reshape, nearestOnRoute, place };
   root.BikeWaypoints = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

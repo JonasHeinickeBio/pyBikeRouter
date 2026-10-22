@@ -312,18 +312,71 @@ def test_a_long_press_places_the_drag_handle_and_a_tap_away_drops_it():
     assert (
         "tapHold: true" in app
     )  # Leaflet sends the long press as contextmenu on every touch browser
-    attach = app[app.index("function attachReshape") :]
-    assert 'layer.on("contextmenu"' in attach
-    assert 'pointerType === "mouse"' in attach  # a mouse's right click keeps the browser's menu
-    assert "index !== state.activeIndex || state.pickingTarget" in attach.split("contextmenu")[1]
-    assert "state.reshapeSticky = true" in attach
+    # a DOM listener, never a Leaflet one: Leaflet cancels the browser menu of every contextmenu
+    # it passes to a listener, which would take a mouse's right click away (found in review)
+    assert 'layer.on("contextmenu"' not in app and 'map.on("contextmenu"' not in app
+    assert 'getContainer().addEventListener("contextmenu", onLongPress)' in app
+    press = app[app.index("function onLongPress") : app.index("function attachReshape")]
+    assert 'ev._simulated || (ev.pointerType && ev.pointerType !== "mouse")' in press
+    assert "state.pickingTarget" in press and "BikeWaypoints.nearestOnRoute(" in press
+    assert "state.reshapeSticky = true" in press
     # sticky: no hide timer while it is set; a tap elsewhere on the map clears it
     assert "state.reshapeDragging || state.reshapeSticky" in app
     click = app[app.index("function onMapClick") :]
     assert click.index("state.reshapeSticky") < click.index("openPointMenu")
     dismiss = click[click.index("if (state.reshapeSticky)") :].split("}")[0]
     assert "hideReshapeHandle();" in dismiss and "return;" in dismiss  # it only dismisses
+    # a handle belongs to its route and must not outlive the picker or the route change (review)
+    assert "if (index !== state.activeIndex) hideReshapeHandle();" in app
+    assert "hideReshapeHandle(); // the first tap of a picker must pick" in app
     # and the page tells a touch user how
     page = (FRONTEND / "index.html").read_text(encoding="utf-8")
     assert 'id="reshape-hint"' in page and "press and hold the route" in page
     assert '"ontouchstart" in window || navigator.maxTouchPoints > 0' in app
+
+
+# a 1 pixel = 1 degree plane: the projection of the tests
+IDENT = "(lon, lat) => ({x: lon, y: lat})"
+
+
+def nearest(route, target, reach):
+    script = (
+        f"const W = require({json.dumps(str(FRONTEND / 'waypoints.js'))});\n"
+        f"process.stdout.write(JSON.stringify(W.nearestOnRoute({json.dumps(route)}, "
+        f"{json.dumps(target)}, {IDENT}, {reach})));"
+    )
+    result = subprocess.run([NODE, "-e", script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+L_ROUTE = [[0, 0], [100, 0], [100, 100]]  # east, then north
+
+
+def test_a_long_press_snaps_to_the_nearest_point_of_the_route():
+    got = nearest(L_ROUTE, {"x": 40, "y": 20}, 28)
+    assert (got["lon"], got["lat"], got["distance"]) == (40, 0, 20)  # beside the first leg
+    got = nearest(L_ROUTE, {"x": 120, "y": 60}, 28)
+    assert (got["lon"], got["lat"], got["distance"]) == (100, 60, 20)  # beside the second leg
+
+
+def test_a_press_in_the_corner_picks_the_nearest_of_the_two_legs_and_clamps_to_the_ends():
+    got = nearest(L_ROUTE, {"x": 110, "y": -10}, 28)
+    assert (got["lon"], got["lat"]) == (100, 0)  # the corner itself: the nearest point
+    got = nearest(L_ROUTE, {"x": -15, "y": 0}, 28)
+    assert (got["lon"], got["lat"]) == (0, 0)  # before the start: clamped to the first vertex
+
+
+def test_a_press_too_far_from_the_route_is_not_a_press_on_it():
+    assert nearest(L_ROUTE, {"x": 50, "y": 29}, 28) is None
+    assert nearest(L_ROUTE, {"x": 50, "y": 28}, 28) is not None  # exactly the reach is still on it
+
+
+@pytest.mark.parametrize("route", [None, [], [[0, 0]], "nope"])
+def test_nothing_to_snap_to_without_a_route(route):
+    assert nearest(route, {"x": 0, "y": 0}, 28) is None
+
+
+def test_repeated_vertices_do_not_break_the_snap():
+    got = nearest([[0, 0], [0, 0], [50, 0]], {"x": 25, "y": 5}, 28)
+    assert (got["lon"], got["lat"], got["distance"]) == (25, 0, 5)
