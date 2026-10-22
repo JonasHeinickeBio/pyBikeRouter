@@ -93,6 +93,7 @@
       const start = minutes(from, false);
       let end = minutes(to, true);
       if (start === null || end === null || start === end) return null;
+      if (plus && end < start) return null; // "20:00-02:00+": the part past midnight is not understood
       if (end < start) end += DAY_MINUTES;
       spans.push([start, end, plus ? PLUS : NORMAL]);
     }
@@ -175,11 +176,22 @@
     return spans;
   }
 
+  /**
+   * The month (1..12) `offset` days from the given local date (a day before is -1, after is 1), so a
+   * rule for February is found for the first of February even when the arrival is on the 31st of
+   * January. Without the year and day of the month (a caller that has only a month) it is `month`.
+   */
+  function monthAtOffset(month, year, date, offset) {
+    if (!Number.isInteger(year) || !Number.isInteger(date)) return month;
+    return new Date(Date.UTC(year, month - 1, date + offset)).getUTCMonth() + 1;
+  }
+
   /** When an open stretch ending at `to` really ends: a stretch that runs to midnight and starts
    * again at 00:00 goes on (24/7 never ends: null). Minutes from the start of `day`. */
-  function closingAfter(parsed, day, month, to) {
+  function closingAfter(parsed, day, when, to) {
     let end = to;
     for (let i = 1; i <= 7 && end === DAY_MINUTES; i++) {
+      const month = monthAtOffset(when.month, when.year, when.date, i);
       const next = spansOf(parsed, (day + i) % 7, month).find(([from]) => from === 0);
       if (!next) return end;
       end = next[1];
@@ -191,27 +203,29 @@
 
   /**
    * Open or closed at `minute` of `day` (0 = Monday) in `month` (1 = January), from text in the OSM
-   * language. {state: "open"|"closed"|"unknown", until, openEnd, opensAt, holidays}: `until` /
+   * language. `year` and `date` (the day of the month) are optional and only used to find the month
+   * of the day before and after. {state: "open"|"closed"|"unknown", until, openEnd, opensAt, holidays}: `until` /
    * `opensAt` are minutes of the day (`until` may pass midnight), only when the text says so;
    * `openEnd`: the text gives an opening time and no closing time ("17:00+"). A text with months
    * is "unknown" without a month.
    */
-  function evaluate(text, day, minute, month) {
+  function evaluate(text, day, minute, month, year, date) {
     const parsed = parse(text);
     if (!parsed || (parsed.usesMonths && !month)) return { state: "unknown" };
     const holidays = parsed.holidays;
+    const when = { month, year, date };
     const today = spansOf(parsed, day, month);
     for (const [from, to, kind] of today) {
       if (minute >= from && minute < to) {
         if (kind === OPEN_END) return { state: "open", until: null, openEnd: true, holidays };
         if (kind === PLUS) return { state: "open", until: to, atLeast: true, openEnd: false, holidays };
-        return { state: "open", until: closingAfter(parsed, day, month, to), openEnd: false, holidays };
+        return { state: "open", until: closingAfter(parsed, day, when, to), openEnd: false, holidays };
       }
     }
     // After a "10:00-23:00+" the place may well be open, and the text does not say: no verdict.
     if (today.some(([from, to, kind]) => kind === PLUS && minute >= to && minute >= from)) return { state: "unknown" };
     // Yesterday's late hours that run past midnight ("Fr 20:00-02:00").
-    for (const [, to] of spansOf(parsed, (day + 6) % 7, month)) {
+    for (const [, to] of spansOf(parsed, (day + 6) % 7, monthAtOffset(month, year, date, -1))) {
       if (to > DAY_MINUTES && minute < to - DAY_MINUTES) return { state: "open", until: to - DAY_MINUTES, openEnd: false, holidays };
     }
     const next = today.map(([from]) => from).filter((from) => from > minute).sort((a, b) => a - b)[0];
@@ -226,6 +240,8 @@
         timeZone,
         weekday: "short",
         month: "numeric",
+        year: "numeric",
+        day: "numeric",
         hour: "2-digit",
         minute: "2-digit",
         hourCycle: "h23",
@@ -235,8 +251,11 @@
       const hour = Number(get("hour"));
       const minute = Number(get("minute"));
       const month = Number(get("month"));
+      const year = Number(get("year"));
+      const date = Number(get("day"));
       if (day < 0 || !Number.isFinite(hour) || !Number.isFinite(minute) || !(month >= 1 && month <= 12)) return null;
-      return { day, minute: (hour % 24) * 60 + minute, month };
+      if (!Number.isInteger(year) || !(date >= 1 && date <= 31)) return null;
+      return { day, minute: (hour % 24) * 60 + minute, month, year, date };
     } catch {
       return null; // a zone this browser does not know
     }
@@ -267,7 +286,7 @@
     const ms = passingMs(poi, ride);
     const local = ms === null ? null : localParts(ms, ride.timezone);
     if (!local) return null;
-    const verdict = evaluate(poi.opening_hours, local.day, local.minute, local.month);
+    const verdict = evaluate(poi.opening_hours, local.day, local.minute, local.month, local.year, local.date);
     if (verdict.state === "unknown") return null;
     const when = `about ${clock(local.minute)}`;
     const tail = verdict.holidays ? " Public holidays are not checked." : "";
@@ -285,7 +304,7 @@
     return { state: "closed", text: `Closed when you pass (${when})${opens}.${tail}` };
   }
 
-  const api = { parse, evaluate, localParts, passingMs, check, clock };
+  const api = { parse, evaluate, monthAtOffset, localParts, passingMs, check, clock };
   root.BikeHours = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

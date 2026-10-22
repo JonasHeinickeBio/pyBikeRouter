@@ -205,8 +205,12 @@ verdict).
 
 ## Which hosts are ever contacted
 
-Overpass (`POI_OVERPASS_URLS`), Wikidata (`POI_WIKIDATA_URL`) and
-`{lang}.wikipedia.org` (`POI_WIKIPEDIA_URL`). The language is the only client-influenced
+Overpass (`POI_OVERPASS_URLS`), Wikidata (`POI_WIKIDATA_URL`),
+`{lang}.wikipedia.org` (`POI_WIKIPEDIA_URL`) and, for the opening-hours check, **Open-Meteo**
+(`WEATHER_OPEN_METEO_URL`, the same host the weather uses): one small request per route and 0.1 degree
+cell asks it for the route's time zone; it carries the position of the middle of the route and
+nothing else, and `POI_TIMEZONE_LOOKUP=false` switches it off ([Opening hours](#opening-hours)).
+The language is the only client-influenced
 part of any URL: it must be one of the Wikipedia editions listed in
 `poi/wikipedia_languages.py` (a well-formed code that is not one, as in
 `/v1/pois/info?lang=xx`, is read in English), and a `wikipedia=xx:Title` tag or sitelink for

@@ -163,20 +163,26 @@ def test_not_text_is_unknown():
 # ------------------------------------------------------------------------------ time and zone
 
 
+def day_minute_month(expression: str) -> dict:
+    """localParts without the calendar date (tested on its own below)."""
+    got = run_js(expression)
+    return {key: got[key] for key in ("day", "minute", "month")}
+
+
 def test_the_local_weekday_and_time_in_a_zone():
     # 2026-10-21 (Wednesday) 12:30 UTC
-    assert run_js("H.localParts(Date.UTC(2026,9,21,12,30), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,12,30), 'Europe/Berlin')") == {
         "day": WE,
         "minute": 14 * 60 + 30,  # CEST, UTC+2
         "month": 10,
     }
-    assert run_js("H.localParts(Date.UTC(2026,9,21,12,30), 'Asia/Tokyo')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,12,30), 'Asia/Tokyo')") == {
         "day": WE,
         "minute": 21 * 60 + 30,
         "month": 10,
     }
     # close to midnight the weekday follows the zone
-    assert run_js("H.localParts(Date.UTC(2026,9,21,23,30), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,23,30), 'Europe/Berlin')") == {
         "day": TH,
         "minute": 90,
         "month": 10,
@@ -186,7 +192,7 @@ def test_the_local_weekday_and_time_in_a_zone():
 
 
 def test_midnight_is_zero_not_twenty_four():
-    assert run_js("H.localParts(Date.UTC(2026,9,21,22,0), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,22,0), 'Europe/Berlin')") == {
         "day": TH,
         "minute": 0,
         "month": 10,
@@ -449,5 +455,45 @@ def test_the_pieces_of_real_text_that_stay_unknown_stay_unknown():
         "easter-Oct Su 10:00-12:00",
         "PH unknown; Mo-Fr 09:00-18:00",
         "Tu-Th 11:30-22:00; Fr,Sa 23:00-23:00",  # start equals end
+        "Fr 20:00-02:00+",  # an open end that crosses midnight
     ):
         assert run_js(f"H.parse({json.dumps(text)}) === null") is True, text
+
+
+def at_date(text, day, hhmm, month, year, date):
+    h, m = hhmm.split(":")
+    return run_js(
+        f"H.evaluate({json.dumps(text)}, {day}, {int(h) * 60 + int(m)}, {month}, {year}, {date})"
+    )
+
+
+def test_the_month_of_the_day_before_and_after_follows_the_calendar_not_the_arrival_month():
+    # Friday 31 January 2025 at 23:00: the Friday rule runs to midnight and Saturday 1 February
+    # starts at 00:00 (the February rule), so it stays open until 02:00, not "until midnight".
+    text = "Jan Fr 20:00-24:00; Feb Sa 00:00-02:00"
+    got = at_date(text, FR, "23:00", 1, 2025, 31)
+    assert got["state"] == "open" and got["until"] == 120
+    # the same Friday inside a month whose next day is the same month: until midnight
+    assert at_date("Jan Fr 20:00-24:00", FR, "23:00", 1, 2025, 17)["until"] == 1440
+
+
+def test_hours_that_run_past_midnight_carry_over_a_new_year():
+    # Wednesday 31 December 2025 20:00-02:00, asked at 01:00 on Thursday 1 January 2026
+    text = "Dec We 20:00-02:00"
+    assert at_date(text, TH, "01:00", 1, 2026, 1)["state"] == "open"
+    # without the year and date (a caller that has only the month) the lookup stays as it was
+    assert at_month(text, TH, "01:00", 1)["state"] == "closed"
+
+
+def test_month_arithmetic_for_neighbouring_days():
+    assert run_js("H.monthAtOffset(1, 2025, 31, 1)") == 2
+    assert run_js("H.monthAtOffset(3, 2025, 1, -1)") == 2
+    assert run_js("H.monthAtOffset(12, 2025, 31, 1)") == 1
+    assert run_js("H.monthAtOffset(2, 2024, 29, 1)") == 3  # a leap year
+    assert run_js("H.monthAtOffset(2, 2025, 28, 1)") == 3
+    assert run_js("H.monthAtOffset(6, undefined, undefined, 1)") == 6  # no date: the month stays
+
+
+def test_the_local_date_comes_with_the_clock():
+    got = run_js("H.localParts(Date.UTC(2026, 0, 31, 23, 30), 'Europe/Berlin')")
+    assert (got["year"], got["month"], got["date"]) == (2026, 2, 1)  # already the next day there
