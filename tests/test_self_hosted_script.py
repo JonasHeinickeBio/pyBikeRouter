@@ -26,6 +26,7 @@ answer() { [ "$FAKE_READY" = "1" ] || exit 22; echo "$1"; exit 0; }
 case "$url" in
   *.md5) [ -n "$FAKE_MD5" ] && echo "$FAKE_MD5  region.osm.pbf"; exit 0 ;;
   */ors/v2/health) answer '{"status":"ready"}' ;;
+  */api/status) answer 'Connected as: 2130706433' ;;
   */status) answer OK ;;
 esac
 if [ -n "$out" ]; then
@@ -185,9 +186,66 @@ def test_status_only_reports_and_judges_the_selected_service(tmp_path):
     assert "nominatim" in down.stdout and "openrouteservice" not in down.stdout
 
 
-@pytest.mark.parametrize("args", [["--only", "everything"], ["--only"]])
+@pytest.mark.parametrize(
+    "args", [["--only", "everything"], ["--only"], ["--only="], ["--only", ""]]
+)
 def test_bad_only_values_are_usage_errors(tmp_path, args):
     result, calls, _ = run(tmp_path, *args)
     assert result.returncode == 2
     assert "--only" in result.stderr
+    assert not any(c.startswith("docker") for c in calls)
+
+
+def test_overpass_is_opt_in_and_not_started_by_default(tmp_path):
+    result, calls, _ = run(tmp_path, existing=True)
+    assert "overpass-self-hosted" not in " ".join(started_services(calls))
+    assert "POI_OVERPASS_URLS" not in result.stdout
+    assert "still the public Overpass" in result.stdout and "--only pois" in result.stdout
+
+
+def test_only_pois_starts_just_overpass_and_names_the_setting(tmp_path):
+    result, calls, _ = run(tmp_path, "--only", "pois", existing=True)
+    assert result.returncode == 0, result.stderr
+    assert started_services(calls) == ["overpass-self-hosted"]
+    assert "POI_OVERPASS_URLS=http://127.0.0.1:8083/api/interpreter" in result.stdout
+    assert "ORS_BASE_URL" not in result.stdout and "GEOCODER_BASE_URL" not in result.stdout
+    # the service sits in its own compose profile, so the call names it
+    (up,) = [c for c in calls if c.startswith("docker compose") and " up -d" in c]
+    assert "--profile self-hosted-pois" in up
+
+
+def test_only_takes_a_comma_separated_mix(tmp_path):
+    result, calls, _ = run(tmp_path, "--only", "pois,routing", existing=True)
+    assert result.returncode == 0, result.stderr
+    assert started_services(calls) == ["ors-self-hosted", "overpass-self-hosted"]
+    assert "ORS_BASE_URL=http://127.0.0.1:8080/ors" in result.stdout
+    assert "POI_OVERPASS_URLS" in result.stdout and "GEOCODER_BASE_URL" not in result.stdout
+    everything, calls, _ = run(tmp_path, "--only=routing,geocoding,pois", existing=True)
+    assert started_services(calls) == [
+        "ors-self-hosted",
+        "nominatim-self-hosted",
+        "overpass-self-hosted",
+    ]
+
+
+def test_status_for_pois_asks_the_overpass_status_page(tmp_path):
+    ok, calls, _ = run(tmp_path, "status", "--only", "pois", ready="1")
+    assert ok.returncode == 0
+    assert "overpass" in ok.stdout and "ready" in ok.stdout
+    assert "openrouteservice" not in ok.stdout and "nominatim" not in ok.stdout
+    assert any("http://127.0.0.1:8083/api/status" in c for c in calls)
+    down, _, _ = run(tmp_path, "status", "--only", "pois", ready="0")
+    assert down.returncode == 1 and "not ready" in down.stdout
+
+
+def test_overpass_ready_means_the_status_text_not_just_any_answer(tmp_path):
+    """/api/status of an Overpass says "Connected as"; a proxy error page must not count."""
+    code = SCRIPT.read_text()
+    assert 'service_ready "$OVERPASS_STATUS" "Connected as"' in code
+
+
+@pytest.mark.parametrize("args", [["--only", "routing,bogus"], ["--only", ","]])
+def test_a_bad_part_of_a_list_is_a_usage_error(tmp_path, args):
+    result, calls, _ = run(tmp_path, *args)
+    assert result.returncode == 2 and "--only takes" in result.stderr
     assert not any(c.startswith("docker") for c in calls)

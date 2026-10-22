@@ -10,6 +10,7 @@ limit and no key.
 | --- | --- | --- |
 | `ors-self-hosted` | `openrouteservice/openrouteservice:v10.0.1` | routing, bicycle profiles only (`cycling-regular`, `-road`, `-mountain`, `-electric`) |
 | `nominatim-self-hosted` | `mediagis/nominatim:5.3` | geocoding |
+| `overpass-self-hosted` | `wiktorn/overpass-api:v0.7.62.11` | the sight search (points of interest, loop stops, opening hours); **opt-in**, see [below](#self-hosted-overpass-the-sight-search) |
 
 > **openrouteservice does not include a geocoder.** Its documentation says the
 > geocoder endpoint "is not part of openrouteservice, but of our public API.
@@ -104,6 +105,7 @@ Set them in the shell (or an env file) when you run the bootstrap script, e.g.
 scripts/self-hosted-bootstrap.sh                   # setup D: both services
 scripts/self-hosted-bootstrap.sh --only routing    # setup B
 scripts/self-hosted-bootstrap.sh --only geocoding  # setup C
+scripts/self-hosted-bootstrap.sh --only pois       # Overpass for the sight search (opt-in, below)
 ```
 
 It downloads the extract to `docker/self-hosted/data/region.osm.pbf`
@@ -124,11 +126,91 @@ Check on it any time with `scripts/self-hosted-bootstrap.sh status` (add the
 same `--only` to look at one half), and with the API's
 [`/readyz`](api.md#get-readyz) once it runs (ORS reports `ok` here, not
 `unknown`: a self-hosted ORS has a health endpoint). Without the script, the
-compose profiles are `self-hosted` (both), `self-hosted-routing` and
-`self-hosted-geocoding`.
+compose profiles are `self-hosted` (both), `self-hosted-routing`,
+`self-hosted-geocoding` and `self-hosted-pois` (Overpass).
 
-Both services bind **loopback only** (`127.0.0.1`); neither has authentication.
+All of them bind **loopback only** (`127.0.0.1`); none has authentication.
 You can add the other half later with the same script and the same extract.
+
+## Self-hosted Overpass (the sight search)
+
+The sights, the loop stops and the opening hours come from an Overpass API server
+(`POI_OVERPASS_URLS`, [pois.md](pois.md)). The public instances are shared by everybody and
+are often at capacity: from the machine this was built on, the main one answered
+*"currently at capacity: all query workers are busy and the request queue is full"* and, in the
+same message, *"for automated or high-volume use, run a local Overpass API instance"*. Every
+public instance also learns the shape of the routes you search along and your server's IP
+address. A local one removes both problems, from the **same extract** as the other services:
+
+```bash
+scripts/self-hosted-bootstrap.sh --only pois             # Overpass only
+scripts/self-hosted-bootstrap.sh --only routing,pois     # any mix of routing, geocoding, pois
+```
+
+```dotenv
+POI_OVERPASS_URLS=http://127.0.0.1:8083/api/interpreter
+OVERPASS_BASE_URL=http://127.0.0.1:8083/api/interpreter   # only if you use OSM enrichment (enrichment.md)
+```
+
+It is **not** part of the default run or of the `self-hosted` profile: it needs its own disk and
+an import, so you ask for it (`--only`, or the compose profile `self-hosted-pois`). It binds
+**loopback only** (`127.0.0.1:8083`, `OVERPASS_LOCAL_PORT`), has no authentication, and
+`scripts/self-hosted-bootstrap.sh --only pois status` asks `/api/status`.
+
+**Measured** (Bremen extract, 21 MB; the same 16-core SSD machine as above):
+
+| What | Value |
+| --- | --- |
+| First start until it answers | 4-6 min (255 s and 368 s in two runs; the machine was not otherwise idle): the conversion of the PBF to the XML the image reads, then the import |
+| Database | 80.5 MB (the extract is 21 MB) |
+| Memory | ~70 MiB idle; the compose limit is 2 GB (`OVERPASS_MEM_LIMIT`) |
+| Image | 368 MB on disk (134 MB to pull) |
+| Through the app | 139 sights along a 16 km route in 9.4 s including the Wikidata lookups; `/readyz` `overpass` `ok` at 170 ms |
+
+Larger regions were **not** measured. The import is one-time but grows with the extract (Lower
+Saxony is 484 MB, about 23 times Bremen, so hours rather than minutes, and a database in the
+gigabytes -- an estimate, not a measurement); start with a small region.
+
+Things worth knowing, all found while building it:
+
+- **The data does not update.** It is the extract as of its download date (every answer carries it
+  as `osm3s.timestamp_osm_base`). The image can follow Geofabrik's diffs: set
+  `OVERPASS_DIFF_URL` to the `...-updates/` directory of the same region (and `OVERPASS_UPDATE_SLEEP`)
+  *before the first start*. That path is **not verified here**: the machine this was built on gives
+  containers no outbound network, and the image's update step then waits for the diff server and
+  fails the import. Two things were observed: it needs internet from the container on the first
+  start, and turning it on after the first import fails (`/db/replicate_id` is missing), so reset
+  first (below).
+- **The data directory is opened by a hook.** The image creates its data directory with mode 700,
+  which a Docker *named* volume copies, and then the web server cannot reach the database socket:
+  every query answers `open64: 13 Permission denied` and `/api/status` crashes. The compose file
+  mounts `docker/self-hosted/overpass-open-db.sh` into the image's start-up hook to fix that;
+  do not remove it.
+- **Areas are off** (`OVERPASS_USE_AREAS=false`): the planner's searches use bounding boxes and
+  distances, not `area[...]` queries.
+- **Reset only Overpass with explicit names.** `docker compose ... down -v` removes **every**
+  named volume the compose file declares (the exports, the routing graphs, the Nominatim
+  database, ...), not only this one:
+
+  ```bash
+  docker compose -f docker/compose.yaml --profile self-hosted-pois rm -sf overpass-self-hosted
+  docker volume rm pybikerouter-overpass-data
+  ```
+
+  Do the same after changing the region or bumping the pinned image tag (the database format is
+  version specific).
+- **The import is slow in one place:** the image reads one bzip2-compressed XML file, so the PBF is
+  converted first, and compressing that XML is most of the time (5 min 47 s of a 7.5 min first start
+  with all metadata). The conversion keeps only the **timestamps** (`add_metadata=timestamp`): about
+  4x faster (79 s in isolation), and the image reads the data version from them. Dropping *all*
+  metadata (`add_metadata=false`) is a little faster still but is wrong: the version then becomes
+  `1970-01-01T00:00:01Z` (found in review, checked with `osmium fileinfo`); with the timestamps kept
+  the database reports the extract's real one in `osm3s.timestamp_osm_base`.
+- **Where it was tested.** On a machine whose Docker could not publish container ports to the host,
+  so the compose file's `127.0.0.1:8083` mapping itself was *not* exercised there. The same image and
+  database were queried inside the container and through a host-network container listening on
+  `127.0.0.1:8083`, and the app's sight search and `/readyz` were run against that. OSM enrichment
+  (`OVERPASS_BASE_URL`) was not run against it.
 
 ## Small-machine recipes
 

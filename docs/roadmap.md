@@ -144,9 +144,11 @@ decisions still open.
   a map filter, *add to route*, and routing past the most famous sights
   ([pois.md](pois.md)). Stops for loops are done (searched along the circuit, which is drawn smaller to make room; see
   [pois.md](pois.md#loops)), and so is the opening-hours check in a sight's popup against the time you pass it
-  ([pois.md](pois.md#opening-hours)). Open follow-ups: POI-aware scoring
+  ([pois.md](pois.md#opening-hours)). A self-hosted Overpass is done too (opt-in compose profile
+  `self-hosted-pois`, [self-hosted.md](self-hosted.md#self-hosted-overpass-the-sight-search)), since the
+  public instances are often at capacity. Open follow-ups: POI-aware scoring
   (needs calibration evidence), using the opening hours when choosing route stops, a fuller reading of the
-  hours language (months, sunrise, holidays), a self-hosted Overpass in the compose stack, and pageview counts as a second
+  hours language (months, sunrise, holidays), pageview counts as a second
   fame signal.
 - **Self-hosted ORS stack** -- done (issue #26): the `self-hosted` compose
   profile runs a pinned openrouteservice (bicycle profiles) and a local

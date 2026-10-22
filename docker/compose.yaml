@@ -138,6 +138,79 @@ services:
     logging: *default-logging
 
   # ---------------------------------------------------------------------------
+  # Self-hosted Overpass (`self-hosted-pois` profile): the sight search (points
+  # of interest, loop stops, opening hours) asks an Overpass API server. The
+  # public instances are shared by everyone and are often at capacity -- their
+  # own answer then says automated use should run a local instance. This one
+  # serves the SAME regional extract as the other self-hosted services, so no
+  # route shape leaves your machine:
+  #
+  #   scripts/self-hosted-bootstrap.sh --only pois
+  #   POI_OVERPASS_URLS=http://127.0.0.1:8083/api/interpreter
+  #
+  # The first start imports the extract before serving (minutes for a city
+  # region, much longer for a federal state; docs/self-hosted.md). It is not
+  # part of the shared `self-hosted` profile: it is opt-in because it needs its
+  # own disk and memory. Data does not update unless OVERPASS_DIFF_URL points at
+  # the matching Geofabrik "-updates/" directory.
+  # ---------------------------------------------------------------------------
+  overpass-self-hosted:
+    profiles: ["self-hosted-pois"]
+    # Pinned release (the version the public main instance runs). To update: bump
+    # the tag, delete the pybikerouter-overpass-data volume (the database format is
+    # version specific) and let it import again.
+    image: wiktorn/overpass-api:v0.7.62.11
+    restart: unless-stopped
+    ports:
+      # No authentication in front of it -- bind loopback only.
+      - "127.0.0.1:${OVERPASS_LOCAL_PORT:-8083}:80"
+    environment:
+      OVERPASS_MODE: init
+      OVERPASS_META: "no"            # Geofabrik extracts carry no metadata
+      OVERPASS_COMPRESSION: gz
+      # The image reads one planet.osm.bz2; osmium converts the PBF extract.
+      # add_metadata=timestamp keeps only the object timestamps: the image reads the
+      # data version (osm3s.timestamp_osm_base, and the start of any diff updates) from
+      # them -- with add_metadata=false it would be 1970-01-01 -- and the conversion, the
+      # slowest step of the import, is still about 4x faster than with all metadata.
+      OVERPASS_PLANET_URL: file:///pbf/region.osm.pbf
+      OVERPASS_PLANET_PREPROCESS: >-
+        mv /db/planet.osm.bz2 /db/planet.osm.pbf &&
+        osmium cat -f osm.bz2,add_metadata=timestamp -o /db/planet.osm.bz2 /db/planet.osm.pbf &&
+        rm /db/planet.osm.pbf
+      # Keep serving after the import instead of exiting (the default) -- the
+      # restart policy would bring it back, but this is quicker and clearer.
+      OVERPASS_STOP_AFTER_INIT: "false"
+      # Our searches repeat (the same corridor, the same kinds): do not refuse a
+      # query identical to one that is still running.
+      OVERPASS_ALLOW_DUPLICATE_QUERIES: "yes"
+      # Area objects (for `area[...]` queries) take a large share of the import time
+      # and memory; the planner's searches use bounding boxes and distances, not
+      # areas. Set to "true" if you also want to run area queries against it.
+      OVERPASS_USE_AREAS: ${OVERPASS_USE_AREAS:-false}
+      # Empty = no updates. Set to e.g. https://download.geofabrik.de/europe/germany/
+      # bremen-updates/ to follow the extract's region (docs/self-hosted.md).
+      OVERPASS_DIFF_URL: ${OVERPASS_DIFF_URL:-}
+      OVERPASS_UPDATE_SLEEP: ${OVERPASS_UPDATE_SLEEP:-3600}
+    volumes:
+      - ./self-hosted/data:/pbf:ro
+      - overpass-data:/db
+      # Makes /db passable for the web server (see the script; without it every query fails).
+      - ./self-hosted/overpass-open-db.sh:/docker-entrypoint-initdb.d/00-open-db.sh:ro
+    healthcheck:
+      # The first start imports the extract before the web server answers.
+      test: ["CMD-SHELL", "curl -fsS http://localhost/api/status | grep -q 'Connected as'"]
+      interval: 15s
+      timeout: 5s
+      start_period: 300s
+      retries: 40
+    deploy:
+      resources:
+        limits:
+          memory: ${OVERPASS_MEM_LIMIT:-2g}
+    logging: *default-logging
+
+  # ---------------------------------------------------------------------------
   # Shared cache for geocode / Overpass results (`cache` profile), so several
   # API instances reuse each other's lookups (CACHE_BACKEND=redis,
   # CACHE_REDIS_URL=redis://127.0.0.1:6379/0; needs the `cache` extra):
@@ -330,5 +403,7 @@ volumes:
     name: pybikerouter-ors-elevation
   nominatim-data:
     name: pybikerouter-nominatim-data
+  overpass-data:
+    name: pybikerouter-overpass-data
   s3-dev-data:
     name: pybikerouter-s3-dev-data

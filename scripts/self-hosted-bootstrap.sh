@@ -1,19 +1,27 @@
 #!/usr/bin/env bash
 # Start the self-hosted routing + geocoding stack (docs/self-hosted.md).
 #
-#   scripts/self-hosted-bootstrap.sh                    # download extract (if missing), start both, wait until ready
+#   scripts/self-hosted-bootstrap.sh                    # download extract (if missing), start routing + geocoding, wait until ready
 #   scripts/self-hosted-bootstrap.sh --only routing     # openrouteservice only (geocoding stays on public Nominatim)
 #   scripts/self-hosted-bootstrap.sh --only geocoding   # Nominatim only (routing stays on the public ORS)
+#   scripts/self-hosted-bootstrap.sh --only pois        # Overpass only (the sight search; opt-in, see below)
+#   scripts/self-hosted-bootstrap.sh --only routing,pois   # any comma separated mix of routing, geocoding, pois
 #   scripts/self-hosted-bootstrap.sh status             # health of the selected services
 #   scripts/self-hosted-bootstrap.sh --force            # re-download the extract first
 #
-# Small machine? --only runs half of the stack; docs/self-hosted.md lists the
+# Small machine? --only runs part of the stack; docs/self-hosted.md lists the
 # memory, disk and time each service needs, and how to size them down.
+#
+# `pois` is Overpass, the server behind the sight search. It is NOT started by
+# default (it needs its own disk and an import); ask for it with --only. The
+# public Overpass instances are shared and often at capacity, and say automated
+# use should run a local one. This one imports the same extract, so no route
+# shape leaves your machine.
 #
 # What it does: places one OSM extract at docker/self-hosted/data/region.osm.pbf
 # (verified against the MD5 Geofabrik publishes next to it), then runs
 # `docker compose --profile self-hosted up -d` for them -- openrouteservice (bicycle
-# profiles) and Nominatim both read that file, and the first start builds the
+# profiles), Nominatim and (with --only pois) Overpass all read that file, and the first start builds the
 # routing graphs / imports the geocoding index, which takes minutes for a city
 # region and much longer for a federal state. It never deletes volumes: use
 # `docker compose -f docker/compose.yaml --profile self-hosted down -v` for that.
@@ -24,7 +32,7 @@
 #                      choosing your own)
 #   EXTRACT_MD5        expected MD5; by default fetched from "$EXTRACT_URL.md5"
 #   WAIT_TIMEOUT_S     how long to wait for both services (default 3600)
-#   ORS_LOCAL_PORT / NOMINATIM_LOCAL_PORT   host ports (defaults 8080 / 8081)
+#   ORS_LOCAL_PORT / NOMINATIM_LOCAL_PORT / OVERPASS_LOCAL_PORT   host ports (defaults 8080 / 8081 / 8083)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -35,36 +43,52 @@ EXTRACT_URL="${EXTRACT_URL:-https://download.geofabrik.de/europe/germany/bremen-
 WAIT_TIMEOUT_S="${WAIT_TIMEOUT_S:-3600}"
 ORS_PORT="${ORS_LOCAL_PORT:-8080}"
 NOMINATIM_PORT="${NOMINATIM_LOCAL_PORT:-8081}"
+OVERPASS_PORT="${OVERPASS_LOCAL_PORT:-8083}"
 ORS_HEALTH="http://127.0.0.1:${ORS_PORT}/ors/v2/health"
 NOMINATIM_STATUS="http://127.0.0.1:${NOMINATIM_PORT}/status"
+OVERPASS_STATUS="http://127.0.0.1:${OVERPASS_PORT}/api/status"
 
 ACTION="up"
 FORCE=0
 ONLY=""
-USAGE="use: up | status | --force | --only routing|geocoding"
+ONLY_GIVEN=0   # --only was passed, even with an empty value (which is an error, not "everything")
+USAGE="use: up | status | --force | --only routing,geocoding,pois (any mix)"
 while [ $# -gt 0 ]; do
   case "$1" in
     up|status) ACTION="$1" ;;
     --force) FORCE=1 ;;
     --only)
       [ $# -ge 2 ] || { echo "error: --only needs a value ($USAGE)" >&2; exit 2; }
-      ONLY="$2"; shift ;;
-    --only=*) ONLY="${1#--only=}" ;;
-    -h|--help) sed -n '2,16p' "${BASH_SOURCE[0]}"; exit 0 ;;
+      ONLY="$2"; ONLY_GIVEN=1; shift ;;
+    --only=*) ONLY="${1#--only=}"; ONLY_GIVEN=1 ;;
+    -h|--help) awk 'NR > 1 { if (/^#/) print; else exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "error: unknown argument '$1' ($USAGE)" >&2; exit 2 ;;
   esac
   shift
 done
 
-# Which services this run manages: both by default, one with --only.
+# Which services this run manages: routing and geocoding by default (Overpass is
+# opt-in), exactly the named ones with --only.
 WANT_ORS=1
 WANT_NOMINATIM=1
-case "$ONLY" in
-  "") ;;
-  routing) WANT_NOMINATIM=0 ;;
-  geocoding) WANT_ORS=0 ;;
-  *) echo "error: --only must be 'routing' or 'geocoding' (got '$ONLY')" >&2; exit 2 ;;
-esac
+WANT_OVERPASS=0
+if [ "$ONLY_GIVEN" = 1 ] && [ -z "$ONLY" ]; then
+  echo "error: --only needs a value ($USAGE)" >&2
+  exit 2
+fi
+if [ -n "$ONLY" ]; then
+  WANT_ORS=0
+  WANT_NOMINATIM=0
+  IFS=',' read -r -a only_parts <<< "$ONLY"
+  for part in "${only_parts[@]}"; do
+    case "$part" in
+      routing) WANT_ORS=1 ;;
+      geocoding) WANT_NOMINATIM=1 ;;
+      pois) WANT_OVERPASS=1 ;;
+      *) echo "error: --only takes routing, geocoding and pois, comma separated (got '$part')" >&2; exit 2 ;;
+    esac
+  done
+fi
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -85,6 +109,11 @@ print_status() {
     if service_ready "$NOMINATIM_STATUS" OK; then state="ready"; else not_ready=1; fi
     echo "nominatim         ($NOMINATIM_STATUS): $state"
   fi
+  if [ "$WANT_OVERPASS" = 1 ]; then
+    state="not ready"
+    if service_ready "$OVERPASS_STATUS" "Connected as"; then state="ready"; else not_ready=1; fi
+    echo "overpass          ($OVERPASS_STATUS): $state"
+  fi
   return "$not_ready"
 }
 
@@ -93,6 +122,7 @@ print_status() {
 selected_services() {
   [ "$WANT_ORS" = 1 ] && echo ors-self-hosted
   [ "$WANT_NOMINATIM" = 1 ] && echo nominatim-self-hosted
+  [ "$WANT_OVERPASS" = 1 ] && echo overpass-self-hosted
   return 0
 }
 
@@ -135,10 +165,11 @@ else
   echo "Using existing extract $EXTRACT_FILE (pass --force to re-download)"
 fi
 
-echo "Starting: $(selected_services | tr '\n' ' ')(first start builds graphs / imports the geocoding index)..."
+echo "Starting: $(selected_services | tr '\n' ' ')(first start builds graphs / imports the geocoding and sight indexes)..."
 # Only the selected stack services: a bare `up` would also start the `api` service.
+# Overpass has its own profile; both are named so any selection starts.
 # shellcheck disable=SC2046  # the service names are plain words, split on purpose
-docker compose -f "$COMPOSE_FILE" --profile self-hosted up -d $(selected_services)
+docker compose -f "$COMPOSE_FILE" --profile self-hosted --profile self-hosted-pois up -d $(selected_services)
 
 echo "Waiting for the service(s) (up to ${WAIT_TIMEOUT_S}s)..."
 waited=0
@@ -156,6 +187,11 @@ while [ "$waited" -lt "$WAIT_TIMEOUT_S" ]; do
       echo "  GEOCODER_MIN_CONFIDENCE=0 GEOCODER_AMBIGUITY_MARGIN=0   # see docs/self-hosted.md, 'Geocoder confidence'"
     else
       echo "  (geocoding: unchanged -- still the public Nominatim, keep its usage policy in mind)"
+    fi
+    if [ "$WANT_OVERPASS" = 1 ]; then
+      echo "  POI_OVERPASS_URLS=http://127.0.0.1:${OVERPASS_PORT}/api/interpreter   # the sight search: no route shape leaves this machine"
+    else
+      echo "  (sight search: unchanged -- still the public Overpass, which is shared and often at capacity; --only pois starts a local one)"
     fi
     echo "(OpenStreetMap data (c) OpenStreetMap contributors, ODbL.)"
     exit 0
