@@ -153,8 +153,44 @@ def test_surface_fit_avoid_only_and_combined_terms():
 def test_surface_fit_resolves_raw_osm_values_and_ignores_unrecognised_tokens():
     candidate = _surface_candidate("a", {"masonry": 1.0})
     assert surface_fit(candidate, RouteConstraints(prefer_surfaces=["cobblestone"]))[0] == 1.0
-    # "unpaved" is not an OSM surface value we can resolve: unknown, not guessed
-    assert surface_fit(candidate, RouteConstraints(prefer_surfaces=["unpaved"])) is None
+    # a word that is neither a category nor an OSM surface value: unknown, not guessed
+    assert surface_fit(candidate, RouteConstraints(prefer_surfaces=["lava"])) is None
+
+
+def test_unpaved_means_every_unpaved_category_for_a_request():
+    """``unpaved`` is an OSM surface value and the planner's own word: compacted, loose and soft."""
+    loose = _surface_candidate("a", {"loose": 0.6, "compacted": 0.2, "paved": 0.2})
+    paved = _surface_candidate("b", {"paved": 1.0})
+    wants = RouteConstraints(prefer_surfaces=["unpaved"])
+    assert surface_fit(loose, wants)[0] == pytest.approx(0.8)  # 0.6 + 0.2 of the known length
+    assert surface_fit(paved, wants)[0] == pytest.approx(0.0)
+    avoids = RouteConstraints(avoid_surfaces=["Unpaved"])  # any case
+    assert surface_fit(paved, avoids)[0] == pytest.approx(1.0)
+    assert surface_fit(loose, avoids)[0] == pytest.approx(0.2)
+    # it adds to what else is named; a colon suffix is read like an OSM value's
+    mixed = RouteConstraints(prefer_surfaces=["paved", "unpaved:grade2"])
+    assert surface_fit(loose, mixed)[0] == pytest.approx(1.0)
+
+
+def test_unpaved_is_judged_from_the_engines_own_shares_too():
+    gravel = _engine_candidate(
+        "main", {"paved": 0.2, "unpaved": 0.7, "cobbles": 0.0, "unknown": 0.1}
+    )
+    got = surface_fit(gravel, RouteConstraints(prefer_surfaces=["unpaved"]))
+    assert got is not None and got[0] == pytest.approx(0.7 / 0.9)  # re-based onto the known length
+
+
+def test_words_that_resolve_to_nothing_are_listed_for_the_response():
+    from bike_routing_agent.config import unrecognised_surface_words
+
+    assert unrecognised_surface_words(
+        ["gravle", "paved", "unpaved"], ["dirt", "Lava", "gravle"]
+    ) == [
+        "gravle",
+        "Lava",
+    ]
+    assert unrecognised_surface_words([], []) == []
+    assert unrecognised_surface_words(["  ", ""], ["asphalt"]) == []  # blanks mean nothing
 
 
 def test_breakdown_reports_surface_only_when_computable():

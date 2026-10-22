@@ -238,3 +238,36 @@ def test_explanation_leaves_out_a_negligible_wind_direction_and_empty_forecasts(
     assert "12 °C" in mild[0] and "headwind" not in mild[0] and "tailwind" not in mild[0]
     assert "tailwind" in _weather_sentences(_weather(headwind_mean_kmh=-9, temperature_min_c=1))[0]
     assert _weather_sentences(_weather()) == []
+
+
+def explanation_for(tmp_path, **constraints):
+    node = build_export_node(export_dir=tmp_path)
+    return node({"selected_candidate": selected_candidate(), "constraints": constraints})[
+        "explanation"
+    ]
+
+
+def test_surface_words_the_planner_does_not_know_are_named_in_the_explanation(tmp_path):
+    text = explanation_for(tmp_path, prefer_surfaces=["gravle", "paved"], avoid_surfaces=["lava"])
+    assert "Not scored: \u201cgravle\u201d, \u201clava\u201d are not a surface word" in text
+    assert "no effect on the ranking" in text
+    assert "unpaved" in text and "asphalt" in text  # and what would have worked
+    # it never claims anything about safety either way
+    assert text.count("not a guarantee of safety") == 1
+
+
+def test_one_unknown_word_is_worded_in_the_singular(tmp_path):
+    text = explanation_for(tmp_path, prefer_surfaces=["gravle"])
+    assert (
+        "\u201cgravle\u201d is not a surface word this planner knows, so it had no effect" in text
+    )
+
+
+def test_nothing_is_said_when_every_surface_word_was_understood_or_none_was_given(tmp_path):
+    for constraints in (
+        {},
+        {"prefer_surfaces": ["paved", "unpaved", "gravel"], "avoid_surfaces": ["cobblestone"]},
+    ):
+        assert "Not scored" not in explanation_for(tmp_path, **constraints)
+    node = build_export_node(export_dir=tmp_path)
+    assert "Not scored" not in node({"selected_candidate": selected_candidate()})["explanation"]

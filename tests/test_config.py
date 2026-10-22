@@ -345,10 +345,15 @@ def test_surface_category_resolves_categories_and_osm_values():
     assert surface_category("paved") == "paved"
     assert surface_category(" Asphalt ") == "paved"
     assert surface_category("paving_stones:30") == "masonry"
+    # a way *tagged* unpaved is not one category: unknown evidence, as before
     assert surface_category("unpaved") is None
-    categories, unknown = resolve_surface_tokens(["gravel", "asphalt", "unpaved"])
+    categories, unknown = resolve_surface_tokens(["gravel", "asphalt", "lava"])
     assert categories == {"loose", "paved"}
-    assert unknown == ["unpaved"]
+    assert unknown == ["lava"]
+    # in a *request* the word stands for every unpaved category
+    categories, unknown = resolve_surface_tokens(["asphalt", "Unpaved"])
+    assert categories == {"paved", "compacted", "loose", "natural_soft"}
+    assert unknown == []
 
 
 def test_health_settings_defaults_and_validation():

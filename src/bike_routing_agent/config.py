@@ -598,17 +598,46 @@ def surface_category(token: str) -> str | None:
     return SURFACE_TAXONOMY.get(normalized)
 
 
+# Words a *request* may use for several categories at once. ``unpaved`` is a real OSM
+# ``surface`` value ("not paved, nothing more specific") and the word the planner's own metrics
+# use, so "prefer/avoid unpaved" means every unpaved category. Only requests use this: a way
+# *tagged* ``surface=unpaved`` stays unknown evidence (we cannot say which unpaved category it
+# is), see ``surface_category``.
+SURFACE_GROUPS: dict[str, frozenset[str]] = {
+    "unpaved": frozenset({"compacted", "loose", "natural_soft"}),
+}
+
+# What a request may say, for messages: the categories, the groups and "any OSM surface value".
+SURFACE_VOCABULARY_HINT = (
+    "paved, masonry, compacted, loose, natural_soft, unpaved, or an OSM surface value "
+    "such as asphalt, gravel or sett"
+)
+
+
 def resolve_surface_tokens(tokens: list[str]) -> tuple[frozenset[str], list[str]]:
     """Split surface tokens into (resolved categories, unrecognised tokens)."""
     categories: set[str] = set()
     unrecognised: list[str] = []
     for token in tokens:
+        group = SURFACE_GROUPS.get(token.strip().lower().split(":", 1)[0])
         category = surface_category(token)
-        if category is None:
+        if group is not None:
+            categories |= group
+        elif category is None:
             unrecognised.append(token)
         else:
             categories.add(category)
     return frozenset(categories), unrecognised
+
+
+def unrecognised_surface_words(prefer: list[str], avoid: list[str]) -> list[str]:
+    """The words of a request's surface lists that mean nothing to the planner, in order and
+    without repeats (a typo, an engine word): they are accepted but have no effect, so the
+    response says so."""
+    seen: dict[str, None] = {}
+    for word in [*resolve_surface_tokens(prefer)[1], *resolve_surface_tokens(avoid)[1]]:
+        seen.setdefault(word.strip(), None)
+    return [word for word in seen if word]
 
 
 # OSM ``tracktype`` grade -> category. Grades are an ordered OSM vocabulary
