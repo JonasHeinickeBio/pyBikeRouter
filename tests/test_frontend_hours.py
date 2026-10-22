@@ -95,7 +95,12 @@ def test_without_days_every_day_counts():
 
 
 def test_around_the_clock_and_midnight():
-    assert at("24/7", WE, "03:00") == {"state": "open", "until": None, "holidays": False}
+    assert at("24/7", WE, "03:00") == {
+        "state": "open",
+        "until": None,
+        "openEnd": False,
+        "holidays": False,
+    }
     assert at("Mo-Su 00:00-24:00", SU, "23:59")["until"] is None  # goes on into the next day
     assert at("Mo-Fr 00:00-24:00", FR, "23:00")["until"] == 1440  # but not into the weekend
     assert state("Mo-Fr 09:00-24:00", MO, "23:30") == "open"
@@ -104,7 +109,12 @@ def test_around_the_clock_and_midnight():
 def test_hours_that_run_past_midnight_open_the_next_morning_too():
     text = "Fr,Sa 20:00-02:00"
     assert state(text, FR, "23:00") == "open"
-    assert at(text, SA, "01:00") == {"state": "open", "until": 120, "holidays": False}
+    assert at(text, SA, "01:00") == {
+        "state": "open",
+        "until": 120,
+        "openEnd": False,
+        "holidays": False,
+    }
     assert state(text, SA, "03:00") == "closed"
     assert state(text, SU, "01:00") == "open"  # the Saturday night
     assert state(text, FR, "01:00") == "closed"  # the Thursday night was not opened
@@ -126,11 +136,8 @@ def test_holidays_are_flagged_not_guessed():
 @pytest.mark.parametrize(
     "text",
     [
-        "Apr-Oct Mo-Su 09:00-18:00",  # months
         "Mo-Su sunrise-sunset",
-        "Mo-Fr 10:00+",
         'Mo-Fr 09:00-18:00 "by appointment"',
-        "Mo-Fr 09:00-18:00, Sa 10:00-12:00",  # a second rule after a comma
         "Mo[1] 10:00-12:00",
         "week 1-10 Mo-Fr 09:00-18:00",
         "Mo-Fr 09:00-25:00",
@@ -156,29 +163,39 @@ def test_not_text_is_unknown():
 # ------------------------------------------------------------------------------ time and zone
 
 
+def day_minute_month(expression: str) -> dict:
+    """localParts without the calendar date (tested on its own below)."""
+    got = run_js(expression)
+    return {key: got[key] for key in ("day", "minute", "month")}
+
+
 def test_the_local_weekday_and_time_in_a_zone():
     # 2026-10-21 (Wednesday) 12:30 UTC
-    assert run_js("H.localParts(Date.UTC(2026,9,21,12,30), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,12,30), 'Europe/Berlin')") == {
         "day": WE,
         "minute": 14 * 60 + 30,  # CEST, UTC+2
+        "month": 10,
     }
-    assert run_js("H.localParts(Date.UTC(2026,9,21,12,30), 'Asia/Tokyo')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,12,30), 'Asia/Tokyo')") == {
         "day": WE,
         "minute": 21 * 60 + 30,
+        "month": 10,
     }
     # close to midnight the weekday follows the zone
-    assert run_js("H.localParts(Date.UTC(2026,9,21,23,30), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,23,30), 'Europe/Berlin')") == {
         "day": TH,
         "minute": 90,
+        "month": 10,
     }
     # the winter offset after the clocks go back (2026-10-25)
     assert run_js("H.localParts(Date.UTC(2026,9,26,12,0), 'Europe/Berlin')")["minute"] == 13 * 60
 
 
 def test_midnight_is_zero_not_twenty_four():
-    assert run_js("H.localParts(Date.UTC(2026,9,21,22,0), 'Europe/Berlin')") == {
+    assert day_minute_month("H.localParts(Date.UTC(2026,9,21,22,0), 'Europe/Berlin')") == {
         "day": TH,
         "minute": 0,
+        "month": 10,
     }
 
 
@@ -296,3 +313,187 @@ def test_the_page_loads_hours_before_the_popups_that_use_it_and_the_app_passes_t
     assert (
         "poiTimezone: null" in app and "  state.poiTimezone = null;" in app
     )  # starts empty, reset
+
+
+# ------------------------------------------------ the syntax seen in real data (Hannover sample)
+
+
+def test_spaces_anywhere_do_not_matter():
+    assert state("Mo, Th 11:00 - 14:15, 16:50 - 22:20", MO, "12:00") == "open"
+    assert state("Mo-Th, Su 09:00-00:00; Fr, Sa 09:00-01:00", FR, "23:00") == "open"
+    assert state("Mo - Fr 09:00 - 18:00", WE, "10:00") == "open"
+    assert state("Mo-Fr  09:00-18:00 ;  Sa 10:00-14:00", SA, "11:00") == "open"
+
+
+def test_a_rule_added_after_a_comma_adds_to_the_earlier_one():
+    text = "Mo-Fr 10:00-12:00, Sa 10:00-14:00"
+    assert [state(text, d, "11:00") for d in (MO, FR, SA, SU)] == ["open", "open", "open", "closed"]
+    assert state(text, SA, "13:00") == "open" and state(text, MO, "13:00") == "closed"
+    # it adds, it does not replace: the weekday stretch and the extra one both count
+    both = "Mo-Su 11:30-14:30, Su,Mo 17:30-22:00, Tu-Sa 17:30-23:00"
+    assert [state(both, SU, t) for t in ("12:00", "16:00", "18:00")] == ["open", "closed", "open"]
+    assert [state(both, MO, t) for t in ("12:00", "18:00", "22:30")] == ["open", "open", "closed"]
+    assert state(both, TU, "22:30") == "open"
+
+
+def test_a_comma_inside_a_day_list_is_not_a_new_rule():
+    assert state("Mo,We 10:00-12:00", WE, "11:00") == "open"
+    assert state("Mo,We 10:00-12:00", TU, "11:00") == "closed"
+    assert state("Mo, We 10:00-12:00; Fr 09:00-10:00", FR, "09:30") == "open"
+
+
+def test_an_open_end_is_open_from_then_with_no_closing_time():
+    assert at("Tu-Su 17:00+", WE, "19:00") == {
+        "state": "open", "until": None, "openEnd": True, "holidays": False,
+    }  # fmt: skip
+    early = at("Tu-Su 17:00+", WE, "16:00")
+    assert early["state"] == "closed" and early["opensAt"] == 17 * 60
+    assert state("Mo off; Tu-Su 17:00+", MO, "19:00") == "closed"
+
+
+def test_a_plus_after_a_closing_time_means_at_least_until_then_and_unknown_after():
+    text = "Mo-Sa 12:00-23:00+"
+    inside = at(text, WE, "20:00")
+    assert inside["state"] == "open" and inside["until"] == 23 * 60 and inside["atLeast"] is True
+    assert state(text, WE, "23:30") == "unknown"  # the text does not say: no verdict
+    assert state(text, WE, "11:00") == "closed"
+    assert state(text, SU, "13:00") == "closed"
+    assert state("Mo-Sa 12:00-15:00,17:00+; Su 12:00+", WE, "16:00") == "closed"
+    assert state("Mo-Sa 12:00-15:00,17:00+; Su 12:00+", WE, "18:00") == "open"
+
+
+def at_month(text, day, hhmm, month):
+    h, m = hhmm.split(":")
+    return run_js(f"H.evaluate({json.dumps(text)}, {day}, {int(h) * 60 + int(m)}, {month})")
+
+
+def test_month_ranges_pick_the_rule_for_the_month():
+    text = "Apr-Oct Mo-Su 10:00-18:00; Nov-Mar Mo-Fr 10:00-16:00"
+    assert at_month(text, SA, "17:00", 7)["state"] == "open"  # July
+    assert at_month(text, SA, "12:00", 1)["state"] == "closed"  # January: weekdays only
+    assert at_month(text, WE, "12:00", 1)["state"] == "open"
+    assert at_month(text, WE, "17:00", 1)["state"] == "closed"
+
+
+def test_a_month_range_can_wrap_the_year_and_a_colon_after_it_is_fine():
+    assert at_month("Nov-Feb: 10:00-16:00", MO, "12:00", 12)["state"] == "open"
+    assert (
+        at_month("Nov-Feb: 10:00-16:00", MO, "12:00", 6)["state"] == "closed"
+    )  # not listed: closed
+    assert at_month("Jan,Dec Mo-Su 10:00-16:00", MO, "12:00", 12)["state"] == "open"
+    assert at_month("Feb,Mar,Aug,Sep: Mo-Fr 08:00-16:30; Oct-Jan,Apr-Jul: Mo-Fr 08:00-18:00",
+                    WE, "17:00", 5)["state"] == "open"  # fmt: skip
+
+
+def test_months_without_a_month_are_unknown_not_guessed():
+    assert state("Apr-Oct Mo-Su 10:00-18:00", WE, "12:00") == "unknown"
+
+
+def test_the_popup_line_reads_the_month_and_the_open_end(tmp_path=None):
+    ride = {
+        "departure": "2026-10-21T08:00:00Z",
+        "arrival": "2026-10-21T12:00:00Z",
+        "distance_m": 40000,
+        "timezone": "Europe/Berlin",
+    }  # half way: 10:00 UTC = 12:00 on Wednesday 21 October (month 10)
+    winter = {"along_route_km": 20, "opening_hours": "Nov-Mar Mo-Su 10:00-18:00"}
+    got = run_js(f"H.check({json.dumps(winter)}, {json.dumps(ride)})")
+    assert got["state"] == "closed"  # October is not in Nov-Mar
+    autumn = {"along_route_km": 20, "opening_hours": "Apr-Oct Mo-Su 10:00-18:00"}
+    assert run_js(f"H.check({json.dumps(autumn)}, {json.dumps(ride)})")["text"].endswith(
+        "until 18:00."
+    )
+    evening = {"along_route_km": 20, "opening_hours": "Mo-Su 11:00+"}
+    assert (
+        "no closing time given"
+        in run_js(f"H.check({json.dumps(evening)}, {json.dumps(ride)})")["text"]
+    )
+    plus = {"along_route_km": 20, "opening_hours": "Mo-Su 11:00-23:00+"}
+    assert (
+        "until at least 23:00" in run_js(f"H.check({json.dumps(plus)}, {json.dumps(ride)})")["text"]
+    )
+
+
+SAMPLE = json.loads(
+    (Path(__file__).resolve().parent / "fixtures" / "osm_opening_hours_sample.json").read_text(
+        encoding="utf-8"
+    )
+)
+
+
+def test_most_real_opening_hours_are_understood():
+    """A sample of real opening_hours tags around Hannover (OSM, ODbL): the share read, and nothing
+    read wrongly enough to crash or to claim a state it does not have."""
+    texts = SAMPLE["texts"]
+    result = run_js(
+        f"""(() => {{
+        const texts = {json.dumps(texts)};
+        let understood = 0;
+        const states = new Set();
+        for (const t of texts) {{
+          if (!H.parse(t)) continue;
+          understood++;
+          for (let day = 0; day < 7; day++)
+            for (const minute of [0, 90, 600, 780, 1020, 1380, 1439])
+              for (const month of [1, 4, 7, 12])
+                states.add(H.evaluate(t, day, minute, month).state);
+        }}
+        return {{understood, total: texts.length, states: [...states].sort()}};
+      }})()"""
+    )
+    assert result["total"] >= 150
+    assert result["understood"] / result["total"] >= 0.92
+    assert set(result["states"]) <= {"open", "closed", "unknown"}
+    assert {"open", "closed"} <= set(result["states"])
+
+
+def test_the_pieces_of_real_text_that_stay_unknown_stay_unknown():
+    for text in (
+        '"zur CeBIT"',
+        "Mo-Fr 10:00-18:00; Dec 24 off",  # a day of the month
+        "Mar-Nov: Fr[1] 15:00-19:00",  # the first Friday
+        "easter-Oct Su 10:00-12:00",
+        "PH unknown; Mo-Fr 09:00-18:00",
+        "Tu-Th 11:30-22:00; Fr,Sa 23:00-23:00",  # start equals end
+        "Fr 20:00-02:00+",  # an open end that crosses midnight
+    ):
+        assert run_js(f"H.parse({json.dumps(text)}) === null") is True, text
+
+
+def at_date(text, day, hhmm, month, year, date):
+    h, m = hhmm.split(":")
+    return run_js(
+        f"H.evaluate({json.dumps(text)}, {day}, {int(h) * 60 + int(m)}, {month}, {year}, {date})"
+    )
+
+
+def test_the_month_of_the_day_before_and_after_follows_the_calendar_not_the_arrival_month():
+    # Friday 31 January 2025 at 23:00: the Friday rule runs to midnight and Saturday 1 February
+    # starts at 00:00 (the February rule), so it stays open until 02:00, not "until midnight".
+    text = "Jan Fr 20:00-24:00; Feb Sa 00:00-02:00"
+    got = at_date(text, FR, "23:00", 1, 2025, 31)
+    assert got["state"] == "open" and got["until"] == 120
+    # the same Friday inside a month whose next day is the same month: until midnight
+    assert at_date("Jan Fr 20:00-24:00", FR, "23:00", 1, 2025, 17)["until"] == 1440
+
+
+def test_hours_that_run_past_midnight_carry_over_a_new_year():
+    # Wednesday 31 December 2025 20:00-02:00, asked at 01:00 on Thursday 1 January 2026
+    text = "Dec We 20:00-02:00"
+    assert at_date(text, TH, "01:00", 1, 2026, 1)["state"] == "open"
+    # without the year and date (a caller that has only the month) the lookup stays as it was
+    assert at_month(text, TH, "01:00", 1)["state"] == "closed"
+
+
+def test_month_arithmetic_for_neighbouring_days():
+    assert run_js("H.monthAtOffset(1, 2025, 31, 1)") == 2
+    assert run_js("H.monthAtOffset(3, 2025, 1, -1)") == 2
+    assert run_js("H.monthAtOffset(12, 2025, 31, 1)") == 1
+    assert run_js("H.monthAtOffset(2, 2024, 29, 1)") == 3  # a leap year
+    assert run_js("H.monthAtOffset(2, 2025, 28, 1)") == 3
+    assert run_js("H.monthAtOffset(6, undefined, undefined, 1)") == 6  # no date: the month stays
+
+
+def test_the_local_date_comes_with_the_clock():
+    got = run_js("H.localParts(Date.UTC(2026, 0, 31, 23, 30), 'Europe/Berlin')")
+    assert (got["year"], got["month"], got["date"]) == (2026, 2, 1)  # already the next day there
