@@ -304,3 +304,26 @@ def test_the_click_that_ends_a_drag_is_swallowed_for_both_kinds_of_drag():
     # the guard is set by the place markers' drag and by the route handle's drag
     assert app[app.index("function redrawPlaceMarkers") :].count("guardClickAfterDrag();") >= 1
     assert app[app.index("function showReshapeHandle") :].count("guardClickAfterDrag();") >= 1
+
+
+def test_a_long_press_places_the_drag_handle_and_a_tap_away_drops_it():
+    """A touch screen cannot hover, so the handle comes from a long press (a `contextmenu`)."""
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert (
+        "tapHold: true" in app
+    )  # Leaflet sends the long press as contextmenu on every touch browser
+    attach = app[app.index("function attachReshape") :]
+    assert 'layer.on("contextmenu"' in attach
+    assert 'pointerType === "mouse"' in attach  # a mouse's right click keeps the browser's menu
+    assert "index !== state.activeIndex || state.pickingTarget" in attach.split("contextmenu")[1]
+    assert "state.reshapeSticky = true" in attach
+    # sticky: no hide timer while it is set; a tap elsewhere on the map clears it
+    assert "state.reshapeDragging || state.reshapeSticky" in app
+    click = app[app.index("function onMapClick") :]
+    assert click.index("state.reshapeSticky") < click.index("openPointMenu")
+    dismiss = click[click.index("if (state.reshapeSticky)") :].split("}")[0]
+    assert "hideReshapeHandle();" in dismiss and "return;" in dismiss  # it only dismisses
+    # and the page tells a touch user how
+    page = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    assert 'id="reshape-hint"' in page and "press and hold the route" in page
+    assert '"ontouchstart" in window || navigator.maxTouchPoints > 0' in app

@@ -123,8 +123,13 @@ through it. It is the same as *Add & plan* in the menu below, without the menu.
 - A drag shorter than about 25 pixels is ignored (a slip, not a new stop). It needs a start and an end
   already, and room for another stop (10 at most); otherwise the page says so.
 - The handle only follows the active route (pick another alternative first) and not while you are
-  picking a point for a field. It is a mouse feature: a touch screen has no hovering, so use the click
-  menu below, which also works by keyboard.
+  picking a point for a field.
+- **Touch screen:** there is no hovering, so **press and hold the route** (a long press): the handle
+  appears there and stays; drag it, or tap anywhere else on the map to drop it (that tap only drops it,
+  it does not pick a point). The page shows this hint on a touch device. Markers (A, B, the stops) are
+  dragged directly. A mouse's right click is left to the browser. Only the placement and the dismissal
+  were exercised (with synthetic events); a real finger on a real phone was **not** tried.
+- The click menu below also works by keyboard.
 - Each drag of the route adds one stop. To **move a place you already have**, drag its marker (A, B or
   a numbered stop): the field takes the dropped point as `lat, lon` and the trip is planned again. This
   works with touch too, since markers are ordinary draggable pins; delete a stop in the form.

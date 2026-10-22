@@ -88,6 +88,7 @@ const els = {
   optimizeDetours: $("optimize-detours"),
   profileCard: $("profile-card"),
   coloursCard: $("colours-card"),
+  reshapeHint: $("reshape-hint"),
   coloursModes: $("colours-modes"),
   coloursLegend: $("colours-legend"),
   coloursLongest: $("colours-longest"),
@@ -142,6 +143,7 @@ const state = {
   reshapeMarker: null,
   reshapeHideTimer: null,
   reshapeDragging: false,
+  reshapeSticky: false, // a long press placed the handle: it stays until the next tap instead of following a mouse
   colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
@@ -180,7 +182,9 @@ const state = {
 /* ------------------------------- map setup ------------------------------- */
 
 function initMap() {
-  state.map = L.map(els.map, { zoomControl: true }).setView([51.75, -1.25], 12);
+  // tapHold: a long press is a `contextmenu` on every touch browser (Leaflet does it for iOS only by
+  // default); it is how a finger asks for the route's drag handle.
+  state.map = L.map(els.map, { zoomControl: true, tapHold: true }).setView([51.75, -1.25], 12);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -217,6 +221,10 @@ function guardClickAfterDrag() {
 
 function onMapClick(ev) {
   if (performance.now() < state.ignoreMapClickUntil) return;
+  if (state.reshapeSticky) {
+    hideReshapeHandle(); // a tap away from a long-pressed handle only drops it, it picks no point
+    return;
+  }
   if (!state.pickingTarget) {
     if (performance.now() - state.foreignPopupClosedAt > 80) openPointMenu(ev.latlng);
     return;
@@ -334,11 +342,12 @@ function hideReshapeHandle() {
   state.reshapeLayer.clearLayers();
   state.reshapeMarker = null;
   state.reshapeDragging = false;
+  state.reshapeSticky = false;
 }
 
 function scheduleReshapeHide() {
   clearTimeout(state.reshapeHideTimer);
-  if (state.reshapeDragging) return;
+  if (state.reshapeDragging || state.reshapeSticky) return;
   state.reshapeHideTimer = setTimeout(hideReshapeHandle, RESHAPE_HIDE_MS);
 }
 
@@ -401,6 +410,17 @@ function attachReshape(layer, index) {
     showReshapeHandle(ev.latlng);
   });
   layer.on("mouseout", scheduleReshapeHide);
+  // Touch: no hovering, so a long press on the active route puts the handle there and leaves it.
+  // A mouse's right click is left alone (the browser's own menu, and the handle already follows it).
+  layer.on("contextmenu", (ev) => {
+    if (index !== state.activeIndex || state.pickingTarget) return;
+    if (ev.originalEvent && ev.originalEvent.pointerType === "mouse") return;
+    L.DomEvent.preventDefault(ev.originalEvent || ev);
+    hideReshapeHandle();
+    state.reshapeSticky = true;
+    showReshapeHandle(ev.latlng);
+    state.reshapeSticky = true; // showReshapeHandle must not be able to clear it
+  });
   return layer;
 }
 
@@ -1142,6 +1162,7 @@ function renderRoute(data) {
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
+  els.reshapeHint.hidden = !("ontouchstart" in window || navigator.maxTouchPoints > 0);
   // One scroll target: when a routing engine lacked map data the card that asks the user what
   // to do is revealed instead (renderCoverage), not the result.
   if (!BikeCoverage.find(data.errors)) revealOnPhone(els.resultsPanel);
