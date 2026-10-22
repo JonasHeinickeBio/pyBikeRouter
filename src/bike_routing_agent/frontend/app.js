@@ -88,6 +88,7 @@ const els = {
   optimizeDetours: $("optimize-detours"),
   profileCard: $("profile-card"),
   coloursCard: $("colours-card"),
+  reshapeHint: $("reshape-hint"),
   coloursModes: $("colours-modes"),
   coloursLegend: $("colours-legend"),
   coloursLongest: $("colours-longest"),
@@ -142,6 +143,7 @@ const state = {
   reshapeMarker: null,
   reshapeHideTimer: null,
   reshapeDragging: false,
+  reshapeSticky: false, // a long press placed the handle: it stays until the next tap instead of following a mouse
   colourMode: "none", // "none" | "surface" | "traffic" (remembered in this browser)
   cueRows: [], // the rows of the directions list shown
   profile: null, // the profile of the route shown
@@ -180,7 +182,9 @@ const state = {
 /* ------------------------------- map setup ------------------------------- */
 
 function initMap() {
-  state.map = L.map(els.map, { zoomControl: true }).setView([51.75, -1.25], 12);
+  // tapHold: a long press is a `contextmenu` on every touch browser (Leaflet does it for iOS only by
+  // default); it is how a finger asks for the route's drag handle.
+  state.map = L.map(els.map, { zoomControl: true, tapHold: true }).setView([51.75, -1.25], 12);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
@@ -196,6 +200,7 @@ function initMap() {
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
   state.map.on("click", onMapClick);
+  state.map.getContainer().addEventListener("contextmenu", onLongPress);
   // A click that only closes another popup (a sight, a weather marker) must not open the menu.
   state.map.on("popupclose", (ev) => {
     if (!ev.popup || ev.popup.options.className !== "point-popup") {
@@ -217,6 +222,10 @@ function guardClickAfterDrag() {
 
 function onMapClick(ev) {
   if (performance.now() < state.ignoreMapClickUntil) return;
+  if (state.reshapeSticky) {
+    hideReshapeHandle(); // a tap away from a long-pressed handle only drops it, it picks no point
+    return;
+  }
   if (!state.pickingTarget) {
     if (performance.now() - state.foreignPopupClosedAt > 80) openPointMenu(ev.latlng);
     return;
@@ -334,11 +343,12 @@ function hideReshapeHandle() {
   state.reshapeLayer.clearLayers();
   state.reshapeMarker = null;
   state.reshapeDragging = false;
+  state.reshapeSticky = false;
 }
 
 function scheduleReshapeHide() {
   clearTimeout(state.reshapeHideTimer);
-  if (state.reshapeDragging) return;
+  if (state.reshapeDragging || state.reshapeSticky) return;
   state.reshapeHideTimer = setTimeout(hideReshapeHandle, RESHAPE_HIDE_MS);
 }
 
@@ -392,6 +402,33 @@ function reshapeThrough(grab, drop) {
     return;
   }
   applyPoint(placement.key, placement.text, true);
+}
+
+const LONG_PRESS_REACH_PX = 28; // a finger lands this close to a line, not on it
+
+/**
+ * Touch: no hovering, so a long press near the active route puts the handle on the route and leaves
+ * it. A plain DOM listener, not a Leaflet one: Leaflet cancels the browser's menu for every
+ * `contextmenu` it hands to a listener, which would take a mouse's right click away. Only a
+ * simulated long press (Leaflet's tapHold) or a touch/pen contextmenu counts; a mouse's does not.
+ */
+function onLongPress(ev) {
+  const touch = ev._simulated || (ev.pointerType && ev.pointerType !== "mouse");
+  if (!touch || state.pickingTarget) return;
+  const line = activeRouteLine();
+  if (!line) return;
+  const at = BikeWaypoints.nearestOnRoute(
+    line,
+    state.map.mouseEventToContainerPoint(ev),
+    (lon, lat) => state.map.latLngToContainerPoint([lat, lon]),
+    LONG_PRESS_REACH_PX,
+  );
+  if (!at) return;
+  ev.preventDefault();
+  hideReshapeHandle();
+  state.reshapeSticky = true;
+  showReshapeHandle(L.latLng(at.lat, at.lon));
+  state.reshapeSticky = true; // showReshapeHandle must not be able to clear it
 }
 
 /** Make a route line show the drag handle while it is the active one; returns the layer. */
@@ -481,6 +518,7 @@ function useMyLocation() {
 }
 
 function startPicking(target, kindLabel, btn) {
+  hideReshapeHandle(); // the first tap of a picker must pick, not just drop a long-pressed handle
   state.pickingTarget = target;
   els.map.classList.add("picking");
   els.mapModeKind.textContent = kindLabel;
@@ -1142,6 +1180,7 @@ function renderRoute(data) {
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
+  els.reshapeHint.hidden = !("ontouchstart" in window || navigator.maxTouchPoints > 0);
   // One scroll target: when a routing engine lacked map data the card that asks the user what
   // to do is revealed instead (renderCoverage), not the result.
   if (!BikeCoverage.find(data.errors)) revealOnPhone(els.resultsPanel);
@@ -1201,6 +1240,7 @@ function boundsOfAllCandidates() {
 
 function activateCandidate(index) {
   if (!state.candidateLayers[index]) return;
+  if (index !== state.activeIndex) hideReshapeHandle(); // a handle belongs to the route it was put on
   state.activeIndex = index;
   state.candidateLayers.forEach((entry, i) => entry.layer.setStyle(candidateStyle(i)));
   state.candidateLayers[index].layer.bringToFront();

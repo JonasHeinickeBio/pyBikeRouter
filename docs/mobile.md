@@ -68,6 +68,9 @@ your LAN), then run the same script.
 - The arrow button next to **Origin** fills it with your current position
   (needs HTTPS and the iOS location permission for Safari/the home-screen
   app). `Pick on map` works with a tap.
+- Reshape a route with your finger: **press and hold the route**, then drag the round handle that
+  appears (tap elsewhere to drop it); drag a numbered marker to move a stop
+  ([web-ui.md](web-ui.md#drag-the-route-to-reshape-it)).
 - Small landscape phones put the map beside the form; larger ones use the
   desktop layout.
 
