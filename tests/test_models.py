@@ -183,7 +183,17 @@ def test_route_constraints_rejects_prefer_and_avoid_resolving_to_one_category():
         RouteConstraints(prefer_surfaces=["paved"], avoid_surfaces=["asphalt"])
 
 
-def test_route_constraints_tolerates_engine_specific_surface_words():
-    # "unpaved" is engine vocabulary we cannot resolve: accepted, simply unscored
-    constraints = RouteConstraints(prefer_surfaces=["gravel", "unpaved"])
-    assert constraints.prefer_surfaces == ["gravel", "unpaved"]
+def test_route_constraints_tolerates_surface_words_it_cannot_resolve():
+    # a typo or an engine word: accepted, simply unscored (the response says so)
+    constraints = RouteConstraints(prefer_surfaces=["gravel", "gravle", "lava"])
+    assert constraints.prefer_surfaces == ["gravel", "gravle", "lava"]
+
+
+def test_unpaved_is_a_word_for_several_categories_and_still_checked_for_contradictions():
+    assert RouteConstraints(prefer_surfaces=["unpaved"], avoid_surfaces=["masonry"])
+    with pytest.raises(ValidationError, match="same surface categories"):
+        RouteConstraints(
+            prefer_surfaces=["unpaved"], avoid_surfaces=["gravel"]
+        )  # gravel is unpaved
+    with pytest.raises(ValidationError, match="same surface categories"):
+        RouteConstraints(prefer_surfaces=["paved"], avoid_surfaces=["asphalt"])

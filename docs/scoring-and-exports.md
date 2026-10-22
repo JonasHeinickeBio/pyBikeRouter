@@ -48,12 +48,18 @@ value: tune it from real multi-engine outputs ([roadmap.md](roadmap.md)).
 ### Surface preferences (issue #23)
 
 `prefer_surfaces` / `avoid_surfaces` accept the surface categories
-(`paved`, `masonry`, `compacted`, `loose`, `natural_soft`) and raw OSM
+(`paved`, `masonry`, `compacted`, `loose`, `natural_soft`), raw OSM
 `surface` values (`asphalt`, `cobblestone`, `paving_stones:30`, ...), which
-resolve to a category through `SURFACE_TAXONOMY`. Tokens that resolve to
-nothing (a typo, an engine word like `unpaved`) are accepted but unscored --
-unknown stays unknown. Preferring and avoiding the same *category* (e.g.
-`asphalt` and `concrete`) is rejected as contradictory.
+resolve to a category through `SURFACE_TAXONOMY`, and the word **`unpaved`**
+(the planner's own word in its metrics, and an OSM value meaning "not paved"): in a
+*request* it stands for every unpaved category (`compacted`, `loose`, `natural_soft`). A way
+*tagged* `surface=unpaved` is still unknown evidence, since it does not say which of them it is.
+Tokens that resolve to nothing (a typo, `gravle`) are accepted but unscored -- unknown stays
+unknown -- and **the response says so**: the explanation names them ("Not scored: ... had no
+effect on the ranking (use ...)"), so a typo does not look like a preference that was applied.
+They are not rejected: a request that worked before keeps working. Preferring and avoiding the
+same *category* (e.g. `asphalt` and `concrete`, or `unpaved` and `gravel`) is rejected as
+contradictory.
 
 `surface_fit` is computed from `metrics.surface_coverage` (populated by the
 [OSM enricher](enrichment.md), which is off by default) or, when there is none, from the engine's own

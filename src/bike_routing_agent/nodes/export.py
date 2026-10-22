@@ -15,6 +15,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+from bike_routing_agent.config import SURFACE_VOCABULARY_HINT, unrecognised_surface_words
 from bike_routing_agent.exporters.geojson import to_geojson_str
 from bike_routing_agent.exporters.gpx import to_gpx_str
 from bike_routing_agent.models import RouteCandidate
@@ -67,8 +68,29 @@ def _weather_sentences(weather: RouteWeather) -> list[str]:
     return sentences
 
 
+def _ignored_surface_sentence(constraints: dict[str, Any]) -> str | None:
+    """Say which surface words of the request were not understood, so a typo does not look like
+    a preference that was applied."""
+    words = unrecognised_surface_words(
+        [str(w) for w in constraints.get("prefer_surfaces") or []],
+        [str(w) for w in constraints.get("avoid_surfaces") or []],
+    )
+    if not words:
+        return None
+    quoted = ", ".join(f"\u201c{word}\u201d" for word in words)
+    verb, subject = ("is", "it") if len(words) == 1 else ("are", "they")
+    return (
+        f"Not scored: {quoted} {verb} not a surface word this planner knows, so {subject} had no "
+        f"effect on the ranking (use {SURFACE_VOCABULARY_HINT})."
+    )
+
+
 def _build_explanation(
-    candidate: RouteCandidate, *, is_loop: bool = False, loop_plan: dict[str, Any] | None = None
+    candidate: RouteCandidate,
+    *,
+    is_loop: bool = False,
+    loop_plan: dict[str, Any] | None = None,
+    constraints: dict[str, Any] | None = None,
 ) -> str:
     distance_km = candidate.metrics.distance_m / 1_000
     sentences = [
@@ -97,6 +119,10 @@ def _build_explanation(
 
     if candidate.warnings:
         sentences.append("Provider warnings: " + "; ".join(candidate.warnings) + ".")
+
+    ignored = _ignored_surface_sentence(constraints or {})
+    if ignored:
+        sentences.append(ignored)
 
     notes = uncertainty_notes(candidate)
     if notes:
@@ -140,6 +166,7 @@ def build_export_node(
             candidate,
             is_loop=bool(state.get("constraints", {}).get("return_to_origin")),
             loop_plan=state.get("loop_plan"),
+            constraints=state.get("constraints") or {},
         )
 
         optimization = state.get("optimization") or {}
