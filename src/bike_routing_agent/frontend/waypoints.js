@@ -78,6 +78,25 @@
   }
 
   /**
+   * The two places a stop dragged out of the route at `grab` will sit between, as [lat, lon] pairs
+   * (a neighbour that is only a name has no position and is null), for a preview line while the
+   * handle is dragged. null when there is nothing to add (no trip, or no room for a stop).
+   */
+  function reshapeNeighbours({ hasOrigin, hasDestination, origin, destination, vias, route, grab }) {
+    if (!hasOrigin || !hasDestination || !grab) return null;
+    const list = vias || [];
+    if (list.length >= MAX_VIA) return null;
+    const key = suggest({ hasOrigin, hasDestination, origin, destination, vias: list, route, point: grab });
+    const match = /^via:(\d+)$/.exec(key);
+    if (!match) return null;
+    const index = Math.min(Number(match[1]), list.length);
+    const before = index === 0 ? origin : list[index - 1];
+    const after = index === list.length ? destination : list[index];
+    const pair = (p) => (p && Number.isFinite(p.lat) && Number.isFinite(p.lon) ? [p.lat, p.lon] : null);
+    return { before: pair(before), after: pair(after) };
+  }
+
+  /**
    * The point of a route nearest to `target`, when it is within `reach` -- for a long press, which
    * lands a finger's width from the line, not on it. Everything is in the same plane (screen
    * pixels): `route` is [lon, lat] pairs, `project` turns one into {x, y}, `target` is {x, y}.
@@ -121,7 +140,7 @@
     return { origin, destination, vias: list, label: `stop ${index + 1}` };
   }
 
-  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, reshape, nearestOnRoute, place };
+  const api = { MAX_VIA, wrapLon, coordText, slots, suggest, reshape, reshapeNeighbours, nearestOnRoute, place };
   root.BikeWaypoints = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

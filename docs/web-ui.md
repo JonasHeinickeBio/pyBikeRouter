@@ -120,6 +120,10 @@ another place: the place you drop it becomes a **new stop**, inserted among your
 along the trip where you *grabbed* the route (not where you dropped it), and the trip is planned again
 through it. It is the same as *Add & plan* in the menu below, without the menu.
 
+- While you drag, a dashed line shows where the route will go: from the stop before, through the handle,
+  to the stop after it (the places the new stop will sit between). A neighbour that is only a name has no
+  position, so the line then runs from where you grabbed the route. It is a sketch of the intent, not the
+  route: the real one is planned when you let go.
 - A drag shorter than about 25 pixels is ignored (a slip, not a new stop). It needs a start and an end
   already, and room for another stop (10 at most); otherwise the page says so.
 - The handle only follows the active route (pick another alternative first) and not while you are

@@ -380,3 +380,55 @@ def test_nothing_to_snap_to_without_a_route(route):
 def test_repeated_vertices_do_not_break_the_snap():
     got = nearest([[0, 0], [0, 0], [50, 0]], {"x": 25, "y": 5}, 28)
     assert (got["lon"], got["lat"], got["distance"]) == (25, 0, 5)
+
+
+# ------------------------------------------------------------- the preview line while dragging
+
+
+def neighbours(**changes):
+    return call("reshapeNeighbours", {**TRIP, **changes})
+
+
+def test_the_preview_runs_between_the_places_the_new_stop_will_sit_between():
+    got = neighbours(grab={"lat": 52.0, "lon": 10.5})
+    assert got == {"before": [52.0, 10.0], "after": [52.0, 11.0]}  # origin and destination
+
+
+def test_with_stops_it_is_the_ones_either_side_of_where_the_route_was_grabbed():
+    vias = [{"lat": 52.0, "lon": 10.3}, {"lat": 52.0, "lon": 10.7}]
+    middle = neighbours(vias=vias, grab={"lat": 52.0, "lon": 10.5})
+    assert middle == {"before": [52.0, 10.3], "after": [52.0, 10.7]}
+    first = neighbours(vias=vias, grab={"lat": 52.0, "lon": 10.1})
+    assert first == {"before": [52.0, 10.0], "after": [52.0, 10.3]}
+    last = neighbours(vias=vias, grab={"lat": 52.0, "lon": 10.9})
+    assert last == {"before": [52.0, 10.7], "after": [52.0, 11.0]}
+
+
+def test_a_neighbour_that_is_only_a_name_has_no_position_and_is_null():
+    got = neighbours(
+        vias=[None], grab={"lat": 52.0, "lon": 10.5}
+    )  # name-only stop: new one goes last
+    assert got == {"before": None, "after": [52.0, 11.0]}
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"hasOrigin": False},
+        {"hasDestination": False},
+        {"grab": None},
+        {"vias": [{"lat": 52.0, "lon": 10.1 + i * 0.05} for i in range(10)]},  # no room
+    ],
+)
+def test_no_preview_without_a_trip_a_grab_or_room(changes):
+    assert neighbours(**{"grab": {"lat": 52.0, "lon": 10.5}, **changes}) is None
+
+
+def test_the_page_draws_and_clears_the_preview_with_the_drag():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    handle = app[app.index("function showReshapeHandle") : app.index("function reshapeThrough")]
+    assert "BikeWaypoints.reshapeNeighbours({" in handle
+    assert 'marker.on("drag", ' in handle and "preview.setLatLngs(" in handle
+    assert "interactive: false" in handle and 'dashArray: "6 8"' in handle
+    # it lives in the handle's layer, so dropping or hiding the handle removes it
+    assert ".addTo(state.reshapeLayer)" in handle
