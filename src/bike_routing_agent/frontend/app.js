@@ -369,10 +369,30 @@ function showReshapeHandle(latlng) {
     icon: L.divIcon({ className: "", html: '<span class="reshape-handle"></span>', iconSize: [18, 18], iconAnchor: [9, 9] }),
   }).addTo(state.reshapeLayer);
   let grab = null;
+  let neighbours = null;
+  let preview = null;
   marker.on("dragstart", () => {
     state.reshapeDragging = true;
     clearTimeout(state.reshapeHideTimer);
     grab = marker.getLatLng();
+    const g = grab.wrap();
+    neighbours = BikeWaypoints.reshapeNeighbours({
+      ...currentPlaces(),
+      route: activeRouteLine(),
+      grab: { lat: g.lat, lon: g.lng },
+    });
+    preview = L.polyline([], { color: "#0e7a4a", weight: 4, opacity: 0.9, dashArray: "6 8", interactive: false }).addTo(state.reshapeLayer);
+  });
+  // While dragging: the route will pass from the stop before, through the handle, to the stop
+  // after it (or just from where it was grabbed, when those are only names).
+  marker.on("drag", () => {
+    if (!preview) return;
+    const here = marker.getLatLng();
+    const path = [];
+    if (neighbours && neighbours.before) path.push(neighbours.before);
+    path.push(here);
+    if (neighbours && neighbours.after) path.push(neighbours.after);
+    preview.setLatLngs(path.length > 1 ? path : [grab, here]);
   });
   marker.on("dragend", () => {
     guardClickAfterDrag();
