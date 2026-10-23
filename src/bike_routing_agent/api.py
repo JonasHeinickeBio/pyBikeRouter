@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import hashlib
+import json
 import logging
 import os
 import re
 import sqlite3
+import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, TypeVar
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
@@ -25,7 +30,7 @@ from bike_routing_agent.chat.models import (
     SightsUnavailableError,
     TextUnavailableError,
 )
-from bike_routing_agent.chat.service import ChatService
+from bike_routing_agent.chat.service import ChatService, TurnSuperseded
 from bike_routing_agent.chat.store import SqliteChatSaver
 from bike_routing_agent.config import PUBLIC_ORS_BASE_URLS, Settings, settings
 from bike_routing_agent.enrichment.base import SurfaceEnricher
@@ -45,6 +50,7 @@ from bike_routing_agent.models import (
     RouteCandidate,
     RoutePlanAPIRequest,
     RoutePlanResponse,
+    TraceStep,
 )
 from bike_routing_agent.poi.categories import CATEGORIES, resolve_categories
 from bike_routing_agent.poi.fetcher import OverpassPoiFetcher
@@ -97,6 +103,7 @@ from bike_routing_agent.storage.history import (
     StatsFilter,
     record_from_state,
 )
+from bike_routing_agent.tracing import STEP_LABELS, server_timing
 from bike_routing_agent.weather.base import WeatherProvider
 from bike_routing_agent.weather.dwd import DwdProvider
 from bike_routing_agent.weather.met_no import MetNoProvider
@@ -478,6 +485,8 @@ def build_storage(cfg: Settings) -> tuple[ArtifactStore, RouteHistory | None]:
 _export_dir = Path(settings.export_dir)
 
 _cache = build_cache(settings)
+_plan_cache = NamespacedCache(_cache, "plan")
+_T = TypeVar("_T")
 _geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
 
@@ -556,8 +565,69 @@ def _place_to_raw(value: str | Coordinate | None) -> str | dict | None:
     return value if isinstance(value, str) else value.model_dump(mode="json")
 
 
-@app.post("/v1/route/plan", response_model=RoutePlanResponse)
-async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
+# ------------------------------------------------------------------------------ planning core
+
+DISCONNECT_POLL_S = 0.25
+CACHE_KEY_VERSION = "1"
+NOW_WINDOW_S = 300  # a plan "for now" is shared for this long at most, whatever the cache TTL
+
+
+async def _run_graph(
+    raw_input: dict[str, Any],
+    on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
+) -> dict[str, Any]:
+    """Run the planning graph and return its final state.
+
+    With ``on_event`` it is called as every node finishes (``node``, the node's update): the stream
+    endpoint turns those into progress. Without, it is a plain ``ainvoke``.
+    """
+    if on_event is None:
+        return await _graph.ainvoke({"raw_input": raw_input})
+    final: dict[str, Any] = {}
+    async for mode, chunk in _graph.astream(
+        {"raw_input": raw_input}, stream_mode=["updates", "values"]
+    ):
+        if mode == "updates":
+            for node, update in chunk.items():
+                await on_event(node, update if isinstance(update, dict) else {})
+        elif mode == "values":
+            final = chunk
+    return final
+
+
+def _plan_cache_key(raw_input: dict[str, Any]) -> str:
+    """The identity of a plan request: everything the graph is given, and for a plan "for now" the
+    five-minute window it is asked in (so "now" never means "whenever the first one ran")."""
+    body: dict[str, Any] = {"v": CACHE_KEY_VERSION, **raw_input}
+    if body.get("departure_time") is None:
+        body["now_window"] = int(time.time() // NOW_WINDOW_S)
+    return hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+
+
+async def _cached_plan(key: str) -> RoutePlanResponse | None:
+    cached = await _plan_cache.get(key)
+    if not isinstance(cached, dict):
+        return None
+    try:
+        hit = RoutePlanResponse.model_validate(cached["response"])
+        age = round(max(0.0, time.time() - float(cached["at"])), 1)
+    except (KeyError, TypeError, ValueError):
+        logger.warning("ignoring an unreadable cached plan")
+        return None
+    return hit.model_copy(update={"served_from_cache": True, "cache_age_s": age, "trace": None})
+
+
+async def plan_route(
+    request: RoutePlanAPIRequest,
+    *,
+    on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
+) -> RoutePlanResponse:
+    """Plan a route (the code behind ``POST /v1/route/plan``, the stream and the chat).
+
+    A ``ready`` plan is kept for ``PLAN_CACHE_TTL_S`` and served again for an identical request;
+    anything else (a question, an error) is never cached. The response carries the trace of the
+    steps that ran; the endpoints decide whether the caller gets it.
+    """
     raw_input = {
         "origin": _place_to_raw(request.origin),
         "destination": _place_to_raw(request.destination),
@@ -573,15 +643,159 @@ async def plan_route(request: RoutePlanAPIRequest) -> RoutePlanResponse:
         "routing_engines": request.routing_engines,
         "optimize": request.optimize.model_dump(mode="json") if request.optimize else None,
     }
+    key = _plan_cache_key(raw_input) if settings.plan_cache_ttl_s > 0 else None
+    if key is not None:
+        hit = await _cached_plan(key)
+        if hit is not None:
+            return hit
 
-    final_state = await _graph.ainvoke({"raw_input": raw_input})
+    final_state = await _run_graph(raw_input, on_event)
     if raw_input["poi_stops"] and final_state.get("poi_stops"):
-        final_state = await _without_stops_if_unroutable(raw_input, final_state)
-    return await _plan_response(final_state)
+        final_state = await _without_stops_if_unroutable(raw_input, final_state, on_event)
+    response = await _plan_response(final_state)
+    if key is not None and response.status == "ready":
+        await _plan_cache.set(
+            key,
+            {"at": time.time(), "response": response.model_dump(mode="json")},
+            ttl_s=settings.plan_cache_ttl_s,
+        )
+    return response
+
+
+async def _until_disconnected(http_request: Request, work: Awaitable[_T]) -> _T:
+    """Await ``work``, and cancel it when the client goes away.
+
+    A plan that nobody waits for any more must not keep the routing engines busy (BRouter does one
+    request at a time, so an abandoned plan delays every other one). Cancelling the task cancels the
+    awaits inside the graph, which closes the HTTP calls it had open and stops the ones that were
+    still queued; a request an engine has already started it finishes on its own.
+    """
+    task = asyncio.ensure_future(work)
+    gone = False
+
+    async def watch() -> None:
+        nonlocal gone
+        while not task.done():
+            if await http_request.is_disconnected():
+                gone = True
+                task.cancel()
+                return
+            await asyncio.sleep(DISCONNECT_POLL_S)
+
+    watcher = asyncio.ensure_future(watch())
+    try:
+        return await task
+    except asyncio.CancelledError:
+        if gone:
+            logger.info("client went away: the plan was cancelled")
+            raise HTTPException(status_code=499, detail="the client closed the request") from None
+        task.cancel()  # this request itself was cancelled: cancel the work with it
+        raise
+    finally:
+        watcher.cancel()
+
+
+def _shaped(result: RoutePlanResponse, response: Response, want_trace: bool) -> RoutePlanResponse:
+    """The response as the caller asked for it: the ``Server-Timing`` header always, the trace only
+    when requested (``?trace=true``)."""
+    timing = server_timing([step.model_dump() for step in result.trace or []])
+    if timing:
+        response.headers["Server-Timing"] = timing
+    return result if want_trace else result.model_copy(update={"trace": None})
+
+
+@app.post("/v1/route/plan", response_model=RoutePlanResponse)
+async def plan_route_endpoint(
+    request: RoutePlanAPIRequest,
+    http_request: Request,
+    response: Response,
+    trace: Annotated[bool, Query(description="include where the time went, per step")] = False,
+) -> RoutePlanResponse:
+    result = await _until_disconnected(http_request, plan_route(request))
+    return _shaped(result, response, trace)
+
+
+def _sse(event: str, data: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+@app.post("/v1/route/plan/stream")
+async def plan_route_stream(request: RoutePlanAPIRequest) -> StreamingResponse:
+    """The same plan as ``POST /v1/route/plan``, told as it happens (server-sent events).
+
+    ``step`` after every node (what it was, how long, the status), ``route`` as soon as there is
+    a best route to show (before the forecast, the alternatives' notes and the files are done), then
+    one ``result``: exactly the body ``/v1/route/plan?trace=true`` would return. ``error`` if the
+    plan crashed. A client that disconnects cancels the plan (the generator is closed).
+    """
+    queue: asyncio.Queue[tuple[str, Any] | None] = asyncio.Queue()
+
+    async def on_event(node: str, update: dict[str, Any]) -> None:
+        steps = update.get("trace") or []
+        await queue.put(
+            (
+                "step",
+                {
+                    "node": node,
+                    "label": STEP_LABELS.get(node, node),
+                    "ms": steps[-1].get("ms") if steps else None,
+                    "status": update.get("status"),
+                },
+            )
+        )
+        chosen = update.get("selected_candidate")
+        if node in ("score_candidates", "optimize_candidates") and isinstance(chosen, dict):
+            await queue.put(("route", _provisional(chosen)))
+
+    async def produce() -> None:
+        try:
+            result = await plan_route(request, on_event=on_event)
+            await queue.put(("result", result.model_dump(mode="json")))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("streamed plan failed")
+            await queue.put(("error", {"detail": "the plan failed; see the service log"}))
+        finally:
+            await queue.put(None)
+
+    async def body() -> AsyncIterator[str]:
+        producer = asyncio.ensure_future(produce())
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    return
+                yield _sse(*item)
+        finally:  # finished, or the client went away (the generator is closed): stop the plan
+            if not producer.done():
+                producer.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await producer
+
+    return StreamingResponse(
+        body(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _provisional(candidate: dict[str, Any]) -> dict[str, Any]:
+    """The part of the best route a page needs to draw it while the rest is still being made."""
+    metrics = candidate.get("metrics") or {}
+    return {
+        "provider": candidate.get("provider"),
+        "provider_profile": candidate.get("provider_profile"),
+        "geometry_geojson": candidate.get("geometry_geojson"),
+        "distance_m": metrics.get("distance_m"),
+        "duration_s": metrics.get("duration_s"),
+    }
 
 
 async def _without_stops_if_unroutable(
-    raw_input: dict[str, Any], final_state: dict[str, Any]
+    raw_input: dict[str, Any],
+    final_state: dict[str, Any],
+    on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     """Plan again without the famous-POI stops when the engines could not route through them.
 
@@ -596,7 +810,7 @@ async def _without_stops_if_unroutable(
         [p.get("name") or p.get("id") for p in final_state.get("poi_stops", [])],
         final_state.get("errors"),
     )
-    retry = await _graph.ainvoke({"raw_input": {**raw_input, "poi_stops": None}})
+    retry = await _run_graph({**raw_input, "poi_stops": None}, on_event)
     if retry.get("status") == "ready":
         retry["poi_stops"] = []
         retry["poi_stops_status"] = "dropped"
@@ -605,6 +819,16 @@ async def _without_stops_if_unroutable(
 
 
 @app.post("/v1/route/plan-text", response_model=RoutePlanResponse)
+async def plan_route_from_text_endpoint(
+    request: PlanTextRequest,
+    http_request: Request,
+    response: Response,
+    trace: Annotated[bool, Query(description="include where the time went, per step")] = False,
+) -> RoutePlanResponse:
+    result = await _until_disconnected(http_request, plan_route_from_text(request))
+    return _shaped(result, response, trace)
+
+
 async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
     """Plan from a request written in plain words (issue #30).
 
@@ -626,7 +850,7 @@ async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
         "timezone": request.timezone,
         "max_alternatives": request.max_alternatives,
     }
-    final_state = await _graph.ainvoke({"raw_input": raw_input})
+    final_state = await _run_graph(raw_input)
     return await _plan_response(final_state)
 
 
@@ -639,7 +863,7 @@ class _ApiPlanner:
         except ValidationError as exc:
             raise PlanError(_validation_message(exc)) from exc
         response = await plan_route(model)
-        return response.model_dump(mode="json")
+        return response.model_copy(update={"trace": None}).model_dump(mode="json")
 
     async def plan_text(self, text: str, timezone: str | None) -> dict[str, Any]:
         if _llm_parser is None:
@@ -648,7 +872,7 @@ class _ApiPlanner:
             model = PlanTextRequest(text=text, timezone=timezone)
         except ValidationError as exc:
             raise PlanError(_validation_message(exc)) from exc
-        response = await plan_route_from_text(model)
+        response = (await plan_route_from_text(model)).model_copy(update={"trace": None})
         if response.status == "invalid" and response.errors:
             raise PlanError(str(response.errors[0].get("message") or "I could not read that."))
         return response.model_dump(mode="json")
@@ -727,15 +951,23 @@ class ChatResponse(BaseModel):
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
     """One chat turn: plan a route (one line, free text or step by step), change it, compare
     the alternatives, ask about it, look for sights, get the files. Returns the reply, quick
     answers and, when there is one to draw, the plan. See docs/chat.md."""
     if _chat_service is None:
         raise HTTPException(status_code=503, detail="the chat is switched off (CHAT_ENABLED)")
-    reply = await _chat_service.send(
-        request.message, session_id=request.session_id, timezone=request.timezone
-    )
+    try:
+        reply = await _until_disconnected(
+            http_request,
+            _chat_service.send(
+                request.message, session_id=request.session_id, timezone=request.timezone
+            ),
+        )
+    except TurnSuperseded:
+        raise HTTPException(
+            status_code=409, detail="a newer message in this conversation replaced this one"
+        ) from None
     return ChatResponse(
         session_id=reply.session_id,
         reply=reply.reply,
@@ -903,6 +1135,7 @@ async def _plan_response(final_state: dict[str, Any]) -> RoutePlanResponse:
             else None
         ),
         optimization=final_state.get("optimization") if status == "ready" else None,
+        trace=[TraceStep.model_validate(s) for s in final_state.get("trace") or []] or None,
     )
 
 

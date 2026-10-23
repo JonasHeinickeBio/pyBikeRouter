@@ -37,6 +37,7 @@ from bike_routing_agent.providers.base import GeocodeProvider, RoutingProvider
 from bike_routing_agent.scoring.alternatives import DEFAULT_DEDUP_THRESHOLD_M
 from bike_routing_agent.state import RouteAgentState
 from bike_routing_agent.storage.artifacts import ArtifactStore
+from bike_routing_agent.tracing import traced
 from bike_routing_agent.weather.service import WeatherService
 
 _TERMINAL_AFTER_PARSE = {"invalid"}
@@ -87,9 +88,13 @@ def build_graph(
 ) -> Any:
     graph = StateGraph(RouteAgentState)
 
-    graph.add_node("parse_request", build_parse_node(llm_parser=llm_parser))
-    graph.add_node("validate_request", validate_request)
-    graph.add_node(
+    def add_node(name: str, fn: Any) -> None:
+        # Every node reports how long it took (tracing.py): the base for any speed-up.
+        graph.add_node(name, traced(name, fn))
+
+    add_node("parse_request", build_parse_node(llm_parser=llm_parser))
+    add_node("validate_request", validate_request)
+    add_node(
         "geocode_locations",
         build_geocode_node(
             geocode_provider=geocode_provider,
@@ -98,8 +103,8 @@ def build_graph(
         ),
     )
     # Only acts when the request asked for famous-POI stops (issue #55); best effort.
-    graph.add_node("select_poi_stops", build_poi_stops_node(service=poi_service))
-    graph.add_node(
+    add_node("select_poi_stops", build_poi_stops_node(service=poi_service))
+    add_node(
         "route_with_provider",
         build_route_node(
             routing_providers=routing_providers,
@@ -109,16 +114,14 @@ def build_graph(
     )
     # Always present so routing never talks to scoring's surface assumptions
     # directly; a no-op pass-through when no enricher is configured (issue #3).
-    graph.add_node("enrich_candidates", build_enrich_node(surface_enricher=surface_enricher))
-    graph.add_node(
-        "score_candidates", build_score_node(dedup_threshold_m=alternative_dedup_threshold_m)
-    )
+    add_node("enrich_candidates", build_enrich_node(surface_enricher=surface_enricher))
+    add_node("score_candidates", build_score_node(dedup_threshold_m=alternative_dedup_threshold_m))
     # With an optimisation request: orders the candidates by the goals and selects the best fit;
     # a pass-through otherwise (nodes/optimize.py, docs/optimizer.md).
-    graph.add_node("optimize_candidates", build_optimize_node(poi_service=poi_service))
+    add_node("optimize_candidates", build_optimize_node(poi_service=poi_service))
     # Best effort and informational: a no-op without a weather service, and it
     # never changes the plan's outcome (nodes/weather.py).
-    graph.add_node(
+    add_node(
         "weather_candidates",
         build_weather_node(
             service=weather_service,
@@ -129,8 +132,8 @@ def build_graph(
         ),
     )
     # Informational: short pros/cons per distinct route (never changes the ranking).
-    graph.add_node("annotate_alternatives", build_compare_node())
-    graph.add_node(
+    add_node("annotate_alternatives", build_compare_node())
+    add_node(
         "explain_and_export",
         build_export_node(export_dir=export_dir, artifact_store=artifact_store),
     )

@@ -562,6 +562,34 @@ async def test_a_slow_alternative_is_dropped_at_the_deadline_and_the_fast_one_is
     assert [c.provider_profile for c in found] == ["custom_touring-v1"]
 
 
+@respx.mock
+async def test_cancelling_the_caller_stops_the_alternatives_that_are_still_queued() -> None:
+    """An abandoned plan must not go on queueing requests at BRouter (it does one at a time):
+    only the request already in flight is left to finish, the rest is never sent."""
+    import asyncio
+
+    seen: list[str] = []
+    first_in_flight = asyncio.Event()
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params["profile"])
+        first_in_flight.set()
+        await asyncio.sleep(30)
+        return httpx.Response(200, json=_payload_with_tags([(1000, "highway=cycleway")]))
+
+    respx.get(BROUTER_URL).mock(side_effect=slow)
+    adapter = BRouterAdapter(base_url=BROUTER_BASE, alternatives=True, max_concurrency=1)
+    work = asyncio.ensure_future(adapter.alternatives(make_request()))  # gravel: touring + mtb
+    await asyncio.wait_for(first_in_flight.wait(), timeout=5)
+    work.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await work
+    await asyncio.sleep(0.2)  # a leaked task would send its request about now
+    assert len(seen) == 1
+    leftovers = [t for t in asyncio.all_tasks() if "_route_with_profile" in repr(t.get_coro())]
+    assert leftovers == []
+
+
 def _trip(km_east: float, via: int = 0) -> RoutingRequest:
     """A trip of roughly ``km_east`` km (straight line, along 52 N)."""
     lon = 10.0 + km_east / 68.0  # one degree of longitude is ~68 km at 52 N

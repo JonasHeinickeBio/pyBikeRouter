@@ -62,6 +62,17 @@ this browser.
 - Routes from engines that give no tags (ORS, Valhalla) have no Surface or Traffic mode. Classes of a few metres are left
   out of the legend, and a "longest stretch" under 300 m is not mentioned.
 
+## Progress and where the time went
+
+While a plan is made the status line says which step is running ("Routing... (step 5 of 11)"), and the
+best route is drawn as a faint dashed line as soon as it exists -- before the forecast, the notes on the
+alternatives and the files are done -- so a slow trip shows its line within seconds. When the plan arrives
+it replaces that line. Under the route, *Where the time went* (collapsed; its summary reads like "9.0 s,
+mostly routing") lists every step with its time and a bar relative to the slowest, which is highlighted.
+A plan answered from the short-lived cache says so instead. The page uses `POST /v1/route/plan/stream`
+([api.md](api.md#post-v1routeplanstream)); against an older server without it, it asks the plain way.
+Starting another plan, or closing the page, cancels the one that is running.
+
 ## Directions
 
 Under the elevation chart, *Directions* lists the route's turn instructions (collapsed; it says how
