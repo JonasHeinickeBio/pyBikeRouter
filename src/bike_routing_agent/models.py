@@ -472,6 +472,15 @@ class ClarificationOption(BaseModel):
     hint: str | None = None
 
 
+class TraceStep(BaseModel):
+    """How one node of the planning graph went: its time and the status it left the plan in."""
+
+    node: str
+    ms: float = Field(ge=0)
+    status: str | None = None
+    ok: bool = True
+
+
 class RoutePlanResponse(BaseModel):
     status: PlanStatus
     route: RouteCandidate | None = None
@@ -502,3 +511,10 @@ class RoutePlanResponse(BaseModel):
     interpretation: Interpretation | None = None
     # Present when the request asked to optimise: what was compared and why this route won.
     optimization: dict[str, Any] | None = None
+    # Where the time went, one step per node in order (tracing.py). Only when asked for
+    # (``?trace=true``); the ``Server-Timing`` header carries the same numbers either way.
+    trace: list[TraceStep] | None = None
+    # True when this answer is a recent identical plan served again (``PLAN_CACHE_TTL_S``), and how
+    # old it is. A fresh plan says False / null.
+    served_from_cache: bool = False
+    cache_age_s: float | None = None

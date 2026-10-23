@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # The public openrouteservice does not serve the Pelias geocoding endpoints
@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     cache_backend: Literal["memory", "redis"] = "memory"
     cache_redis_url: str | None = None  # e.g. redis://127.0.0.1:6379/0
     cache_key_prefix: str = "bike-routing"
+    # How long an identical plan is served again instead of being recomputed (seconds, 0 = never):
+    # it protects the routing engines' queue (BRouter does one request at a time) when a link is
+    # reopened or Plan is pressed twice. Short on purpose: the forecast in a plan goes stale.
+    plan_cache_ttl_s: float = Field(default=300.0, ge=0)
     cache_redis_timeout_s: float = 2.0
 
     # Two candidates whose routes stay within this many metres of each other

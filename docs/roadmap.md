@@ -92,6 +92,14 @@ decisions still open.
   Done since: the chat fills the web form with the request behind each route (the other direction -- the
   chat knowing what is in the form -- is not built), and the web panel has New chat, a list of this
   browser's earlier conversations, and delete.
+- **Plan lifecycle** -- done: every step of a plan is timed (`?trace=true`, `Server-Timing`, the log, and
+  "Where the time went" on the page), a plan nobody waits for any more is cancelled (a closed connection, or
+  a newer chat message in the same conversation: measured on a Braunschweig-Hannover gravel plan dropped after
+  one second -- 3 BRouter requests ran on afterwards, now 1: the one already started), progress is streamed
+  (`POST /v1/route/plan/stream`: the best route is drawn before the forecast and the files are done) and an
+  identical request is answered from a short cache ([api.md](api.md#where-the-time-went-the-cache-and-abandoned-requests)).
+  Open: check from real traces whether the forecast (about 2.4 s of 9 s on that trip) can run beside the
+  road-data step, which needs the ranking to be independent of it.
 
 ## Geocoding
 

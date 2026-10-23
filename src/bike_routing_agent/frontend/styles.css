@@ -888,6 +888,20 @@ body[data-tab="plan"] [data-tab="optimize"] { display: none !important; }
 .cue-time { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 .cue-leg { grid-column: 3 / span 2; color: var(--muted, #667); font-size: 0.75rem; }
 
+/* where the time of a plan went (stream.js) */
+.trace-card { margin: 0.6rem 0; }
+.trace-card summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+.trace-summary { font-weight: 400; color: var(--muted, #667); font-size: 0.85rem; }
+.trace-list { list-style: none; margin: 0.3rem 0; padding: 0; }
+.trace-list li { display: grid; grid-template-columns: 11rem 1fr 4.5rem; gap: 0 0.5rem; align-items: center; padding: 0.15rem 0; font-size: 0.85rem; }
+.trace-list li.failed .trace-label { color: var(--error, #b3261e); }
+.trace-bar { display: block; height: 0.5rem; background: var(--hover-bg); border-radius: 3px; overflow: hidden; }
+.trace-bar > span { display: block; height: 100%; background: var(--muted, #889); }
+.trace-list li.slowest .trace-bar > span { background: var(--accent); }
+.trace-list li.slowest .trace-label, .trace-list li.slowest .trace-ms { font-weight: 600; }
+.trace-ms { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+@media (max-width: 480px) { .trace-list li { grid-template-columns: 8rem 1fr 4rem; } }
+
 /* route colours (stretches.js) */
 .colours-card { margin: 0.6rem 0; }
 .colours-card h3 { margin: 0 0 0.3rem; font-size: 0.95rem; }

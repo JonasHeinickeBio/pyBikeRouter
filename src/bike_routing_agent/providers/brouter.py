@@ -25,8 +25,8 @@ import asyncio
 import json
 import logging
 import math
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, TypeVar
 
 import httpx
 
@@ -92,6 +92,24 @@ def _straight_km(a: Any, b: Any) -> float:
     dlat, dlon = lat2 - lat1, math.radians(b.lon - a.lon)
     h = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
     return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
+_F = TypeVar("_F", bound="asyncio.Future[Any]")
+
+
+async def _wait_or_cancel(tasks: Iterable[_F], timeout: float | None) -> tuple[set[_F], set[_F]]:
+    """``asyncio.wait``, except that tasks are cancelled with their caller.
+
+    ``asyncio.wait`` leaves its tasks running when the awaiting coroutine is cancelled, so a plan
+    nobody waits for any more would go on queueing requests at BRouter (which does one at a time).
+    """
+    pending = list(tasks)
+    try:
+        return await asyncio.wait(pending, timeout=timeout)
+    except asyncio.CancelledError:
+        for task in pending:
+            task.cancel()
+        raise
 
 
 class BRouterAdapter:
@@ -357,7 +375,7 @@ class BRouterAdapter:
             ): d
             for d in detours
         }
-        done, pending = await asyncio.wait([*tasks, *via_tasks, *detour_tasks], timeout=deadline)
+        done, pending = await _wait_or_cancel([*tasks, *via_tasks, *detour_tasks], deadline)
         for task in pending:
             task.cancel()
             if task in tasks:
@@ -443,7 +461,7 @@ class BRouterAdapter:
             asyncio.ensure_future(self._route_with_profile(request, p, timeout_s=deadline)): p
             for p in profiles
         }
-        done, pending = await asyncio.wait(tasks, timeout=deadline)
+        done, pending = await _wait_or_cancel(tasks, deadline)
         for task in pending:
             task.cancel()
             logger.info("brouter alternative profile %s timed out", tasks[task])

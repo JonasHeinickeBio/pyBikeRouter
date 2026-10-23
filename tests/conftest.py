@@ -9,6 +9,8 @@ import pytest
 os.environ.setdefault("WEATHER_PROVIDER", "none")
 # Same for POIs (Overpass, Wikidata, Wikipedia).
 os.environ.setdefault("POI_ENABLED", "false")
+# No plan cache: tests count graph runs; the cache has its own tests that switch it on.
+os.environ.setdefault("PLAN_CACHE_TTL_S", "0")
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
