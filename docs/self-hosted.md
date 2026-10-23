@@ -95,9 +95,37 @@ Reading the table:
 | `ORS_MEM_LIMIT` | `6g` | Docker memory limit for the ORS container; keep it above `ORS_XMX` (the JVM needs headroom). |
 | `NOMINATIM_THREADS` | `4` | import/indexing threads; `2` halves the CPU/memory pressure and takes longer. |
 | `NOMINATIM_MEM_LIMIT` | `4g` | Docker memory limit for the Nominatim container (tested down to `2g`). |
+| `OVERPASS_MEM_LIMIT` | `2g` | Docker memory limit for the Overpass container (sight search). Bremen ran in `2g`; Lower Saxony imported under `10g` and idles at ~650 MiB (see [below](#self-hosted-overpass-the-sight-search)). |
 
 Set them in the shell (or an env file) when you run the bootstrap script, e.g.
 `ORS_XMX=1g ORS_MEM_LIMIT=2g scripts/self-hosted-bootstrap.sh --only routing`.
+
+### Memory presets (`--memory`)
+
+For people who would rather pick one word than five settings:
+
+```bash
+scripts/self-hosted-bootstrap.sh --memory small     # a laptop, a city-sized region
+scripts/self-hosted-bootstrap.sh --memory medium
+scripts/self-hosted-bootstrap.sh --memory large     # a federal state or more, on a machine with room
+scripts/self-hosted-bootstrap.sh --memory auto      # by the machine's total RAM
+```
+
+| Preset | `ORS_XMX` / `ORS_MEM_LIMIT` | `NOMINATIM_THREADS` / `NOMINATIM_MEM_LIMIT` | `OVERPASS_MEM_LIMIT` | Where the numbers come from |
+| --- | --- | --- | --- | --- |
+| `small` | `512m` / `1g` | `2` / `2g` | `2g` | **measured**, Bremen extract: ORS and Nominatim at these settings (table above), Overpass at its default limit |
+| `medium` | `1g` / `2g` | `4` / `4g` | `2g` | ORS measured on Bremen; Nominatim at its defaults (import time measured, memory not); Overpass as above |
+| `large` | `4g` / `6g` | `4` / `4g` | `10g` | the compose defaults for a federal state (**not measured**); Overpass with the `10g` the Lower Saxony import ran under (its peak was not recorded) |
+
+- **Anything you set yourself wins**: `ORS_XMX=3g scripts/self-hosted-bootstrap.sh --memory small` uses 3g
+  for ORS and the preset for the rest. The script prints the values it ends up using.
+- **`auto`** picks `small` under 6 GiB of RAM, `medium` under 16 GiB and `large` from 16 GiB, reading
+  `MemTotal` from `/proc/meminfo`. That cut-off is a heuristic, not a measurement; it says "pick one" and
+  stops if the figure cannot be read (macOS has no `/proc/meminfo`).
+- **Only the services you start use their lines**: `--only routing --memory small` starts just ORS (the
+  other values are set but unused). Without `--memory` nothing changes: the compose defaults apply.
+- The presets size *containers*, not the machine: leave room for Docker and the OS (the note under
+  "Hardware (measured)" about about 4 GB of total RAM for setup D still stands).
 
 ## Quick start
 
@@ -106,6 +134,7 @@ scripts/self-hosted-bootstrap.sh                   # setup D: both services
 scripts/self-hosted-bootstrap.sh --only routing    # setup B
 scripts/self-hosted-bootstrap.sh --only geocoding  # setup C
 scripts/self-hosted-bootstrap.sh --only pois       # Overpass for the sight search (opt-in, below)
+scripts/self-hosted-bootstrap.sh --memory small    # size the containers for a small machine (presets, below)
 ```
 
 It downloads the extract to `docker/self-hosted/data/region.osm.pbf`
@@ -167,9 +196,13 @@ an import, so you ask for it (`--only`, or the compose profile `self-hosted-pois
 | Image | 368 MB on disk (134 MB to pull) |
 | Through the app | 139 sights along a 16 km route in 9.4 s including the Wikidata lookups; `/readyz` `overpass` `ok` at 170 ms |
 
-Larger regions were **not** measured. The import is one-time but grows with the extract (Lower
-Saxony is 484 MB, about 23 times Bremen, so hours rather than minutes, and a database in the
-gigabytes -- an estimate, not a measurement); start with a small region.
+**Lower Saxony** (484 MB extract, about 23 times Bremen), imported later on the same machine under a
+`10g` limit: **61 minutes**, a **1.1 GB** database (2.2 times the extract), **~650 MiB** memory when idle,
+and a way query along a street answers in under a second. The import's peak memory was not recorded, so
+`OVERPASS_MEM_LIMIT` for a region that size is a safe figure, not a minimum. Sight searches along a 66 km
+route took about 20 s; the surface *enrichment* (a 25 m `around` query over the whole route) took
+4-7 minutes per long route on it, which is why it is off by default and why `OVERPASS_TIMEOUT_S` needs
+to be generous when you calibrate with it ([enrichment.md](enrichment.md)). Start with a small region.
 
 Things worth knowing, all found while building it:
 
