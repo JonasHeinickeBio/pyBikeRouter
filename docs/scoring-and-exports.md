@@ -134,7 +134,49 @@ measured routes) and 1.0 leaves headroom, while no other case moves between 0.5 
 requests that state surface preferences (the form's "Prefer surfaces" / "Avoid surfaces", a chat "prefer
 paved"); everyone else is scored exactly as before. `SURFACE_WEIGHT = 0.0` switches it off.
 
-What this does not show: one region, BRouter only, seven cases, and the engine's coarse classes. The
+#### The same sweep with the OSM enrichment
+
+The first run above used the engine's coarse shares only. The last open criterion of issue #23 was a
+calibration run *with* the OSM enrichment (finer categories: `paved`, `masonry`, `compacted`, `loose`,
+`natural_soft`). It was run on 2026-10-22 against a **local Overpass holding the Lower Saxony extract**
+([self-hosted.md](self-hosted.md#self-hosted-overpass-the-sight-search)), the BRouter used before, the
+benchmark's eight preference cases (21 candidates) and the same sweep.
+
+- **Every candidate was enriched.** Eighteen in the main run; the three 66 km Hannover gravel routes
+  needed their own run (a query along a route that long took 4-7 minutes there, longer than the 400 s of
+  the main run). A first attempt with a 90 s timeout enriched almost none of the long routes and was
+  discarded: its fits were the engine's, which is how that was noticed.
+- **No ranking changed at any weight in any of the eight cases.** The flips are where they were:
+  `bs-hannover-gravel-prefer-paved` goes from the gravel profile to the touring profile between 0.5 and
+  1.0, `hannover-road-prefer-paved` from commuter to `fastbike` at 0.2, and the other six do not move.
+  (The finer search for the first flip, ~0.72, was not repeated; the grid agrees.)
+- **The numbers moved a little, in an understandable way.**
+
+  | Case (candidate) | Fit: engine shares | Fit: OSM enrichment | Known share |
+  | --- | --- | --- | --- |
+  | Hannover gravel, prefer paved (gravel / touring / mtb) | 0.286 / 0.689 / 0.126 | 0.276 / 0.666 / 0.118 | 0.90 / 0.94 / 0.84 -> 0.98 / 0.97 / 0.93 |
+  | Goslar gravel, prefer paved (gravel profile) | 0.700 | 0.619 | 0.72 -> 0.90 |
+  | Hannover road, prefer paved (commuter) | 0.689 | 0.666 | 0.94 -> 0.97 |
+  | Goslar-Brocken, prefer gravel (gravel / touring / mtb) | 0.647 / 0.289 / 0.693 | **0.124 / 0.078 / 0.079** | 0.87 / 0.99 / 0.99 -> 0.87 / 0.87 / 0.79 |
+
+  OSM resolves more of the lengths the engine called unknown (the known share rises), which is the
+  point of the enrichment; the fits move by a few hundredths.
+- **One case differs in kind, and it is the instructive one.** Preferring `gravel` (the category
+  `loose`) on the Goslar-Brocken trip: the engine's single "unpaved" class gives the gravel profile 0.65,
+  but only about an eighth of that length is `loose` in the OSM tags; most of it is `compacted` (hard-packed
+  fine gravel and the like). The engine's class **overstates** a gravel preference, as the section on its
+  resolution predicted; the enrichment says what it is. The ranking is the same either way (the gravel
+  profile leads at every weight: the touring and mtb routes are also low), so nothing about the shipped
+  weight changes.
+
+**Conclusion: `SURFACE_WEIGHT = 1.0` stands.** The enrichment is not needed to rank these routes the way
+the evidence above did, and where it is on it agrees at the sweep's resolution. What it adds is truth about
+the categories. Limits: one region (and the Lower Saxony extract ends at the state border, so the Brocken
+summit area, in Saxony-Anhalt, has less data: its known share stays at 0.87), one engine, eight cases, one
+day's OSM data. The cost is real: enrichment is off by default and takes minutes on a long route even on a
+local Overpass ([enrichment.md](enrichment.md)).
+
+What the first run does not show: one region, BRouter only, seven cases, and the engine's coarse classes. The
 case that does not flip (`goslar-gravel-prefer-paved`) shows a limit rather than a success: when a lot of
 a route's surface is unknown, the fit rests on a smaller share and discriminates less, which is the
 unknown-is-unknown policy working as designed. Re-run it for your region:
