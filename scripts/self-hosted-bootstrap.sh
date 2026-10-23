@@ -6,6 +6,7 @@
 #   scripts/self-hosted-bootstrap.sh --only geocoding   # Nominatim only (routing stays on the public ORS)
 #   scripts/self-hosted-bootstrap.sh --only pois        # Overpass only (the sight search; opt-in, see below)
 #   scripts/self-hosted-bootstrap.sh --only routing,pois   # any comma separated mix of routing, geocoding, pois
+#   scripts/self-hosted-bootstrap.sh --memory small     # size the containers for a small machine (small | medium | large | auto)
 #   scripts/self-hosted-bootstrap.sh status             # health of the selected services
 #   scripts/self-hosted-bootstrap.sh --force            # re-download the extract first
 #
@@ -23,8 +24,14 @@
 # `docker compose --profile self-hosted up -d` for them -- openrouteservice (bicycle
 # profiles), Nominatim and (with --only pois) Overpass all read that file, and the first start builds the
 # routing graphs / imports the geocoding index, which takes minutes for a city
-# region and much longer for a federal state. It never deletes volumes: use
-# `docker compose -f docker/compose.yaml --profile self-hosted down -v` for that.
+# region and much longer for a federal state. It never deletes volumes (and
+# `docker compose down -v` is NOT the way to reset one service: it removes every named volume
+# the compose file declares; remove just the one, e.g. `docker volume rm pybikerouter-overpass-data`).
+#
+# --memory sizes the containers (RAM) in one word; docs/self-hosted.md has the table and which numbers
+# were measured. A setting you export yourself (ORS_XMX, ORS_MEM_LIMIT, NOMINATIM_THREADS,
+# NOMINATIM_MEM_LIMIT, OVERPASS_MEM_LIMIT) always wins over the preset. Without --memory nothing
+# changes: the compose defaults apply.
 #
 # Environment:
 #   EXTRACT_URL        extract to download (default: Bremen, ~20 MB -- a small
@@ -52,7 +59,9 @@ ACTION="up"
 FORCE=0
 ONLY=""
 ONLY_GIVEN=0   # --only was passed, even with an empty value (which is an error, not "everything")
-USAGE="use: up | status | --force | --only routing,geocoding,pois (any mix)"
+MEMORY=""
+MEMORY_GIVEN=0   # --memory was passed, even with an empty value (an error)
+USAGE="use: up | status | --force | --only routing,geocoding,pois (any mix) | --memory small|medium|large|auto"
 while [ $# -gt 0 ]; do
   case "$1" in
     up|status) ACTION="$1" ;;
@@ -61,6 +70,10 @@ while [ $# -gt 0 ]; do
       [ $# -ge 2 ] || { echo "error: --only needs a value ($USAGE)" >&2; exit 2; }
       ONLY="$2"; ONLY_GIVEN=1; shift ;;
     --only=*) ONLY="${1#--only=}"; ONLY_GIVEN=1 ;;
+    --memory)
+      [ $# -ge 2 ] || { echo "error: --memory needs a value ($USAGE)" >&2; exit 2; }
+      MEMORY="$2"; MEMORY_GIVEN=1; shift ;;
+    --memory=*) MEMORY="${1#--memory=}"; MEMORY_GIVEN=1 ;;
     -h|--help) awk 'NR > 1 { if (/^#/) print; else exit }' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "error: unknown argument '$1' ($USAGE)" >&2; exit 2 ;;
   esac
@@ -91,6 +104,94 @@ if [ -n "$ONLY" ]; then
 fi
 
 die() { echo "error: $*" >&2; exit 1; }
+
+# --- memory presets ----------------------------------------------------------------------
+# Which preset a machine of this much RAM gets with --memory auto (a heuristic, not measured):
+# under 6 GiB small, under 16 GiB medium, else large. MEMINFO_FILE is a test seam.
+auto_preset() {
+  local kib
+  kib="$(awk '/^MemTotal:/ {print $2}' "${MEMINFO_FILE:-/proc/meminfo}" 2>/dev/null || true)"
+  case "$kib" in
+    ''|*[!0-9]*) echo ""; return ;;
+  esac
+  if [ "$kib" -lt $((6 * 1024 * 1024)) ]; then echo small
+  elif [ "$kib" -lt $((16 * 1024 * 1024)) ]; then echo medium
+  else echo large; fi
+}
+
+# "512m" / "2g" -> MiB (empty when it is not that simple form, which skips the checks below).
+to_mib() {
+  case "$1" in
+    *[!0-9mMgG]*|'') echo ""; return ;;
+  esac
+  local n="${1%[mMgG]}" unit="${1: -1}"
+  case "$n" in ''|*[!0-9]*) echo ""; return ;; esac
+  case "$unit" in
+    [gG]) echo $((n * 1024)) ;;
+    [mM]) echo "$n" ;;
+    *) echo "" ;;
+  esac
+}
+
+# A JVM refuses an initial heap above its maximum, and a container limit at or below the heap
+# kills it when the heap fills (docs/self-hosted.md, "Sizing knobs"). A preset next to a value the
+# person set can produce either: say so instead of starting something that cannot work.
+check_ors_memory() {  # <limit_came_from_the_preset: 0|1>
+  local xmx xms limit
+  xmx="$(to_mib "$ORS_XMX")"; xms="$(to_mib "${ORS_XMS:-}")"; limit="$(to_mib "$ORS_MEM_LIMIT")"
+  if [ -n "$xms" ] && [ -n "$xmx" ] && [ "$xms" -gt "$xmx" ]; then
+    echo "error: ORS_XMS=$ORS_XMS is larger than ORS_XMX=$ORS_XMX (the JVM refuses to start): lower ORS_XMS or raise ORS_XMX" >&2
+    exit 2
+  fi
+  if [ -n "$xmx" ] && [ -n "$limit" ] && [ "$limit" -le "$xmx" ]; then
+    if [ "$1" = 1 ]; then
+      ORS_MEM_LIMIT="$((xmx * 2))m"; export ORS_MEM_LIMIT
+      echo "Memory: ORS_XMX=$ORS_XMX is above the preset's container limit, so ORS_MEM_LIMIT was raised to $ORS_MEM_LIMIT (twice the heap, as in the measured settings)."
+    else
+      echo "error: ORS_MEM_LIMIT=$ORS_MEM_LIMIT is not above ORS_XMX=$ORS_XMX (the container would be killed when the heap fills): raise the limit or lower the heap" >&2
+      exit 2
+    fi
+  fi
+}
+
+# Set each variable to the preset's value unless the caller already set it (theirs wins).
+apply_memory_preset() {  # <ors_xmx> <ors_limit> <nominatim_threads> <nominatim_limit> <overpass_limit>
+  local limit_from_preset=1
+  [ -n "${ORS_MEM_LIMIT+x}" ] && limit_from_preset=0
+  : "${ORS_XMX:=$1}"
+  : "${ORS_MEM_LIMIT:=$2}"
+  : "${NOMINATIM_THREADS:=$3}"
+  : "${NOMINATIM_MEM_LIMIT:=$4}"
+  : "${OVERPASS_MEM_LIMIT:=$5}"
+  export ORS_XMX ORS_MEM_LIMIT NOMINATIM_THREADS NOMINATIM_MEM_LIMIT OVERPASS_MEM_LIMIT
+  check_ors_memory "$limit_from_preset"
+}
+
+if [ "$MEMORY_GIVEN" = 1 ] && [ -z "$MEMORY" ]; then
+  echo "error: --memory needs a value ($USAGE)" >&2
+  exit 2
+fi
+case "$MEMORY" in
+  ""|small|medium|large|auto) ;;
+  *) echo "error: --memory takes small, medium, large or auto (got '$MEMORY')" >&2; exit 2 ;;
+esac
+if [ -n "$MEMORY" ] && [ "$ACTION" = up ]; then
+  if [ "$MEMORY" = auto ]; then
+    MEMORY="$(auto_preset)"
+    [ -n "$MEMORY" ] || die "--memory auto could not read the machine's memory; pick small, medium or large"
+    echo "Memory: --memory auto chose '$MEMORY' for this machine."
+  fi
+  case "$MEMORY" in
+    # Measured on the Bremen extract (docs/self-hosted.md, "Hardware (measured)").
+    small) apply_memory_preset 512m 1g 2 2g 2g ;;
+    # ORS measured on Bremen; Nominatim at its default threads and limit; Overpass as small.
+    medium) apply_memory_preset 1g 2g 4 4g 2g ;;
+    # The compose defaults for a federal state (not measured), Overpass with the 10g the Lower Saxony import ran under.
+    large) apply_memory_preset 4g 6g 4 4g 10g ;;
+    *) echo "error: --memory takes small, medium, large or auto (got '$MEMORY')" >&2; exit 2 ;;
+  esac
+  echo "Memory: $MEMORY -> ORS_XMX=$ORS_XMX ORS_MEM_LIMIT=$ORS_MEM_LIMIT NOMINATIM_THREADS=$NOMINATIM_THREADS NOMINATIM_MEM_LIMIT=$NOMINATIM_MEM_LIMIT OVERPASS_MEM_LIMIT=$OVERPASS_MEM_LIMIT (anything you set yourself wins)"
+fi
 
 service_ready() {  # <url> <grep pattern>
   curl -fsS --max-time 5 "$1" 2>/dev/null | grep -q "$2"

@@ -38,11 +38,35 @@ exit 0
 
 FAKE_DOCKER = """#!/bin/sh
 echo "docker $*" >> "$FAKE_LOG"
+line="env"
+for name in ORS_XMX ORS_MEM_LIMIT NOMINATIM_THREADS NOMINATIM_MEM_LIMIT OVERPASS_MEM_LIMIT; do
+  eval "value=\\${$name-}"
+  line="$line $name=$value"
+done
+echo "$line" >> "$FAKE_LOG"
 exit 0
 """
 
 
-def run(tmp_path, *args, ready="1", md5=GOOD_MD5, download_fail="0", existing=False, timeout="20"):
+MEMORY_VARS = (
+    "ORS_XMX",
+    "ORS_MEM_LIMIT",
+    "NOMINATIM_THREADS",
+    "NOMINATIM_MEM_LIMIT",
+    "OVERPASS_MEM_LIMIT",
+)
+
+
+def run(
+    tmp_path,
+    *args,
+    ready="1",
+    md5=GOOD_MD5,
+    download_fail="0",
+    existing=False,
+    timeout="20",
+    env=None,
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     for name, body in (("curl", FAKE_CURL), ("docker", FAKE_DOCKER)):
@@ -57,7 +81,8 @@ def run(tmp_path, *args, ready="1", md5=GOOD_MD5, download_fail="0", existing=Fa
     result = subprocess.run(
         [str(SCRIPT), *args],
         env={
-            **os.environ,
+            # a developer's own memory settings must not leak into the expectations
+            **{k: v for k, v in os.environ.items() if k not in MEMORY_VARS},
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
             "DATA_DIR": str(data),
             "FAKE_LOG": str(log),
@@ -65,6 +90,7 @@ def run(tmp_path, *args, ready="1", md5=GOOD_MD5, download_fail="0", existing=Fa
             "FAKE_MD5": md5,
             "FAKE_DOWNLOAD_FAIL": download_fail,
             "WAIT_TIMEOUT_S": timeout,
+            **(env or {}),
         },
         capture_output=True,
         text=True,
@@ -249,3 +275,130 @@ def test_a_bad_part_of_a_list_is_a_usage_error(tmp_path, args):
     result, calls, _ = run(tmp_path, *args)
     assert result.returncode == 2 and "--only takes" in result.stderr
     assert not any(c.startswith("docker") for c in calls)
+
+
+def memory_env(calls):
+    """The memory variables the (fake) docker saw when compose was started."""
+    (line,) = [c for c in calls if c.startswith("env ")]
+    return dict(pair.split("=", 1) for pair in line.removeprefix("env ").split())
+
+
+def test_without_memory_nothing_changes_and_the_compose_defaults_apply(tmp_path):
+    result, calls, _ = run(tmp_path, existing=True)
+    assert result.returncode == 0, result.stderr
+    assert all(value == "" for value in memory_env(calls).values())  # none set: compose defaults
+    assert "Memory:" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("preset", "expected"),
+    [
+        ("small", ("512m", "1g", "2", "2g", "2g")),
+        ("medium", ("1g", "2g", "4", "4g", "2g")),
+        ("large", ("4g", "6g", "4", "4g", "10g")),
+    ],
+)
+def test_a_preset_sets_the_containers_memory(tmp_path, preset, expected):
+    result, calls, _ = run(tmp_path, "--memory", preset, existing=True)
+    assert result.returncode == 0, result.stderr
+    assert tuple(memory_env(calls)[v] for v in MEMORY_VARS) == expected
+    assert (
+        f"Memory: {preset} ->" in result.stdout
+        and "anything you set yourself wins" in result.stdout
+    )
+
+
+def test_what_the_person_sets_wins_over_the_preset(tmp_path):
+    result, calls, _ = run(
+        tmp_path,
+        "--memory=small",
+        existing=True,
+        env={"ORS_XMX": "3g", "ORS_MEM_LIMIT": "7g", "OVERPASS_MEM_LIMIT": "6g"},
+    )
+    assert result.returncode == 0, result.stderr
+    got = memory_env(calls)
+    assert got["ORS_XMX"] == "3g" and got["ORS_MEM_LIMIT"] == "7g"  # theirs
+    assert (
+        got["OVERPASS_MEM_LIMIT"] == "6g" and got["NOMINATIM_MEM_LIMIT"] == "2g"
+    )  # theirs, preset
+    assert "ORS_XMX=3g" in result.stdout  # and the line says what is really used
+
+
+def test_a_heap_above_the_presets_limit_raises_the_limit_the_preset_chose(tmp_path):
+    """Found in review: ORS_XMX=3g with small's 1g limit would be killed when the heap fills."""
+    result, calls, _ = run(tmp_path, "--memory=small", existing=True, env={"ORS_XMX": "3g"})
+    assert result.returncode == 0, result.stderr
+    assert (
+        memory_env(calls)["ORS_MEM_LIMIT"] == "6144m"
+    )  # twice the heap, as in the measured settings
+    assert "ORS_MEM_LIMIT was raised to 6144m" in result.stdout
+
+
+def test_an_initial_heap_above_the_presets_maximum_is_refused_before_anything_starts(tmp_path):
+    result, calls, extract = run(tmp_path, "--memory=small", env={"ORS_XMS": "1g"})  # small: 512m
+    assert result.returncode == 2 and "ORS_XMS=1g is larger than ORS_XMX=512m" in result.stderr
+    assert not any(c.startswith("docker") for c in calls) and not extract.exists()
+
+
+def test_two_settings_of_the_persons_own_that_cannot_work_together_are_refused(tmp_path):
+    result, calls, _ = run(
+        tmp_path, "--memory=small", existing=True, env={"ORS_XMX": "3g", "ORS_MEM_LIMIT": "2g"}
+    )
+    assert result.returncode == 2 and "ORS_MEM_LIMIT=2g is not above ORS_XMX=3g" in result.stderr
+    assert not any(c.startswith("docker") for c in calls)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"ORS_XMX": "weird"}, {"ORS_XMS": "lots", "ORS_XMX": "1g"}, {"ORS_MEM_LIMIT": "1.5g"}],
+)
+def test_forms_the_check_does_not_understand_are_left_alone(tmp_path, env):
+    result, calls, _ = run(tmp_path, "--memory=medium", existing=True, env=env)
+    assert result.returncode == 0, result.stderr  # not guessed at: compose and the JVM decide
+
+
+def meminfo(tmp_path, gib):
+    path = tmp_path / "meminfo"
+    path.write_text(f"MemTotal:       {int(gib * 1024 * 1024)} kB\nMemFree:        1 kB\n")
+    return {"MEMINFO_FILE": str(path)}
+
+
+@pytest.mark.parametrize(
+    ("gib", "preset"),
+    [(2, "small"), (5.9, "small"), (6, "medium"), (15.9, "medium"), (16, "large"), (64, "large")],
+)
+def test_auto_picks_by_the_machines_memory(tmp_path, gib, preset):
+    result, calls, _ = run(tmp_path, "--memory", "auto", existing=True, env=meminfo(tmp_path, gib))
+    assert result.returncode == 0, result.stderr
+    assert f"chose '{preset}'" in result.stdout and f"Memory: {preset} ->" in result.stdout
+
+
+def test_auto_without_a_readable_memory_figure_asks_for_a_choice(tmp_path):
+    result, calls, _ = run(
+        tmp_path, "--memory", "auto", existing=True, env={"MEMINFO_FILE": str(tmp_path / "missing")}
+    )
+    assert result.returncode == 1 and "pick small, medium or large" in result.stderr
+    assert not any(c.startswith("docker") for c in calls)
+
+
+@pytest.mark.parametrize(
+    "args", [["--memory", "huge"], ["--memory"], ["--memory="], ["--memory", ""]]
+)
+def test_a_bad_memory_value_is_a_usage_error_before_anything_happens(tmp_path, args):
+    result, calls, _ = run(tmp_path, *args)
+    assert result.returncode == 2 and "--memory" in result.stderr
+    assert (
+        not any(c.startswith("docker") for c in calls)
+        and not (tmp_path / "data/region.osm.pbf").exists()
+    )
+
+
+def test_status_ignores_the_preset_and_does_not_apply_it(tmp_path):
+    result, calls, _ = run(tmp_path, "status", "--memory", "small", ready="1")
+    assert result.returncode == 0 and "Memory:" not in result.stdout
+
+
+def test_the_header_no_longer_points_at_the_destructive_reset():
+    text = SCRIPT.read_text()
+    assert "is NOT the way to reset one service" in text
+    assert "docker volume rm pybikerouter-overpass-data" in text

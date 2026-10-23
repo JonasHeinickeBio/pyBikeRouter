@@ -68,3 +68,11 @@ cannot carry production load), `OVERPASS_BASE_URL`, `OVERPASS_TIMEOUT_S`,
 `OVERPASS_MAX_RETRIES`, `OVERPASS_BUFFER_M` (default 25 m),
 `OVERPASS_CACHE_TTL_S`. Live tests: `tests/live/test_live_overpass.py`
 (`pytest -m live`).
+
+**What it costs.** The query asks for every way within `OVERPASS_BUFFER_M` of the whole route, so it
+grows with the route's length. Measured against a *local* Overpass holding Lower Saxony
+([self-hosted.md](self-hosted.md#self-hosted-overpass-the-sight-search)): short routes (1-14 km) answered in
+seconds, a 25-58 km route in a minute or two, and a 66-70 km route in **4-7 minutes** -- three of those
+timed out at the 400 s used for a calibration run. Keep `OVERPASS_TIMEOUT_S` generous (it is 20 s by
+default) and the enrichment off for interactive use on long routes; the scorer works without it
+(BRouter's own shares), as it did in the calibration runs that could not be enriched.
