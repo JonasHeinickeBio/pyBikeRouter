@@ -310,12 +310,51 @@ def test_a_preset_sets_the_containers_memory(tmp_path, preset, expected):
 
 def test_what_the_person_sets_wins_over_the_preset(tmp_path):
     result, calls, _ = run(
-        tmp_path, "--memory=small", existing=True, env={"ORS_XMX": "3g", "OVERPASS_MEM_LIMIT": "6g"}
+        tmp_path,
+        "--memory=small",
+        existing=True,
+        env={"ORS_XMX": "3g", "ORS_MEM_LIMIT": "7g", "OVERPASS_MEM_LIMIT": "6g"},
     )
+    assert result.returncode == 0, result.stderr
     got = memory_env(calls)
-    assert got["ORS_XMX"] == "3g" and got["OVERPASS_MEM_LIMIT"] == "6g"  # theirs
-    assert got["ORS_MEM_LIMIT"] == "1g" and got["NOMINATIM_MEM_LIMIT"] == "2g"  # the preset's
+    assert got["ORS_XMX"] == "3g" and got["ORS_MEM_LIMIT"] == "7g"  # theirs
+    assert (
+        got["OVERPASS_MEM_LIMIT"] == "6g" and got["NOMINATIM_MEM_LIMIT"] == "2g"
+    )  # theirs, preset
     assert "ORS_XMX=3g" in result.stdout  # and the line says what is really used
+
+
+def test_a_heap_above_the_presets_limit_raises_the_limit_the_preset_chose(tmp_path):
+    """Found in review: ORS_XMX=3g with small's 1g limit would be killed when the heap fills."""
+    result, calls, _ = run(tmp_path, "--memory=small", existing=True, env={"ORS_XMX": "3g"})
+    assert result.returncode == 0, result.stderr
+    assert (
+        memory_env(calls)["ORS_MEM_LIMIT"] == "6144m"
+    )  # twice the heap, as in the measured settings
+    assert "ORS_MEM_LIMIT was raised to 6144m" in result.stdout
+
+
+def test_an_initial_heap_above_the_presets_maximum_is_refused_before_anything_starts(tmp_path):
+    result, calls, extract = run(tmp_path, "--memory=small", env={"ORS_XMS": "1g"})  # small: 512m
+    assert result.returncode == 2 and "ORS_XMS=1g is larger than ORS_XMX=512m" in result.stderr
+    assert not any(c.startswith("docker") for c in calls) and not extract.exists()
+
+
+def test_two_settings_of_the_persons_own_that_cannot_work_together_are_refused(tmp_path):
+    result, calls, _ = run(
+        tmp_path, "--memory=small", existing=True, env={"ORS_XMX": "3g", "ORS_MEM_LIMIT": "2g"}
+    )
+    assert result.returncode == 2 and "ORS_MEM_LIMIT=2g is not above ORS_XMX=3g" in result.stderr
+    assert not any(c.startswith("docker") for c in calls)
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"ORS_XMX": "weird"}, {"ORS_XMS": "lots", "ORS_XMX": "1g"}, {"ORS_MEM_LIMIT": "1.5g"}],
+)
+def test_forms_the_check_does_not_understand_are_left_alone(tmp_path, env):
+    result, calls, _ = run(tmp_path, "--memory=medium", existing=True, env=env)
+    assert result.returncode == 0, result.stderr  # not guessed at: compose and the JVM decide
 
 
 def meminfo(tmp_path, gib):

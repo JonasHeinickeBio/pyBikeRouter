@@ -119,6 +119,9 @@ scripts/self-hosted-bootstrap.sh --memory auto      # by the machine's total RAM
 
 - **Anything you set yourself wins**: `ORS_XMX=3g scripts/self-hosted-bootstrap.sh --memory small` uses 3g
   for ORS and the preset for the rest. The script prints the values it ends up using.
+- **It checks that ORS can start** (`m`/`g` sizes only): an `ORS_XMS` above the maximum heap is refused
+  (the JVM would not start); a heap at or above the container limit is refused when both are yours, and
+  when the *preset* supplied the limit it is raised to twice your heap and the script says so.
 - **`auto`** picks `small` under 6 GiB of RAM, `medium` under 16 GiB and `large` from 16 GiB, reading
   `MemTotal` from `/proc/meminfo`. That cut-off is a heuristic, not a measurement; it says "pick one" and
   stops if the figure cannot be read (macOS has no `/proc/meminfo`).

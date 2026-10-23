@@ -119,14 +119,52 @@ auto_preset() {
   else echo large; fi
 }
 
+# "512m" / "2g" -> MiB (empty when it is not that simple form, which skips the checks below).
+to_mib() {
+  case "$1" in
+    *[!0-9mMgG]*|'') echo ""; return ;;
+  esac
+  local n="${1%[mMgG]}" unit="${1: -1}"
+  case "$n" in ''|*[!0-9]*) echo ""; return ;; esac
+  case "$unit" in
+    [gG]) echo $((n * 1024)) ;;
+    [mM]) echo "$n" ;;
+    *) echo "" ;;
+  esac
+}
+
+# A JVM refuses an initial heap above its maximum, and a container limit at or below the heap
+# kills it when the heap fills (docs/self-hosted.md, "Sizing knobs"). A preset next to a value the
+# person set can produce either: say so instead of starting something that cannot work.
+check_ors_memory() {  # <limit_came_from_the_preset: 0|1>
+  local xmx xms limit
+  xmx="$(to_mib "$ORS_XMX")"; xms="$(to_mib "${ORS_XMS:-}")"; limit="$(to_mib "$ORS_MEM_LIMIT")"
+  if [ -n "$xms" ] && [ -n "$xmx" ] && [ "$xms" -gt "$xmx" ]; then
+    echo "error: ORS_XMS=$ORS_XMS is larger than ORS_XMX=$ORS_XMX (the JVM refuses to start): lower ORS_XMS or raise ORS_XMX" >&2
+    exit 2
+  fi
+  if [ -n "$xmx" ] && [ -n "$limit" ] && [ "$limit" -le "$xmx" ]; then
+    if [ "$1" = 1 ]; then
+      ORS_MEM_LIMIT="$((xmx * 2))m"; export ORS_MEM_LIMIT
+      echo "Memory: ORS_XMX=$ORS_XMX is above the preset's container limit, so ORS_MEM_LIMIT was raised to $ORS_MEM_LIMIT (twice the heap, as in the measured settings)."
+    else
+      echo "error: ORS_MEM_LIMIT=$ORS_MEM_LIMIT is not above ORS_XMX=$ORS_XMX (the container would be killed when the heap fills): raise the limit or lower the heap" >&2
+      exit 2
+    fi
+  fi
+}
+
 # Set each variable to the preset's value unless the caller already set it (theirs wins).
 apply_memory_preset() {  # <ors_xmx> <ors_limit> <nominatim_threads> <nominatim_limit> <overpass_limit>
+  local limit_from_preset=1
+  [ -n "${ORS_MEM_LIMIT+x}" ] && limit_from_preset=0
   : "${ORS_XMX:=$1}"
   : "${ORS_MEM_LIMIT:=$2}"
   : "${NOMINATIM_THREADS:=$3}"
   : "${NOMINATIM_MEM_LIMIT:=$4}"
   : "${OVERPASS_MEM_LIMIT:=$5}"
   export ORS_XMX ORS_MEM_LIMIT NOMINATIM_THREADS NOMINATIM_MEM_LIMIT OVERPASS_MEM_LIMIT
+  check_ors_memory "$limit_from_preset"
 }
 
 if [ "$MEMORY_GIVEN" = 1 ] && [ -z "$MEMORY" ]; then
