@@ -156,5 +156,7 @@ def test_a_line_nested_deeper_than_python_parses_is_a_parse_error_not_the_end():
     out = io.StringIO()
     server.serve(io.StringIO(deep + "\n" + json.dumps(request("ping", id=9)) + "\n"), out)
     first, second = (json.loads(line) for line in out.getvalue().splitlines())
-    assert first["error"]["code"] == PARSE_ERROR
-    assert second["id"] == 9 and second["result"] == {}  # and the server is still serving
+    # Python up to 3.12 gives up on the nesting (a parse error); 3.14 parses it into a list, which
+    # is not a JSON-RPC object. Either way it is an error reply, and the server keeps serving.
+    assert first["error"]["code"] in (PARSE_ERROR, INVALID_REQUEST)
+    assert second["id"] == 9 and second["result"] == {}
