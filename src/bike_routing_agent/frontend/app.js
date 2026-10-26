@@ -752,7 +752,7 @@ function buildRequest() {
     request.routing_engines = state.engineOverride;
     state.engineOverride = null; // for this plan only
   }
-  return request;
+  return BikeOptimize.forLoop(request);
 }
 
 /* -------------------------------- requests ------------------------------- */
@@ -774,8 +774,8 @@ async function planRoute() {
     setStatus("error", "Please enter an origin.");
     return;
   }
-  if (typeof payload.destination !== "object" && payload.destination === "") {
-    setStatus("error", "Please enter a destination.");
+  if (!payload.constraints.return_to_origin && typeof payload.destination !== "object" && payload.destination === "") {
+    setStatus("error", "Please enter a destination (or tick \"Return to origin\" for a loop).");
     return;
   }
 

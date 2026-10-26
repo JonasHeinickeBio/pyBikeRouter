@@ -226,3 +226,22 @@ def test_the_reset_button_also_unticks_the_detours_box():
     body = source[source.index("function resetAll") :]
     body = body[: body.index("\n}\n")]
     assert "els.optimizeDetours.checked = false" in body
+
+
+@needs_node
+def test_a_loop_is_sent_without_a_destination_so_it_can_be_optimised():
+    loop = {"origin": "Braunschweig", "destination": "", "constraints": {"return_to_origin": True}}
+    assert "destination" not in call("forLoop", loop)  # "" would be refused by the server (422)
+    typed = {**loop, "destination": "Goslar"}
+    assert call("forLoop", typed)["destination"] == "Goslar"  # the server says a loop takes none
+    trip = {"origin": "A", "destination": "", "constraints": {"return_to_origin": False}}
+    assert call("forLoop", trip)["destination"] == ""  # a trip still needs one: the page asks
+
+
+def test_both_buttons_let_a_loop_through_without_a_destination():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    build = app.split("function buildRequest")[1].split("\n}\n")[0]
+    assert "BikeOptimize.forLoop(request)" in build
+    for entry in ("async function planRoute", "async function runOptimize"):
+        body = app.split(entry)[1].split("\n}\n")[0]
+        assert "!payload.constraints.return_to_origin" in body

@@ -231,9 +231,20 @@
     return parts.join("");
   }
 
+  /**
+   * A loop ("Return to origin") ends where it starts, so the server wants no destination at all:
+   * an empty one is dropped here, or the request is refused (HTTP 422). A destination that was
+   * typed is left alone, so the server says plainly that a loop does not take one.
+   */
+  function forLoop(request) {
+    const loop = request && request.constraints && request.constraints.return_to_origin;
+    if (loop && request.destination === "") delete request.destination;
+    return request;
+  }
+
   const api = {
     GOALS, LEVELS, PRESETS, MAX_GOALS, weightOf, buildSpec, waitText, goalPhrase, compact,
-    tableHtml, reportHtml, escapeHtml,
+    tableHtml, reportHtml, escapeHtml, forLoop,
   };
   root.BikeOptimize = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;

@@ -56,6 +56,10 @@ swaps the plan buttons for:
   compared** panel shows the summary, the places the winner passes, the trade-offs and a table of the
   routes (click a row to see that route on the map); the usual result panel below belongs to the
   selected route.
+- **A loop can be optimised too**: leave the destination empty, tick *Return to origin*, set the
+  length under *Target distance* and press **Optimize route**; the request carries no destination.
+  In the chat the same is "40 km loop from Goslar, optimised for less traffic". (Sights and detours
+  do not apply to a loop, see below.)
 - The tab is remembered in the browser; without BRouter the tab bar is not there at all.
 
 ## What is fetched
