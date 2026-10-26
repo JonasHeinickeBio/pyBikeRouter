@@ -1,9 +1,12 @@
 # syntax=docker/dockerfile:1
 
+# The Python minor version lives here once; the site-packages path below follows it.
+ARG PYTHON_VERSION=3.14
+
 ###############################################################################
 # Stage 1: build dependencies with Poetry into an isolated virtualenv
 ###############################################################################
-FROM python:3.12-slim AS builder
+FROM python:${PYTHON_VERSION}-slim AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
@@ -25,7 +28,8 @@ RUN poetry install --only main --extras "db s3 cache" --no-root --no-interaction
 ###############################################################################
 # Stage 2: minimal runtime image
 ###############################################################################
-FROM python:3.12-slim AS runtime
+FROM python:${PYTHON_VERSION}-slim AS runtime
+ARG PYTHON_VERSION
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -41,7 +45,7 @@ RUN apt-get update \
     && groupadd --system --gid 10001 appuser \
     && useradd --system --uid 10001 --gid appuser --no-create-home appuser
 
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/lib/python${PYTHON_VERSION}/site-packages /usr/local/lib/python${PYTHON_VERSION}/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
