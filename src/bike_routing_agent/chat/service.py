@@ -150,16 +150,18 @@ class ChatService:
                 self._keep_latest_only(sid)
                 self._save(sid)
                 self._updated[sid] = time.time()
-        self._record_miss(text, result)
+        await self._record_miss(text, result)
         return self._reply(sid, result)
 
-    def _record_miss(self, text: str, result: dict[str, Any]) -> None:
-        """Note a message the rules did not understand, when the miss log is on."""
+    async def _record_miss(self, text: str, result: dict[str, Any]) -> None:
+        """Note a message the rules did not understand, when the miss log is on. The write is a
+        file append under a lock: it runs in a thread so a slow disk never holds up other turns."""
         kind = result.get("miss")
         if self._miss_log is None or not kind:
             return
         plan = result.get("last_plan")
-        self._miss_log.record(
+        await asyncio.to_thread(
+            self._miss_log.record,
             text,
             str(kind),
             intent=result.get("intent"),

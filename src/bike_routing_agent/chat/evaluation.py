@@ -156,6 +156,11 @@ def load_benchmark(path: Path | str = DEFAULT_PATH) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if data.get("schema_version") != 1 or not data.get("cases"):
         raise ValueError(f"{path} is not a chat benchmark (schema_version 1 with cases)")
+    for case in data["cases"]:
+        if not isinstance(case, dict):
+            raise ValueError(f"{path} contains a case that is not an object")
+        if not isinstance(case.get("id"), str) or not isinstance(case.get("text"), str):
+            raise ValueError(f"{path}: every case needs a text and an id (both strings)")
     ids = [c["id"] for c in data["cases"]]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate case ids in the chat benchmark")

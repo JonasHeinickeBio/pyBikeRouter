@@ -113,3 +113,9 @@ def test_a_broken_benchmark_is_refused_with_the_reason(tmp_path):
         load_benchmark(write(tmp_path, [case("a", "x", "route", "dance")]))
     with pytest.raises(ValueError, match="unknown state"):
         build_state("nowhere")
+
+
+def test_a_case_that_is_not_an_object_or_lacks_its_text_is_refused_not_a_traceback(tmp_path):
+    for bad in (None, "text", 5, [], {"id": "a"}, {"text": "x"}, {"id": 1, "text": "x"}):
+        with pytest.raises(ValueError, match="not an object|text and an id"):
+            load_benchmark(write(tmp_path, [bad]))

@@ -177,3 +177,34 @@ async def test_a_log_that_fails_never_fails_the_turn(tmp_path):
     svc, _ = service(tmp_path)
     reply = await Talk(svc).say("show me something nice for the weekend")
     assert reply.failed is False and reply.reply
+
+
+def test_a_lone_surrogate_in_a_message_is_replaced_and_still_logged(tmp_path):
+    """A JSON client can send "\\ud800"; writing it as UTF-8 raises ValueError, which must not
+    escape into the turn."""
+    log = MissLog(tmp_path / "m.jsonl")
+    assert log.record("bad \ud800 text", "unread", intent=None, had_plan=False)
+    assert misslog.load(tmp_path / "m.jsonl")[0]["text"] == "bad ? text"
+
+
+async def test_a_message_with_a_lone_surrogate_does_not_fail_the_turn(tmp_path):
+    svc, _ = service(tmp_path)
+    reply = await Talk(svc).say("show me something \ud800 nice for the weekend")
+    assert reply.failed is False
+    assert len(logged(tmp_path)) == 1
+
+
+async def test_the_miss_is_written_off_the_event_loop(tmp_path, monkeypatch):
+    import threading
+
+    seen: list[str] = []
+    original = MissLog.record
+
+    def spy(self, *args, **kwargs):
+        seen.append(threading.current_thread().name)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(MissLog, "record", spy)
+    svc, _ = service(tmp_path)
+    await Talk(svc).say("show me something nice for the weekend")
+    assert seen and seen[0] != threading.main_thread().name

@@ -33,6 +33,12 @@ MAX_TEXT_CHARS = 500
 DEFAULT_MAX_BYTES = 2_000_000
 
 
+def _writable(text: str) -> str:
+    """The text as UTF-8 can hold it: a lone surrogate (a JSON client can send ``"\\ud800"``) cannot
+    be written to a file and is replaced."""
+    return text.encode("utf-8", "replace").decode("utf-8")
+
+
 class MissLog:
     def __init__(self, path: Path | str, *, max_bytes: int = DEFAULT_MAX_BYTES) -> None:
         self.path = Path(path)
@@ -51,7 +57,7 @@ class MissLog:
                 "kind": kind,
                 "intent": intent,
                 "had_plan": bool(had_plan),
-                "text": text.strip()[:MAX_TEXT_CHARS],
+                "text": _writable(text.strip()[:MAX_TEXT_CHARS]),
             },
             ensure_ascii=False,
         )
@@ -63,7 +69,7 @@ class MissLog:
                 with self.path.open("a", encoding="utf-8") as handle:
                     handle.write(line + "\n")
                 return True
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 if not self._warned:
                     logger.warning("chat miss log %s cannot be written: %s", self.path, exc)
                     self._warned = True
