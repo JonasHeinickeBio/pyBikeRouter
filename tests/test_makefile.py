@@ -38,10 +38,10 @@ def test_every_command_the_makefile_runs_is_a_real_bike_router_command():
 
 def test_ci_runs_what_the_workflow_runs():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-    for command in ("ruff check .", "mypy src", "pytest --maxfail=1"):
+    for command in ("ruff check .", "mypy src", "pytest --maxfail=1 --cov-report=xml"):
         assert command in workflow
     ci = re.search(r"^ci:.*\n((?:\t.*\n)+)", MAKEFILE, flags=re.MULTILINE)
-    assert ci is not None and "pytest --maxfail=1" in ci.group(1)
+    assert ci is not None and "pytest --maxfail=1 --cov-report=xml" in ci.group(1)
     assert re.search(r"^ci: lint typecheck", MAKEFILE, flags=re.MULTILINE)
 
 

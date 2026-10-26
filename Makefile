@@ -2,7 +2,7 @@
 #
 # Tools come from the project's own environment (.venv, made by `make install`); inside an
 # activated environment or `poetry shell` they are found on the PATH instead. Override anything on
-# the command line, e.g. `make test ARGS="tests/nodes -k geocode"` or `make run PORT=8765`.
+# the command line, e.g. `make test-fast ARGS="tests/nodes -k geocode"` or `make run PORT=8765`.
 
 BIN  := $(if $(wildcard .venv/bin/python),.venv/bin/,)
 HOST ?= 127.0.0.1
@@ -43,10 +43,10 @@ format-check: ## ruff format, only checking (CI does not run it: a few old files
 typecheck: ## mypy on src
 	$(BIN)mypy src
 
-test: ## the whole suite, with coverage (ARGS="tests/nodes -k geocode" for a part)
+test: ## the whole suite, with coverage and its 80 % floor (for a part use test-fast ARGS=...)
 	$(BIN)pytest $(ARGS)
 
-test-fast: ## the whole suite without coverage, stops at the first failure
+test-fast: ## no coverage, stops at the first failure; ARGS="tests/nodes -k geocode" runs a part
 	$(BIN)pytest -q --no-cov -x -p no:cacheprovider $(ARGS)
 
 test-cov: ## the suite with a coverage report of the lines not covered
@@ -61,7 +61,7 @@ frontend-check: ## the web page's script tests (they run under node)
 check: lint typecheck test-fast ## quick gate before a push: lint, types, tests without coverage
 
 ci: lint typecheck ## what CI runs: lint, types, and the suite with coverage and its 80 % floor
-	$(BIN)pytest --maxfail=1 $(ARGS)
+	$(BIN)pytest --maxfail=1 --cov-report=xml $(ARGS)
 
 precommit: ## run every pre-commit hook on all files (commit and push stages)
 	$(BIN)pre-commit run --all-files
@@ -72,7 +72,7 @@ precommit: ## run every pre-commit hook on all files (commit and push stages)
 completion: ## print how to switch on tab completion for bike-router
 	@echo "bash:  echo 'source <(bike-router completion bash)' >> ~/.bashrc"
 	@echo "zsh:   echo 'source <(bike-router completion zsh)' >> ~/.zshrc"
-	@echo "fish:  bike-router completion fish > ~/.config/fish/completions/bike-router.fish"
+	@echo "fish:  mkdir -p ~/.config/fish/completions && bike-router completion fish > ~/.config/fish/completions/bike-router.fish"
 	@echo "(docs/cli.md#tab-completion)"
 
 # ---------------------------------------------------------------------------------- deploy

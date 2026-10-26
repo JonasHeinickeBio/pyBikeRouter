@@ -25,7 +25,7 @@ Exit codes: `0` success, `1` the command ran but failed (no route, a service is 
 ```bash
 echo 'source <(bike-router completion bash)' >> ~/.bashrc                    # bash
 echo 'source <(bike-router completion zsh)' >> ~/.zshrc                      # zsh
-bike-router completion fish > ~/.config/fish/completions/bike-router.fish    # fish
+mkdir -p ~/.config/fish/completions && bike-router completion fish > ~/.config/fish/completions/bike-router.fish   # fish
 ```
 
 The scripts are generated from the command line parser itself, so they always know today's groups,

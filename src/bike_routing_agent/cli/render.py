@@ -7,7 +7,7 @@ shown again later (``route show``) exactly as it was printed.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, TypeGuard
 
 from bike_routing_agent.route_facts import facts_line, facts_short
 
@@ -28,9 +28,9 @@ def metres(value: float | None) -> str:
     return "-" if value is None else f"{round(value)} m"
 
 
-def format_ms(ms: float | None) -> str:
+def format_ms(ms: Any) -> str:
     """A time for a person: ``820 ms``, ``4.2 s``, ``2 min 5 s``."""
-    if ms is None or ms < 0:
+    if not _is_number(ms) or ms < 0:
         return "-"
     if ms < 1000:
         return f"{round(ms)} ms"
@@ -40,14 +40,23 @@ def format_ms(ms: float | None) -> str:
     return f"{minutes_} min {rest} s"
 
 
+def _is_number(value: Any) -> TypeGuard[float]:
+    return isinstance(value, int | float) and not isinstance(value, bool) and value == value
+
+
 def trace_lines(trace: Sequence[dict[str, Any]]) -> list[str]:
     """``Where the time went``: every step with its time, the slowest marked."""
     from bike_routing_agent.tracing import STEP_LABELS, total_ms
 
-    steps = [s for s in trace if isinstance(s, dict) and s.get("node")]
+    # A saved plan is text from outside: a duration that is not a number counts as no time.
+    steps = [
+        {**s, "ms": s["ms"] if _is_number(s.get("ms")) else 0.0}
+        for s in trace
+        if isinstance(s, dict) and s.get("node")
+    ]
     if not steps:
         return []
-    slowest = max(steps, key=lambda s: float(s.get("ms") or 0.0))
+    slowest = max(steps, key=lambda s: s["ms"])
     width = max(len(STEP_LABELS.get(str(s["node"]), str(s["node"]))) for s in steps)
     lines = ["Where the time went:"]
     for s in steps:

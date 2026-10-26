@@ -143,3 +143,18 @@ def test_the_flags_are_in_the_help(flag, capsys):
     with pytest.raises(SystemExit):
         build_parser().parse_args(["route", "plan", "--help"])
     assert flag in capsys.readouterr().out
+
+
+def test_a_saved_trace_with_a_bad_duration_does_not_break_route_show():
+    bad = [
+        {"node": "parse_request", "ms": "unknown"},
+        {"node": "route_with_provider", "ms": 2500.0},
+        {"node": "explain_and_export", "ms": None},
+        {"node": "x", "ms": True},
+        {"node": "y", "ms": float("nan")},
+    ]
+    lines = trace_lines(bad)
+    assert any("Routing" in line and "2.5 s" in line and "<- slowest" in line for line in lines)
+    assert lines[-1].strip().startswith("Total") and "2.5 s" in lines[-1]
+    assert format_ms("slow") == "-" and format_ms(True) == "-" and format_ms(float("nan")) == "-"
+    assert "Where the time went" in plan_text({"status": "ready", "route": {}, "trace": bad})
