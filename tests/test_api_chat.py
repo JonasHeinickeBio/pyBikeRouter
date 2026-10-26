@@ -399,3 +399,58 @@ async def test_summaries_and_delete_are_503_when_the_chat_is_switched_off(client
         await client.post("/v1/chat/summaries", json={"session_ids": ["a" * 32]})
     ).status_code == 503
     assert (await client.delete(f"/v1/chat/{'a' * 32}")).status_code == 503
+
+
+# ------------------------------------------------------------------------------ the web form
+
+
+def _ready_plan_json(planned: Planned) -> dict[str, Any]:
+    return planned.response.model_dump(mode="json")
+
+
+def test_the_form_context_keeps_what_is_usable_and_drops_the_rest(planned):
+    plan = _ready_plan_json(planned)
+    got = api_module._form_context(
+        {
+            "request": {"origin": "Goslar", "destination": "Celle"},
+            "plan": {**plan, "trace": [{"node": "x", "ms": 1}]},
+        }
+    )
+    assert got is not None
+    assert got["request"]["origin"] == "Goslar" and "departure_time" not in got["request"]
+    assert got["plan"]["status"] == "ready" and got["plan"]["trace"] is None
+    assert api_module._form_context({"request": {"origin": ""}}) is None  # a blank form
+    assert api_module._form_context({"request": {"origin": "A"}}) is None  # no destination
+    assert api_module._form_context({"plan": {**plan, "status": "no_route"}}) is None
+    assert api_module._form_context({"plan": {"status": "ready", "route": 5}}) is None
+    for nothing in (None, {}, "x", 5, ["request"], {"unknown": 1}):
+        assert api_module._form_context(nothing) is None  # type: ignore[arg-type]
+    only_request = api_module._form_context(
+        {"request": {"origin": "A", "destination": "B"}, "plan": "junk"}
+    )
+    assert only_request is not None and set(only_request) == {"request"}
+
+
+async def test_the_form_request_in_the_body_reaches_the_chat(client, planned):
+    body = {
+        "message": "make it shorter",
+        "context": {
+            "request": {
+                "origin": "Goslar",
+                "constraints": {"target_distance_km": 40, "return_to_origin": True},
+            },
+            "plan": _ready_plan_json(planned),
+        },
+    }
+    response = await client.post("/v1/chat", json=body)
+    assert response.status_code == 200
+    assert planned.requests[0].origin == "Goslar"
+    assert planned.requests[0].constraints.target_distance_km == 30.0
+
+
+async def test_a_useless_context_never_stops_the_message(client, planned):
+    for context in ({"request": {"origin": ""}}, {"plan": 5}, {}, {"x": [1]}):
+        response = await client.post(
+            "/v1/chat", json={"message": "from Braunschweig to Goslar", "context": context}
+        )
+        assert response.status_code == 200 and response.json()["plan"] is not None

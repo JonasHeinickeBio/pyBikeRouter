@@ -88,7 +88,12 @@ class ChatService:
         return len(self._sessions)
 
     async def send(
-        self, message: str, *, session_id: str | None = None, timezone: str | None = None
+        self,
+        message: str,
+        *,
+        session_id: str | None = None,
+        timezone: str | None = None,
+        form_context: dict[str, Any] | None = None,
     ) -> ChatReply:
         """One turn. A message that arrives while the conversation's previous turn is still
         running *replaces* it: the old turn is cancelled (its planning stops, its routing requests
@@ -102,7 +107,7 @@ class ChatService:
             previous.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await previous  # its lock is free once it has unwound
-        task = asyncio.ensure_future(self._turn(sid, text, timezone))
+        task = asyncio.ensure_future(self._turn(sid, text, timezone, form_context))
         self._running[sid] = task
         try:
             return await task
@@ -116,7 +121,9 @@ class ChatService:
             if self._running.get(sid) is task:
                 del self._running[sid]
 
-    async def _turn(self, sid: str, text: str, timezone: str | None) -> ChatReply:
+    async def _turn(
+        self, sid: str, text: str, timezone: str | None, form_context: dict[str, Any] | None
+    ) -> ChatReply:
         lock = self._touch(sid)
         config = {"configurable": {"thread_id": sid}}
         async with lock:
@@ -128,7 +135,8 @@ class ChatService:
                     result = await self._graph.ainvoke(Command(resume=text), config)
                 else:
                     result = await self._graph.ainvoke(
-                        {"user_text": text, "timezone": timezone}, config
+                        {"user_text": text, "timezone": timezone, "form_context": form_context},
+                        config,
                     )
             except Exception:  # a turn must never crash the conversation
                 logger.exception("chat turn failed")

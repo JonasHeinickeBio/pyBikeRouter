@@ -57,6 +57,8 @@ class ChatState(TypedDict, total=False):
     failed_request: dict[str, Any] | None
     failed: bool  # this turn could not produce the route that was asked for
     awaiting_request: dict[str, Any] | None  # waits for a place choice; not tied to last_plan
+    # What the web form held when this message was sent (validated by the API), or None.
+    form_context: dict[str, Any] | None
     # A request waiting to be planned, and a short note on what changed to get there.
     pending_request: dict[str, Any] | None
     change_note: str
@@ -125,6 +127,10 @@ class ChatRequest(BaseModel):
     session_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
     # The user's IANA time zone, for "tomorrow at 8" in free text.
     timezone: str | None = Field(default=None, max_length=64)
+    # What the person has in the web form: ``{"request": <the form as a plan request>,
+    # "plan": <the route on screen, when the form made it>}``. It is a courtesy, never a reason to
+    # refuse the message: whatever in it is not a usable request or plan is dropped.
+    context: dict[str, Any] | None = None
 
     @field_validator("message")
     @classmethod

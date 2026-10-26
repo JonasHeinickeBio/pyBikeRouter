@@ -308,3 +308,62 @@ def test_the_panel_has_new_chat_and_an_earlier_conversations_list_wired_up():
     load = app[app.index("async function loadChat") :]
     load = load[: load.index("\n}\n")]
     assert "forgetKnown(" in load and "rememberSession(window.localStorage, null)" in load
+
+
+# ------------------------------------------------------------------------------ the form's context
+
+REQUEST = {"origin": "Goslar", "destination": "Celle", "constraints": {}}
+PLAN = {
+    "status": "ready",
+    "route": {"rank": 1},
+    "candidates": [],
+    "trace": [{"node": "x", "ms": 1}],
+}
+
+
+def context(**given):
+    return call(
+        "formContext",
+        {"request": REQUEST, "plan": PLAN, "routeUnsent": False, "dirty": False, **given},
+    )
+
+
+def test_nothing_is_sent_when_the_chat_already_knows_what_is_on_screen():
+    assert context() is None
+
+
+def test_a_route_the_form_made_is_sent_with_its_request_and_without_its_trace():
+    got = context(routeUnsent=True)
+    assert got["request"] == REQUEST
+    assert got["plan"]["status"] == "ready" and "trace" not in got["plan"]
+    assert got["plan"]["route"] == {"rank": 1}
+
+
+def test_an_edited_form_sends_its_request_only():
+    got = context(dirty=True)
+    assert got == {"request": REQUEST}
+
+
+def test_a_route_that_is_not_ready_is_not_a_route_on_screen():
+    got = context(routeUnsent=True, plan={"status": "no_route"})
+    assert got == {"request": REQUEST}
+    assert context(dirty=True, request=None) is None  # nothing usable: nothing sent
+    assert context(routeUnsent=True, request="text", plan=None) is None
+
+
+def test_the_page_sends_the_context_and_keeps_track_of_what_the_chat_was_told():
+    app = (FRONTEND / "app.js").read_text(encoding="utf-8")
+    assert "context: context || undefined," in app
+    assert "routeUnsent: state.formRouteUnsent," in app and "dirty: state.formDirty," in app
+    # every route rendered from the form is unsent; the chat's own is not
+    assert "state.formRouteUnsent = true;" in app[app.index("function renderResponse") :]
+    draw = app[app.index("function drawChatPlan") : app.index("const CHAT_GREETING")]
+    assert draw.index("renderResponse(plan, secs);") < draw.index("state.formRouteUnsent = false;")
+    # told once: cleared only when the reply came, not when the request was merely sent
+    sent = app[app.index("async function sendChat") : app.index("function drawChatPlan")]
+    assert sent.index("await resp.json()") < sent.index("state.formRouteUnsent = false;")
+    # editing any input panel marks the form as changed
+    edits = app[app.index("function trackFormEdits") : app.index("function initMemory")]
+    for panel in ("places-panel", "when-panel", "constraints-panel", "poi-panel", "optimize-panel"):
+        assert panel in edits
+    assert "  trackFormEdits();" in app

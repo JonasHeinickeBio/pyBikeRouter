@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage
@@ -165,11 +165,31 @@ def build_chat_graph(
 
     # ------------------------------------------------------------------ entry and routing
 
+    def adopt_form(state: ChatState) -> dict[str, Any]:
+        """What the person has in the web form is what "make it shorter" refers to.
+
+        The form's request replaces the one the conversation remembers (they edited the form after
+        the last route, or made the route there and never told the chat); the route the form made,
+        if it sent one, becomes the route on screen. A failed request no longer applies.
+        """
+        context = state.get("form_context") or {}
+        adopted: dict[str, Any] = {}
+        if context.get("request"):
+            adopted.update(last_request=context["request"], failed_request=None)
+        if context.get("plan"):
+            adopted["last_plan"] = context["plan"]
+        return adopted
+
     async def ingest(state: ChatState) -> dict[str, Any]:
         text = (state.get("user_text") or "").strip()
-        intent = decide_intent(text, state, text_enabled=text_enabled)
+        adopted = adopt_form(state)
+        intent = decide_intent(
+            text, cast(ChatState, {**state, **adopted}), text_enabled=text_enabled
+        )
         left_dialogue: dict[str, Any] = {"asking": None, "draft": {}} if intent != "guided" else {}
         return {
+            **adopted,
+            "form_context": None,  # taken over: it is not kept a second time in the checkpoint
             **left_dialogue,
             "messages": [HumanMessage(content=text)],
             "intent": intent,

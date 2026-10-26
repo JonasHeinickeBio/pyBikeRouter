@@ -83,6 +83,25 @@ loop more than 20 % off its length likewise). When a service did not answer in t
 Candidates of an ambiguous place that are the same town (within 5 km, or a county named after it) are
 not asked about; "Springfield" in two states still is.
 
+## The form and the chat
+
+The web page sends the chat what the form holds, so "make it shorter" changes *that* trip:
+
+- a route you planned **in the form** (it is on screen, the chat did not draw it): the form's request
+  and the route are sent with your next message, once. "Make it shorter", "alternatives", "the mtb
+  version", "send me the GPX" and "what sights are along the way?" then work on it, in a new
+  conversation as well;
+- the form **edited** after a route (a new start, another bike type): the form's request is sent
+  and replaces the one the conversation remembers (a request that had failed no longer applies),
+  while the route on screen stays the one the chat drew until the new one is planned;
+- nothing otherwise: when the chat drew the route and the form was not touched, the chat already
+  knows it.
+
+The server holds the form's request to the plan request's rules and its route to the plan response's,
+and drops what does not pass (a half-filled form, a route that is not `ready`): a message is never
+refused because of its context. The form is read at the moment of sending; a place picked on the map
+without typing is only noticed once a plan is made. See `context` in [api.md](api.md#post-v1chat).
+
 ## Optimising
 
 `Braunschweig to Wernigerode with less traffic but as much asphalt as possible` -- or, on the route on
@@ -189,5 +208,5 @@ Not verified / not covered:
   handle.
 - The web chat draws the route on the map and fills the Plan form on the left with the request it
   was planned from (places, bike type, distance, preferences, loop), so you can adjust it there and
-  plan again. It does not read the form back: what you type in the form is not known to the chat.
+  plan again. It also tells the chat what the form holds (see below), so the two stay one workspace.
 - English only.

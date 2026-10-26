@@ -161,8 +161,26 @@
       .map((m) => ({ role: m.role, text: m.text }));
   }
 
+  /**
+   * What to tell the chat about the form with a message: the route the form made, with the request
+   * behind it, when that route is on screen and the chat has not been told yet; the request alone
+   * when the form was edited since; nothing otherwise (the chat already knows what it drew). The
+   * server takes whatever is usable and ignores the rest, so a half-filled form never blocks a
+   * message.
+   */
+  function formContext({ request, plan, routeUnsent, dirty }) {
+    const context = {};
+    if (request && typeof request === "object" && (dirty || routeUnsent)) context.request = request;
+    if (routeUnsent && plan && plan.status === "ready") {
+      const { trace, ...shown } = plan; // where the time went is not part of the route
+      context.plan = shown;
+    }
+    return Object.keys(context).length ? context : null;
+  }
+
   const api = {
     MAX_MESSAGE,
+    formContext,
     escapeHtml,
     textHtml,
     bubbleHtml,
