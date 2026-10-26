@@ -18,6 +18,7 @@ Exit codes: `0` success, `1` the command ran but failed (no route, a service is 
 | `status` | readiness of every component and the active features |
 | `deploy` | build the image, (re)create the container, check it, roll back, publish to the tailnet |
 | `completion` | tab completion for bash, zsh and fish ([below](#tab-completion)) |
+| `mcp` | an MCP server so another agent can plan routes with this service ([mcp.md](mcp.md)) |
 | `serve`, `docker`, `config`, `providers`, `retention`, `db` | run and operate the stack (`docker` is the compose wrapper) |
 
 ## Tab completion
