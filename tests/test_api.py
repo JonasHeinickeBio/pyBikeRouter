@@ -53,6 +53,7 @@ async def test_frontend_static_assets_are_served(client):
         ("/weather.js", "BikeWeather"),
         ("/text-planning.js", "BikeText"),
         ("/alternatives.js", "BikeAlternatives"),
+        ("/picks.js", "BikePicks"),
         ("/export.js", "BikeExport"),
         ("/pois.js", "BikePois"),
         ("/hours.js", "BikeHours"),
@@ -1206,6 +1207,7 @@ async def test_capabilities_report_what_this_instance_can_do(client, monkeypatch
         "pois",
         "segment_downloads",
         "chat",
+        "pick_log",
         "optimizer",
         "engines",
     }

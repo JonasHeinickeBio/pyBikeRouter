@@ -67,6 +67,29 @@ def trace_lines(trace: Sequence[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def pick_lines(summary: dict[str, Any]) -> list[str]:
+    """``Which route people take``: how often the recommendation was kept, and the lean when not."""
+    total = summary["total"]
+    took = summary["took_another"]
+    kept = summary["kept_recommendation"]
+    lines = [
+        f"{total} route(s) taken from a comparison: the recommended one {kept}x, another {took}x."
+    ]
+    if not summary["enough"]:
+        lines.append(
+            f"Too few to read a lean from (needs {summary['min_picks']} picks, a quarter of them "
+            "another route); nothing below is a finding yet."
+        )
+    if took:
+        lines += ["", "Where the route taken beat the recommended one (mean, 0..1 scale):"]
+        width = max(len(row["label"]) for row in summary["lean"])
+        lines += [
+            f"  {row['label']:<{width}}  {row['mean_gain']:+.3f}  ({row['picks']} pick(s))"
+            for row in summary["lean"]
+        ]
+    return lines
+
+
 def megabytes(size: int | None) -> str:
     return "size unknown" if not size else f"{size / 1e6:.0f} MB"
 

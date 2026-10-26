@@ -159,6 +159,12 @@ class Settings(BaseSettings):
     # not read, to grow the chat benchmark from real phrasings. Unset = nothing is recorded.
     chat_miss_log_path: Path | None = None
 
+    # Opt-in: a file (on this machine only) that gets one line of numbers per route a person
+    # downloads from the web page when several were compared -- which one was recommended, which
+    # one was taken -- to see whether the optimiser's choice is the one people take
+    # (docs/optimizer.md#what-people-pick). No places, coordinates or text. Unset = nothing kept.
+    pick_log_path: Path | None = None
+
     # Points of interest (issue #55): found with Overpass, ranked and described with
     # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).
     # Searched areas and route shapes are sent to those services; false switches it off.

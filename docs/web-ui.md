@@ -123,6 +123,13 @@ departure time.
 - This is a browser memory, not an account: another browser or device starts empty, and clearing the
   site's data clears it.
 
+## Which route you download (the server owner's opt-in)
+
+If whoever runs the server set `PICK_LOG_PATH`, downloading one of the compared routes also tells the server
+which one -- numbers only (the routes' distance, surface shares, traffic, climbing, the recommended one's
+position and the goals), no place, route shape or text -- and it is kept in a file on that machine
+([optimizer.md](optimizer.md#what-people-pick)). Without the setting the page sends nothing.
+
 ## Share a trip with a link
 
 **Copy link** (next to *Reset*) copies a link that opens the planner with this form's trip in it:

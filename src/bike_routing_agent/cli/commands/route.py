@@ -13,7 +13,7 @@ from typing import IO, Any
 
 from pydantic import ValidationError
 
-from bike_routing_agent.cli.render import format_ms, plan_text
+from bike_routing_agent.cli.render import format_ms, pick_lines, plan_text
 from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate, RoutePlanAPIRequest
 from bike_routing_agent.storage.history import record_from_state
 
@@ -226,7 +226,44 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     export.add_argument("--candidate", type=int, default=None, metavar="RANK")
     export.add_argument("--gpx", type=Path, default=None)
     export.add_argument("--geojson", type=Path, default=None)
+
+    picks = route_sub.add_parser(
+        "picks",
+        help="which compared route people take (the opt-in log, PICK_LOG_PATH)",
+        description="Summarise the pick log: how often the recommended route was the one taken "
+        "and which way people lean when it was not. Numbers only; nothing is changed by it.",
+    )
+    picks.add_argument(
+        "--path", type=Path, default=None, metavar="FILE", help="default: PICK_LOG_PATH"
+    )
+    picks.add_argument("--clear", action="store_true", help="delete the log")
+    picks.add_argument("--format", choices=("text", "json"), default="text")
     return route
+
+
+def _picks(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
+    from bike_routing_agent.config import settings
+    from bike_routing_agent.optimizer import picklog
+
+    path = args.path or settings.pick_log_path
+    if path is None:
+        print(
+            "error: no pick log: set PICK_LOG_PATH (it is off by default) or give --path",
+            file=stderr,
+        )
+        return 2
+    if args.clear:
+        removed = picklog.PickLog(path).clear()
+        print(f"removed {removed} file(s) of the pick log {path}", file=stdout)
+        return EXIT_OK
+    summary = picklog.summarise(picklog.load(path))
+    if args.format == "json":
+        print(json.dumps(summary, indent=2, ensure_ascii=False), file=stdout)
+    elif not summary["total"]:
+        print(f"No picks recorded in {path}.", file=stdout)
+    else:
+        print("\n".join(pick_lines(summary)), file=stdout)
+    return EXIT_OK
 
 
 def _place(text: str) -> Any:
@@ -401,6 +438,8 @@ def run(
         return _show(args, stdout, stderr)
     if args.command == "export":
         return _export_saved(args, stderr)
+    if args.command == "picks":
+        return _picks(args, stdout, stderr)
     if args.command != "plan":
         print("unknown route command", file=stderr)
         return 2

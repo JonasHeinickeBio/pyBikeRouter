@@ -297,6 +297,16 @@ Notes:
   delay everyone behind it; one that BRouter has already started it finishes on its own). The server logs
   `client went away` and the request ends with `499`.
 
+### POST /v1/route/pick
+
+Opt-in (`PICK_LOG_PATH`, [optimizer.md](optimizer.md#what-people-pick)): the web page reports which of the
+compared routes a rider downloaded. Body: `{"candidates": [{"metrics": {...}}, ...], "picked": 1,
+"selected": 0, "bike_type": "gravel", "goals": [{"metric": "traffic", "weight": 1.0}]}` -- the
+`RouteMetrics` of 2-16 distinct routes (anything else in a candidate, like its geometry, is ignored and
+never stored), the positions of the route taken and of the recommended one, and the plan's goals.
+`204` once it is kept (also when the file cannot be written: the log never fails a download), `404` while
+the log is off (`/v1/capabilities` has `"pick_log": bool`), `422` for a body that does not fit.
+
 ### POST /v1/route/plan/stream
 
 The same plan, told as it happens (server-sent events, `text/event-stream`), for a page that wants to show
@@ -402,7 +412,7 @@ and a `llm_parser_*` error code.
 ## GET /v1/capabilities
 
 `{"text_planning": bool, "weather": bool, "history": bool, "pois": bool, "segment_downloads":
-bool, "chat": bool, "optimizer": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
+bool, "chat": bool, "pick_log": bool, "optimizer": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
 web form to show or hide controls; `engines` are the names a plan request may give in
 `routing_engines` (the configured engines plus optional ones the server can use).
 
