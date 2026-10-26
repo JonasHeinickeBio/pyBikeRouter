@@ -242,6 +242,20 @@ profiles, so e.g. `ebike` uses `cycling-electric` while `commuter` rides on
 their own profile, while `road` and `ebike` share `fastbike` (BRouter has no
 e-assist cost model) (see [docs/configuration.md](docs/configuration.md)).
 
+## Make targets
+
+`make` lists the everyday commands; they use the project's `.venv` (or the active environment):
+
+```bash
+make install       # poetry install
+make hooks         # the git hooks (commit: lint + types; push: the whole suite)
+make run           # the API with auto-reload (HOST=127.0.0.1 PORT=8000)
+make check         # lint + types + tests without coverage, stops at the first failure
+make ci            # what CI runs: lint, types, tests with the 80 % coverage floor
+make test ARGS="tests/nodes -k geocode"     # a part of the suite
+make deploy        # build and restart the local container (bike-router deploy up)
+```
+
 ## Linting and type checking
 
 ```bash
