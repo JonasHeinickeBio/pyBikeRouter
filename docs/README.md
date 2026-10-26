@@ -10,6 +10,7 @@ Documentation for the bike-routing-agent service.
 | [web-ui.md](web-ui.md) | The web planner: putting places into the trip, clicking a point on the map and choosing where in the route it goes |
 | [chat.md](chat.md) | A conversation that plans, changes and explains routes: one line, free text, step by step; alternatives, sights, files; a LangGraph with pause/resume |
 | [cli.md](cli.md) | The `bike-router` command: plan (alternatives, sight stops, GPX/GeoJSON), points of interest, BRouter tiles, history, status |
+| [mcp.md](mcp.md) | An MCP server: another agent plans routes, explains them, reads the forecast and finds sights through four facts-only tools |
 | [api.md](api.md) | HTTP endpoints, request/response schemas, status semantics, artifact downloads |
 | [configuration.md](configuration.md) | Environment variables, `.env`, provider profile mapping, startup validation, Docker/compose |
 | [providers.md](providers.md) | Provider protocols, the full openrouteservice client, ORS routing adapter, geocoders, BRouter/Valhalla adapters |
