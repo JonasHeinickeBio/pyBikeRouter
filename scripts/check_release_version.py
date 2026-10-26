@@ -5,8 +5,10 @@
 
 The version is written in four places: ``pyproject.toml`` (what PyPI shows), ``__version__`` (what
 ``bike-router --version`` prints) and ``server.json`` twice (the server's, and its PyPI package's:
-the MCP Registry installs exactly that version). A release whose files disagree would publish a
-package the registry entry cannot find, so the release workflow runs this first.
+the MCP Registry installs exactly that version). The package's name is written twice, in
+``pyproject.toml`` and as the PyPI package's ``identifier`` in ``server.json``. A release whose
+files disagree would publish a package the registry entry cannot find, so the release workflow
+runs this first.
 """
 
 from __future__ import annotations
@@ -37,9 +39,26 @@ def versions(root: Path = ROOT) -> dict[str, str]:
     return found
 
 
+def package_names(root: Path = ROOT) -> dict[str, str]:
+    """The name the package is built under and the one the registry entry installs."""
+    project = tomllib.loads((root / "pyproject.toml").read_text("utf-8"))["project"]["name"]
+    server = json.loads((root / "server.json").read_text("utf-8"))
+    pypi = [p for p in server.get("packages", []) if p.get("registryType") == "pypi"]
+    return {
+        "pyproject.toml name": project,
+        "server.json pypi identifier": pypi[0].get("identifier", "(missing)") if pypi else "(none)",
+    }
+
+
 def problems(tag: str | None, root: Path = ROOT) -> list[str]:
     found = versions(root)
     out: list[str] = []
+    names = package_names(root)
+    if len(set(names.values())) != 1:
+        out.append(
+            "the registry entry would not find the package: "
+            + ", ".join(f"{k} = {v}" for k, v in names.items())
+        )
     if len(set(found.values())) != 1:
         out.append("the versions disagree: " + ", ".join(f"{k} = {v}" for k, v in found.items()))
     if tag is not None:

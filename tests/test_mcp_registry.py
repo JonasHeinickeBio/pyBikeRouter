@@ -99,13 +99,35 @@ def test_the_guard_notices_files_that_disagree(tmp_path):
     (tmp_path / "src" / "bike_routing_agent").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "1.0.0"\n')
     (tmp_path / "src" / "bike_routing_agent" / "__init__.py").write_text('__version__ = "1.0.1"\n')
-    server = {"version": "1.0.0", "packages": [{"registryType": "pypi", "version": "1.0.2"}]}
+    pypi = {"registryType": "pypi", "identifier": "x", "version": "1.0.2"}
+    server = {"version": "1.0.0", "packages": [pypi]}
     (tmp_path / "server.json").write_text(json.dumps(server))
     found = guard.problems("v1.0.0", tmp_path)
     assert len(found) == 2 and "disagree" in found[0] and "the tag is v1.0.0" in found[1]
     assert "__init__.__version__ = 1.0.1" in found[0] and "pypi package = 1.0.2" in found[0]
     (tmp_path / "server.json").write_text(json.dumps({"version": "1.0.0", "packages": []}))
-    assert "(none)" in guard.problems(None, tmp_path)[0]
+    assert any("(none)" in problem for problem in guard.problems(None, tmp_path))
+
+
+def test_the_guard_notices_a_package_that_the_registry_entry_would_not_find(tmp_path):
+    """The rename case: pyproject says one name, server.json still installs another."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import check_release_version as guard
+    finally:
+        sys.path.pop(0)
+    (tmp_path / "src" / "bike_routing_agent").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "new-name"\nversion = "1.0.0"\n')
+    (tmp_path / "src" / "bike_routing_agent" / "__init__.py").write_text('__version__ = "1.0.0"\n')
+    pypi = {"registryType": "pypi", "identifier": "old-name", "version": "1.0.0"}
+    (tmp_path / "server.json").write_text(json.dumps({"version": "1.0.0", "packages": [pypi]}))
+    (found,) = guard.problems("v1.0.0", tmp_path)  # versions and tag are fine: only the name is not
+    assert "would not find the package" in found
+    assert "pyproject.toml name = new-name" in found and "identifier = old-name" in found
+    pypi["identifier"] = "new-name"
+    (tmp_path / "server.json").write_text(json.dumps({"version": "1.0.0", "packages": [pypi]}))
+    assert guard.problems("v1.0.0", tmp_path) == []
+    assert guard.package_names()["pyproject.toml name"] == PYPROJECT["project"]["name"]
 
 
 def test_the_publish_workflow_builds_from_the_tag_and_publishes_without_a_token():
