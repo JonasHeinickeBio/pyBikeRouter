@@ -23,6 +23,19 @@ Put that under `mcpServers` in the client's MCP configuration (for Claude Code: 
 page and the CLI use, so it needs the routing engine(s) and, for weather and sights, the same optional parts
 (`/v1/capabilities` lists them).
 
+## Install it without the repository
+
+Once a release is on PyPI (see [Publishing](#publishing-to-pypi-and-the-mcp-registry)), a client can run the
+server with no checkout and no install step, with [uv](https://docs.astral.sh/uv/):
+
+```bash
+BIKE_ROUTER_API_URL=http://127.0.0.1:8765 uvx bike-routing-agent mcp serve
+```
+
+`bike-routing-agent` is the same program as `bike-router` under the package's own name (that is what `uvx`
+looks for). The server still needs a **running pyBikeRouter API** to ask: the package is the thin client, not
+the routing engine; the API address comes from `BIKE_ROUTER_API_URL` or `--api`.
+
 ## The tools
 
 | Tool | Does |
@@ -80,3 +93,45 @@ says so, the API's own refusal is passed on). Only an unknown tool or a malforme
 - Weather, sights and the number of alternatives depend on what the API has switched on and on the public
   services behind it (the public Overpass server is often overloaded: a sights call then answers with the
   API's 502 as a tool error).
+
+## Publishing to PyPI and the MCP Registry
+
+The [MCP Registry](https://modelcontextprotocol.io/registry/quickstart) (preview) lists MCP servers so that
+clients can find them. It stores **metadata only**: the server must already be a package on PyPI, and the
+entry says how to run it. Everything that can be prepared in the repository is:
+
+| File | What it is |
+| --- | --- |
+| `server.json` | The registry entry: name `io.github.JonasHeinickeBio/bike-router`, description, repository, the PyPI package `bike-routing-agent` run with `uvx` as `mcp serve`, and the one environment variable (`BIKE_ROUTER_API_URL`). Validated against the registry's schema (`2025-12-11`). |
+| `README.md` | Ends with a hidden `mcp-name: io.github.JonasHeinickeBio/bike-router`: PyPI shows the README as the package description, and the registry proves ownership by finding that string there. |
+| `pyproject.toml` | PyPI metadata (keywords, classifiers, URLs) and the `bike-routing-agent` command. |
+| `.github/workflows/publish-pypi.yml` | Builds and uploads to PyPI when a `v*` tag is pushed, with PyPI trusted publishing (no token stored). |
+| `scripts/check_release_version.py` | Run first by that workflow: the tag, `pyproject.toml`, `__version__` and both versions in `server.json` must be the same, or nothing is built. |
+
+The version is written in those four places, so a release is: change them together, merge, then tag.
+
+**What only you can do** (these use your own accounts; nothing here is done for you):
+
+1. **Once, on PyPI:** create an account, then *Your projects > Publishing > Add a pending publisher*: PyPI project
+   name `bike-routing-agent`, owner `JonasHeinickeBio`, repository `pyBikeRouter`, workflow
+   `publish-pypi.yml`, environment `pypi`. In the GitHub repository create the environment `pypi`
+   (Settings > Environments); requiring your approval there is a good guard.
+2. **Each release:** bump the version (the four places), merge, then `git tag v0.3.0 && git push origin v0.3.0`.
+   `release.yml` builds the container image and the easy-install zip, `publish-pypi.yml` uploads the package.
+   Check <https://pypi.org/project/bike-routing-agent/>.
+3. **Then the registry entry**, from a checkout of that tag:
+
+   ```bash
+   brew install mcp-publisher          # or the binary from github.com/modelcontextprotocol/registry/releases
+   mcp-publisher login github          # a device code: you authorise it in the browser
+   mcp-publisher publish               # reads server.json
+   curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.JonasHeinickeBio/bike-router"
+   ```
+
+   The login must be the GitHub account `JonasHeinickeBio`: with GitHub authentication a server name has to
+   start with `io.github.<your login>/`. The publish fails with "Registry validation failed" until the PyPI
+   package with the `mcp-name` string is live.
+
+Publishing is public and cannot be fully taken back (a PyPI version number is never reused, and the registry is
+a preview that may reset), so check the description in `server.json` (at most 100 characters) and the package
+page before the first release.

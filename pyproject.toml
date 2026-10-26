@@ -1,10 +1,19 @@
 [project]
 name = "bike-routing-agent"
-version = "0.2.0"
+version = "0.3.0"
 description = "OSM-based bike routing service with a LangGraph orchestration workflow"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+keywords = ["bicycle", "cycling", "routing", "openstreetmap", "mcp", "langgraph", "gpx"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+]
 dependencies = [
     "fastapi>=0.142.3",
     "uvicorn[standard]>=0.54.0",
@@ -25,8 +34,16 @@ cache = ["redis>=5"]
 # Free-text request parsing with an LLM (issue #30).
 llm = ["anthropic>=1.0"]
 
+[project.urls]
+Homepage = "https://github.com/JonasHeinickeBio/pyBikeRouter"
+Documentation = "https://github.com/JonasHeinickeBio/pyBikeRouter/tree/main/docs"
+Issues = "https://github.com/JonasHeinickeBio/pyBikeRouter/issues"
+
 [project.scripts]
 bike-router = "bike_routing_agent.cli:main"
+# The same command under the package's own name: `uvx bike-routing-agent mcp serve` runs the
+# executable called like the package (the MCP Registry's server.json relies on it).
+bike-routing-agent = "bike_routing_agent.cli:main"
 
 [tool.poetry]
 packages = [{ include = "bike_routing_agent", from = "src" }]

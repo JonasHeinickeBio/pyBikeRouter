@@ -364,3 +364,5 @@ MIT, see [LICENSE](LICENSE).
 
 BRouter (MIT) and the OpenStreetMap data (ODbL) this project builds on are credited, with the
 full BRouter licence text, in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+<!-- mcp-name: io.github.JonasHeinickeBio/bike-router -->

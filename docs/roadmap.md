@@ -96,7 +96,7 @@ decisions still open.
   browser's earlier conversations, and delete.
 - **MCP server** -- done: `bike-router mcp serve --api URL` (stdio) gives another agent four facts-only
   tools -- `plan_route`, `explain_route`, `route_weather`, `sights_along_route` -- over a running API
-  ([mcp.md](mcp.md)). Open: an HTTP transport with authentication, and trying it with more MCP hosts.
+  ([mcp.md](mcp.md)). Prepared for the MCP Registry (`server.json`, PyPI package and workflow; publishing is the owner's step). Open: an HTTP transport with authentication, and trying it with more MCP hosts.
 - **Plan lifecycle** -- done: every step of a plan is timed (`?trace=true`, `Server-Timing`, the log, and
   "Where the time went" on the page), a plan nobody waits for any more is cancelled (a closed connection, or
   a newer chat message in the same conversation: measured on a Braunschweig-Hannover gravel plan dropped after
