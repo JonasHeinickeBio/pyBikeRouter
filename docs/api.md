@@ -276,6 +276,42 @@ Notes:
   language; it is not a safety assessment (see
   [scoring-and-exports.md](scoring-and-exports.md)).
 
+### Where the time went, the cache and abandoned requests
+
+- **`?trace=true`** adds `trace` to the response: one entry per step of the planner, in the order it
+  ran -- `{"node": "route_with_provider", "ms": 7859.6, "status": "in_progress", "ok": true}`. The steps are
+  `parse_request`, `validate_request`, `geocode_locations`, `select_poi_stops`, `route_with_provider`,
+  `enrich_candidates`, `score_candidates`, `optimize_candidates`, `weather_candidates`,
+  `annotate_alternatives`, `explain_and_export`. Without the parameter `trace` is `null`. Every response
+  carries a **`Server-Timing`** header with the same numbers (`route_with_provider;dur=7859.6, ...,
+  total;dur=...`), which a browser's network panel shows, and the service log has one line per step
+  (`plan node=... ms=... status=...`).
+- **A short-lived plan cache** (`PLAN_CACHE_TTL_S`, default 300 s, `0` turns it off): an identical request
+  is answered from the cache -- `served_from_cache: true`, `cache_age_s` -- without routing again. The
+  key is everything the planner is given (places, constraints, departure, engines, stops, optimiser spec);
+  a plan "for now" (no `departure_time`) is shared for at most five minutes, so "now" never means "whenever
+  the first one ran". Only `ready` plans are kept; a question, an error or "no route" is asked again. The
+  cache uses the shared backend (`CACHE_BACKEND`, memory or Redis).
+- **A request nobody waits for is cancelled.** When the client closes the connection, the plan stops: the
+  routing requests still queued are never sent (BRouter does one at a time, so an abandoned plan used to
+  delay everyone behind it; one that BRouter has already started it finishes on its own). The server logs
+  `client went away` and the request ends with `499`.
+
+### POST /v1/route/plan/stream
+
+The same plan, told as it happens (server-sent events, `text/event-stream`), for a page that wants to show
+progress:
+
+| event | data |
+| --- | --- |
+| `step` | after every node: `{"node", "label", "ms", "status"}` |
+| `route` | as soon as there is a best route (after scoring, again after the optimiser): `{"provider", "provider_profile", "geometry_geojson", "distance_m", "duration_s"}` -- draw it while the forecast, the notes on the alternatives and the files are still made |
+| `result` | once, last: exactly the body `POST /v1/route/plan?trace=true` returns |
+| `error` | the plan crashed: `{"detail"}` (no internals); the stream ends |
+
+The body is validated like `/v1/route/plan` (an invalid request is a plain `422` before any event). A client
+that disconnects cancels the plan.
+
 ## GET /v1/routes/{filename}
 
 Serves an exported artifact. Filenames are `<uuid4 hex>.geojson` /
@@ -387,7 +423,11 @@ One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id
 as `POST /v1/route/plan` takes it -- a place the person chose is a `{lon, lat}`) so a client can fill
 its form, and `focus_rank` names the alternative that was asked for; `awaiting` is `place_choice` (an ambiguous place
 waits for an answer) or `guided` (a question of the step-by-step dialogue is open). `503` when
-`CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`.
+`CHAT_ENABLED` is off; `/v1/capabilities` has `"chat": bool`. A message that arrives while the
+conversation's previous message is still being planned **replaces** it: the earlier plan is cancelled and
+its request answers `409` (`a newer message in this conversation replaced this one`) -- a person who
+corrects themselves does not wait behind a plan they no longer want. A client that disconnects stops its
+turn.
 
 ## POST /v1/chat/summaries
 
@@ -555,6 +595,8 @@ Notes:
 | Malformed request body | `422` from FastAPI validation |
 | Valid request, no route / ambiguous place / provider down | `200` with the matching `status` |
 | Unknown or malformed artifact filename | `404` |
+| The client closed the connection while the plan was made | `499` (nobody receives it) |
+| A chat message replaced by a newer one in the same conversation | `409` |
 
 The workflow guarantees a terminal status on every path, so a well-formed
 request should never produce an unhandled `500` from planning logic itself.

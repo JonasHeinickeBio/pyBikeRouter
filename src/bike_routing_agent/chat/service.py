@@ -10,6 +10,7 @@ number is bounded either way: the least recently used one is dropped first.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -44,6 +45,10 @@ def _title(text: str) -> str:
     return text if len(text) <= TITLE_CHARS else text[: TITLE_CHARS - 1].rstrip() + "\u2026"
 
 
+class TurnSuperseded(Exception):
+    """A newer message in the same conversation replaced this turn while it was still running."""
+
+
 FAILURE_REPLY = (
     "Something went wrong while planning that. Please try again, or rephrase "
     "('from A to B', '40 km loop from A')."
@@ -70,6 +75,8 @@ class ChatService:
         self._max_sessions = max_sessions
         self._sessions: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._updated: dict[str, float] = {}
+        self._running: dict[str, asyncio.Task[ChatReply]] = {}
+        self._superseded: set[asyncio.Task[ChatReply]] = set()
         stored = getattr(self._checkpointer, "thread_ids", None)
         when = getattr(self._checkpointer, "updated_at", None)
         for sid in stored() if callable(stored) else ():  # least recently used first
@@ -83,14 +90,41 @@ class ChatService:
     async def send(
         self, message: str, *, session_id: str | None = None, timezone: str | None = None
     ) -> ChatReply:
+        """One turn. A message that arrives while the conversation's previous turn is still
+        running *replaces* it: the old turn is cancelled (its planning stops, its routing requests
+        that are still queued are never sent) and its caller gets ``TurnSuperseded``. Without that,
+        a person who corrects themselves would wait behind a plan they no longer want."""
         text = message.strip()[:MAX_MESSAGE_CHARS]
         sid = session_id if session_id and session_id in self._sessions else uuid.uuid4().hex
+        previous = self._running.get(sid)
+        if previous is not None and not previous.done():
+            self._superseded.add(previous)
+            previous.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await previous  # its lock is free once it has unwound
+        task = asyncio.ensure_future(self._turn(sid, text, timezone))
+        self._running[sid] = task
+        try:
+            return await task
+        except asyncio.CancelledError:
+            if task in self._superseded:
+                raise TurnSuperseded from None
+            task.cancel()  # this caller went away (a closed connection): stop the turn with it
+            raise
+        finally:
+            self._superseded.discard(task)
+            if self._running.get(sid) is task:
+                del self._running[sid]
+
+    async def _turn(self, sid: str, text: str, timezone: str | None) -> ChatReply:
         lock = self._touch(sid)
         config = {"configurable": {"thread_id": sid}}
         async with lock:
             try:
                 snapshot = await self._graph.aget_state(config)
-                if snapshot.next:  # a question is open: this message is its answer
+                if any(task.interrupts for task in snapshot.tasks):
+                    # a question is open: this message is its answer. (A turn that was replaced
+                    # half-way also leaves "next" steps behind, but no question: it starts afresh.)
                     result = await self._graph.ainvoke(Command(resume=text), config)
                 else:
                     result = await self._graph.ainvoke(

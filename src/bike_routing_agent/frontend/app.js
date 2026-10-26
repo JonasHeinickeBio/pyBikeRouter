@@ -97,6 +97,9 @@ const els = {
   coloursLegend: $("colours-legend"),
   coloursLongest: $("colours-longest"),
   coloursNote: $("colours-note"),
+  traceCard: $("trace-card"),
+  traceSummary: $("trace-summary"),
+  traceBody: $("trace-body"),
   cuesCard: $("cues-card"),
   cuesSummary: $("cues-summary"),
   cuesList: $("cues-list"),
@@ -143,6 +146,7 @@ const state = {
   profileLayer: L.layerGroup(), // where the elevation chart's cursor is on the route
   cueLayer: L.layerGroup(), // the step picked in the directions list
   colourLayer: L.layerGroup(), // the active route cut into surface / traffic colours
+  provisionalLayer: L.layerGroup(), // the best route, drawn while the rest of the plan is still made
   reshapeLayer: L.layerGroup(), // the handle that follows the pointer over the route and can be dragged
   reshapeMarker: null,
   reshapeHideTimer: null,
@@ -201,6 +205,7 @@ function initMap() {
   state.profileLayer.addTo(state.map);
   state.cueLayer.addTo(state.map);
   state.colourLayer.addTo(state.map);
+  state.provisionalLayer.addTo(state.map);
   state.reshapeLayer.addTo(state.map);
   state.colourMode = loadColourMode();
   state.weatherMarkers.addTo(state.map);
@@ -784,18 +789,12 @@ async function planRoute() {
   const startedAt = performance.now();
 
   try {
-    const resp = await fetch(`${API_BASE}/v1/route/plan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!resp.ok) {
-      const detail = await safeErrorText(resp);
-      setStatus("error", `Request failed (HTTP ${resp.status}): ${escapeHtml(detail)}`);
+    const outcome = await fetchPlan(payload, controller.signal, () => generation === state.planGeneration);
+    if (outcome.failed) {
+      setStatus("error", outcome.failed);
       return;
     }
-    const data = await resp.json();
+    const data = outcome.data;
     if (generation !== state.planGeneration) return; // a newer plan (form or chat) took over
     state.lastResponse = data;
     const secs = ((performance.now() - startedAt) / 1000).toFixed(1);
@@ -807,8 +806,72 @@ async function planRoute() {
     setStatus("error", `Network error: ${escapeHtml(String(err))}`);
   } finally {
     els.planBtn.disabled = false;
+    if (!drawn) state.provisionalLayer.clearLayers();
     settlePlan(generation, drawn);
   }
+}
+
+/**
+ * Ask for a plan and wait for it. The stream endpoint tells the steps as they happen (the status
+ * line says which one is running) and the best route as soon as it exists (drawn faintly until the
+ * whole plan arrives); a server without it (older version) is asked the plain way. Resolves with
+ * `{data}` (the same body either way) or `{failed}` (the text to show).
+ */
+async function fetchPlan(payload, signal, isCurrent) {
+  const streamed = await streamPlan(payload, signal, isCurrent);
+  if (!streamed.unsupported) return streamed;
+  const resp = await fetch(`${API_BASE}/v1/route/plan?trace=true`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!resp.ok) {
+    return { failed: `Request failed (HTTP ${resp.status}): ${escapeHtml(await safeErrorText(resp))}` };
+  }
+  return { data: await resp.json() };
+}
+
+async function streamPlan(payload, signal, isCurrent) {
+  const resp = await fetch(`${API_BASE}/v1/route/plan/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (resp.status === 404 || resp.status === 405 || (resp.ok && !resp.body)) return { unsupported: true };
+  if (!resp.ok) {
+    return { failed: `Request failed (HTTP ${resp.status}): ${escapeHtml(await safeErrorText(resp))}` };
+  }
+  const parser = BikeStream.createParser();
+  const decoder = new TextDecoder();
+  const reader = resp.body.getReader();
+  let result = null;
+  let error = null;
+  let fitted = false;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    for (const { event, data } of parser.push(decoder.decode(value, { stream: true }))) {
+      if (event === "result") result = data;
+      else if (event === "error") error = data && data.detail;
+      else if (!isCurrent()) continue; // a newer plan owns the screen
+      else if (event === "step") setStatus("loading", `${escapeHtml(BikeStream.progressText(data))}`);
+      else if (event === "route") {
+        const line = BikeStream.provisionalLine(data);
+        if (!line) continue;
+        state.provisionalLayer.clearLayers();
+        const drawn = L.polyline(line, { color: "#0e7a4a", weight: 5, opacity: 0.65, dashArray: "2 8", interactive: false });
+        drawn.addTo(state.provisionalLayer);
+        if (!fitted) {
+          state.map.fitBounds(drawn.getBounds(), { padding: [30, 30] });
+          fitted = true;
+        }
+      }
+    }
+  }
+  if (result) return { data: result };
+  return { failed: escapeHtml(typeof error === "string" ? error : "The connection closed before the plan was finished.") };
 }
 
 /** A form/text request is over: remember what is on the map; if it failed, the chat's route
@@ -966,6 +1029,9 @@ function clearResults() {
   state.cueRows = [];
   state.cueLayer.clearLayers();
   els.cuesCard.hidden = true;
+  els.traceCard.hidden = true;
+  els.traceBody.innerHTML = "";
+  state.provisionalLayer.clearLayers();
   state.colourLayer.clearLayers();
   els.coloursCard.hidden = true;
   hideReshapeHandle();
@@ -980,10 +1046,24 @@ function clearResults() {
   els.optimizationReport.innerHTML = "";
 }
 
+/** "Where the time went": the steps of the plan that was just made (a plan from the short-lived
+ * cache says so instead; a chat plan carries no trace). */
+function renderTrace(data) {
+  const html = BikeStream.breakdownHtml(data.trace, data.served_from_cache);
+  els.traceCard.hidden = html === "";
+  els.traceBody.innerHTML = html;
+  els.traceSummary.textContent = data.trace
+    ? BikeStream.summaryText(data.trace)
+    : data.served_from_cache
+      ? "from the short-lived cache"
+      : "";
+}
+
 function renderResponse(data, secs) {
   clearResults();
   renderErrors(data.errors);
   renderCoverage(data);
+  renderTrace(data);
 
   switch (data.status) {
     case "ready":

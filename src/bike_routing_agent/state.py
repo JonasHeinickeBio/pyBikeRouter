@@ -13,6 +13,7 @@ whole state, and must not mutate the `state` mapping they receive.
 
 from __future__ import annotations
 
+import operator
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
@@ -68,6 +69,8 @@ class RouteAgentState(TypedDict, total=False):
     selected_candidate: dict[str, Any] | None
 
     status: PlanStatus
+    # One timed step per node that ran (tracing.py): the list each node appends to.
+    trace: Annotated[list[dict[str, Any]], operator.add]
     errors: list[dict[str, Any]]
     clarification: list[dict[str, Any]]
     # Id shared by the exported artifacts and the history record (issue #7).
