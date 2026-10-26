@@ -854,6 +854,34 @@ async def plan_route_from_text(request: PlanTextRequest) -> RoutePlanResponse:
     return await _plan_response(final_state)
 
 
+def _form_context(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The web form's request and route, as far as they are usable.
+
+    The chat takes them as what "make it shorter" refers to, so they are held to the same rules as
+    a plan request and a plan response; whatever fails is dropped (the message still goes through).
+    A route that is not ``ready`` is not a route on screen.
+    """
+    if not isinstance(raw, dict):
+        return None
+    found: dict[str, Any] = {}
+    if raw.get("request") is not None:
+        try:
+            found["request"] = RoutePlanAPIRequest.model_validate(raw["request"]).model_dump(
+                mode="json", exclude_none=True
+            )
+        except ValidationError:
+            logger.debug("chat context: the form's request is not a usable plan request")
+    if raw.get("plan") is not None:
+        try:
+            plan = RoutePlanResponse.model_validate(raw["plan"])
+        except ValidationError:
+            logger.debug("chat context: the form's route is not a plan response")
+        else:
+            if plan.status == "ready":
+                found["plan"] = plan.model_copy(update={"trace": None}).model_dump(mode="json")
+    return found or None
+
+
 class _ApiPlanner:
     """The chat's planner: the same code path as ``POST /v1/route/plan`` and ``/plan-text``."""
 
@@ -961,7 +989,10 @@ async def chat(request: ChatRequest, http_request: Request) -> ChatResponse:
         reply = await _until_disconnected(
             http_request,
             _chat_service.send(
-                request.message, session_id=request.session_id, timezone=request.timezone
+                request.message,
+                session_id=request.session_id,
+                timezone=request.timezone,
+                form_context=_form_context(request.context),
             ),
         )
     except TurnSuperseded:

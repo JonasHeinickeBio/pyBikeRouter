@@ -173,6 +173,8 @@ const state = {
   segmentJob: null, // the tile download being followed
   chatSession: null, // the server-side conversation (kept in memory there)
   chatBusy: false,
+  formRouteUnsent: false, // the route on screen came from the form and the chat was not told
+  formDirty: false, // the form was edited since the chat last heard from it
   planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
   planPending: null, // generation of the form/text request in flight, if any
   renderedGeneration: 0, // generation of the plan on the map
@@ -1060,6 +1062,7 @@ function renderTrace(data) {
 }
 
 function renderResponse(data, secs) {
+  state.formRouteUnsent = true; // a route the chat has not been told about (drawChatPlan clears it)
   clearResults();
   renderErrors(data.errors);
   renderCoverage(data);
@@ -2289,6 +2292,13 @@ async function sendChat(text) {
   const waiting = chatSay("bot", "\u2026", true);
   const generation = state.planGeneration;
   const startedAt = performance.now();
+  // What the form holds: the chat refines that, not a route it drew before the form was changed.
+  const context = BikeChat.formContext({
+    request: buildRequest(),
+    plan: state.lastResponse,
+    routeUnsent: state.formRouteUnsent,
+    dirty: state.formDirty,
+  });
   try {
     const resp = await fetch(`${API_BASE}/v1/chat`, {
       method: "POST",
@@ -2297,6 +2307,7 @@ async function sendChat(text) {
         message,
         session_id: state.chatSession,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        context: context || undefined,
       }),
     });
     waiting.remove();
@@ -2305,6 +2316,8 @@ async function sendChat(text) {
       return;
     }
     const data = await resp.json();
+    state.formRouteUnsent = false; // the chat has been told what the form held
+    state.formDirty = false;
     state.chatSession = data.session_id;
     BikeChat.rememberSession(window.localStorage, state.chatSession);
     if (els.chatEarlierBox.open) refreshEarlier(); // the list shows this conversation's latest use
@@ -2343,6 +2356,7 @@ function drawChatPlan(plan, focusRank, secs, request) {
   if (state.aborted) state.aborted.abort(); // an older form request must not replace it
   state.lastResponse = plan;
   renderResponse(plan, secs);
+  state.formRouteUnsent = false; // the chat drew this route: it knows it
   const index = BikeChat.candidateIndex(plan, focusRank);
   if (index >= 0) activateCandidate(index);
   if (request) applyInterpretation({ request, departure_time: request.departure_time });
@@ -2851,6 +2865,19 @@ function applyRemembered() {
   }
 }
 
+/** Remember that the form was edited, so the next chat message carries what it holds now. */
+function trackFormEdits() {
+  const edited = () => {
+    state.formDirty = true;
+  };
+  for (const id of ["places-panel", "when-panel", "constraints-panel", "poi-panel", "optimize-panel"]) {
+    const panel = $(id);
+    if (!panel) continue;
+    panel.addEventListener("input", edited);
+    panel.addEventListener("change", edited);
+  }
+}
+
 function initMemory() {
   state.memory = BikeMemory.load(memoryStorage());
   renderMemory();
@@ -2927,6 +2954,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTextPlanning();
   initSettingsPanel();
   initPois();
+  trackFormEdits();
   initMemory(); // before the link: a link overrides it, but the controls must exist either way
   loadSharedPlan(); // before the chat restores its route: a link's trip is the newest
   // A link pasted into the address bar of a page that is already open is only a fragment change.

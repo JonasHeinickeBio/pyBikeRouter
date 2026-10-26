@@ -409,14 +409,19 @@ web form to show or hide controls; `engines` are the names a plan request may gi
 ## POST /v1/chat
 
 One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id": "<from the last reply>",
-"timezone": "Europe/Berlin"}` -- `message` 1-500 characters; `session_id` (32 hex characters) and
-`timezone` optional; an unknown or missing session starts a new conversation. Response:
+"timezone": "Europe/Berlin", "context": {...}}` -- `message` 1-500 characters; `session_id` (32 hex
+characters), `timezone` and `context` optional; an unknown or missing session starts a new conversation. Response:
 
 ```json
 {"session_id": "...", "reply": "Here is your route: 30.6 km, ...", "suggestions": ["Alternatives", "..."],
  "plan": { "...": "a RoutePlanResponse, only when there is one to draw" }, "focus_rank": null,
  "intent": "plan", "awaiting": null}
 ```
+
+`context` is what the web form holds -- `{"request": <a plan request>, "plan": <a ready plan response>}`,
+either part optional. The chat takes `request` as the trip "make it shorter" refers to and `plan` as the
+route on screen ([chat.md](chat.md#the-form-and-the-chat)); each part is validated like `POST
+/v1/route/plan` and its response, and a part that does not pass is ignored (never a `422`).
 
 `suggestions` are quick answers; `plan` is present when the turn produced (or re-showed) a route,
 `request` is then the request it was planned from (`origin`, `destination`, `via`, `constraints` ...,

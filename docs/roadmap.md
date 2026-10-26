@@ -89,8 +89,8 @@ decisions still open.
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).
   Open follow-ups: a model-based intent step for follow-ups and free text verified against a real model.
-  Done since: the chat fills the web form with the request behind each route (the other direction -- the
-  chat knowing what is in the form -- is not built), and the web panel has New chat, a list of this
+  Done since: the chat fills the web form with the request behind each route, and the form tells the chat
+  what it holds (a route planned there, an edited request: [chat.md](chat.md#the-form-and-the-chat)), and the web panel has New chat, a list of this
   browser's earlier conversations, and delete.
 - **Plan lifecycle** -- done: every step of a plan is timed (`?trace=true`, `Server-Timing`, the log, and
   "Where the time went" on the page), a plan nobody waits for any more is cancelled (a closed connection, or
