@@ -51,6 +51,14 @@ GREETINGS = re.compile(
     r"^\s*(?:hi|hello|hey|hallo|moin|good (?:morning|evening)|yo)\b[\s!.]*$", re.I
 )
 
+# "plan a route", "I want to make a ride", "route please": asking for the dialogue, not a miss.
+STARTERS = re.compile(
+    r"^\s*(?:(?:i\s+(?:want|need|would like|'d like)\s+to|let'?s|can you|could you|please)\s+)*"
+    r"(?:(?:plan|make|create|find|build|start|new)\b[\w\s]{0,30}\b(?:route|ride|trip|tour)s?"
+    r"|(?:a\s+)?route)\s*(?:please)?\W*$",
+    re.I,
+)
+
 HELP_TEXT = (
     "I can plan bike routes with you. Ask in any of these ways:\n"
     "- one line: 'from Braunschweig to Goslar by gravel bike', '40 km loop from Goslar', "
@@ -201,6 +209,7 @@ def build_chat_graph(
             "pending_request": None,
             "change_note": "",
             "clarify_result": None,
+            "miss": None,
         }
 
     def route_intent(state: ChatState) -> str:
@@ -240,7 +249,12 @@ def build_chat_graph(
                 "failed": True,
             }
         except PlanError as exc:
-            return {"reply": str(exc), "suggestions": ["Help", "Plan a route"], "failed": True}
+            return {
+                "reply": str(exc),
+                "suggestions": ["Help", "Plan a route"],
+                "failed": True,
+                "miss": "text_failed",
+            }
         interpretation = plan.get("interpretation") or {}
         request = interpretation.get("request") or {}
         if interpretation.get("departure_time"):
@@ -283,7 +297,20 @@ def build_chat_graph(
                 "asking": None,
                 "draft": {},
             }
-        return {"draft": draft, "asking": slot, **_question(slot)}
+        # Free text that told the dialogue nothing: it starts asking from the top, and the chat
+        # records that it did not read the message (a greeting or "plan a route" is not that).
+        unread = (
+            state.get("asking") is None
+            and not draft
+            and not GREETINGS.match(text)
+            and not STARTERS.match(raw)
+        )
+        return {
+            "draft": draft,
+            "asking": slot,
+            **_question(slot),
+            **({"miss": "unread"} if unread else {}),
+        }
 
     async def refine(state: ChatState) -> dict[str, Any]:
         # A request that just failed is what "use openrouteservice" should retry.
@@ -304,6 +331,7 @@ def build_chat_graph(
         if change.unknown or change.empty():
             said = " ".join(change.notes) or "I did not catch what to change."
             return {
+                "miss": "refine_unknown",
                 "reply": said + " Try 'shorter', 'flatter', 'avoid ferries', 'on a road bike', "
                 "'add a stop at ...' or 'past 2 castles'.",
                 "suggestions": [

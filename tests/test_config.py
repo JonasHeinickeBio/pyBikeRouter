@@ -668,3 +668,10 @@ def test_the_main_route_timeout_settings_are_checked() -> None:
         Settings(_env_file=None, brouter_timeout_per_km_s=-1)
     with pytest.raises(ValueError):
         Settings(_env_file=None, brouter_timeout_s=60, brouter_timeout_max_s=30)
+
+
+def test_the_chat_miss_log_is_off_unless_a_path_is_set(monkeypatch, tmp_path):
+    monkeypatch.delenv("CHAT_MISS_LOG_PATH", raising=False)
+    assert Settings(_env_file=None).chat_miss_log_path is None
+    monkeypatch.setenv("CHAT_MISS_LOG_PATH", str(tmp_path / "m.jsonl"))
+    assert Settings(_env_file=None).chat_miss_log_path == tmp_path / "m.jsonl"

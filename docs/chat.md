@@ -102,6 +102,48 @@ and drops what does not pass (a half-filled form, a route that is not `ready`): 
 refused because of its context. The form is read at the moment of sending; a place picked on the map
 without typing is only noticed once a plan is made. See `context` in [api.md](api.md#post-v1chat).
 
+## What it could not read, and how well it reads
+
+The chat reads messages with rules. Before anyone puts a language model behind them, there should be
+numbers for how well the rules do and a record of what people actually say.
+
+**A benchmark** -- `benchmarks/chat-v1.json`: 126 messages, each with the situation it arrives in (nothing
+planned, a route on screen, a question waiting, a failed request) and the intent a sensible person would
+call it (`plan`, `plan_text`, `guided`, `refine`, `alternatives`, `sights`, `explain`, `export`,
+`optimize`, `reset`, `help`). The expectations say what the chat *should* do, not what it happens to do.
+
+```bash
+bike-router chat eval                    # with a free-text parser configured: 110 of 126 (87.3 %)
+bike-router chat eval --rules-only       # without one: 107 of 126 (84.9 %)
+bike-router chat eval --format json --fail-under 0.85
+```
+
+It runs the rules only -- nothing is planned and no model is called, so it is free and offline, and a
+test keeps a floor under the score. The table gives recall and precision per intent. What the rules
+read wrongly today is the useful part: things people say about sights (*points of interest*, *what is
+there to see*), changes phrased as a request (*no ferries please*, *with a stop in Celle*, *drop the
+stop*), and the plain starters (*plan a route*, *let's go*), which go to the free-text parser instead of
+the dialogue when one is configured.
+
+**A miss log** -- off by default. Set `CHAT_MISS_LOG_PATH=./data/chat/misses.jsonl` and every message
+the rules could not read is appended there, one line of JSON each: the message (cut at 500 characters),
+the kind -- `unread` (free text that told the dialogue nothing), `refine_unknown` (a change it could not
+make out) or `text_failed` (the language model could not read it) --, the intent it fell to, whether a
+route was on screen, and the time. It stays in that file on this machine: nothing is sent anywhere, no
+session id is stored, and the file is capped at about 2 MB (the old part is kept once as `.1`).
+Treat it like the conversation store: it holds what people typed.
+
+```bash
+bike-router chat misses                  # how many, of which kind, and the phrases that come back
+bike-router chat misses --export-cases new-cases.json    # the distinct ones, unlabelled
+bike-router chat misses --clear          # delete the log
+```
+
+An exported case has `"expected": null`: a person decides what the chat *should* have done and fills it
+in, and only then does it belong in the benchmark (the loader refuses an unlabelled one). That loop --
+log, judge, add, measure -- comes before any model-based reading of messages, so a model has something to
+beat and is only ever asked about messages the rules gave up on.
+
 ## Optimising
 
 `Braunschweig to Wernigerode with less traffic but as much asphalt as possible` -- or, on the route on

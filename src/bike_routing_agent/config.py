@@ -6,6 +6,7 @@ nodes and scoring code stay provider-neutral.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, SecretStr, model_validator
@@ -154,6 +155,9 @@ class Settings(BaseSettings):
     chat_max_sessions: int = 200
     chat_store_path: str | None = None
     chat_session_days: float = 30.0
+    # Opt-in: a file (on this machine only) that gets one line per message the chat's rules could
+    # not read, to grow the chat benchmark from real phrasings. Unset = nothing is recorded.
+    chat_miss_log_path: Path | None = None
 
     # Points of interest (issue #55): found with Overpass, ranked and described with
     # Wikidata and Wikipedia (keyless; Wikimedia requires an identifying User-Agent).

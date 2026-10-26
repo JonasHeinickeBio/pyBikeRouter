@@ -23,6 +23,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 
 from bike_routing_agent.chat.graph import build_chat_graph
+from bike_routing_agent.chat.misslog import MissLog
 from bike_routing_agent.chat.models import (
     MAX_MESSAGE_CHARS,
     ChatHistory,
@@ -64,6 +65,7 @@ class ChatService:
         text_enabled: bool = False,
         checkpointer: BaseCheckpointSaver | None = None,
         max_sessions: int = 200,
+        miss_log: MissLog | None = None,
     ) -> None:
         self._checkpointer = checkpointer or LatestOnlyMemorySaver()
         self._graph = build_chat_graph(
@@ -73,6 +75,7 @@ class ChatService:
             checkpointer=self._checkpointer,
         )
         self._max_sessions = max_sessions
+        self._miss_log = miss_log
         self._sessions: OrderedDict[str, asyncio.Lock] = OrderedDict()
         self._updated: dict[str, float] = {}
         self._running: dict[str, asyncio.Task[ChatReply]] = {}
@@ -147,7 +150,21 @@ class ChatService:
                 self._keep_latest_only(sid)
                 self._save(sid)
                 self._updated[sid] = time.time()
+        self._record_miss(text, result)
         return self._reply(sid, result)
+
+    def _record_miss(self, text: str, result: dict[str, Any]) -> None:
+        """Note a message the rules did not understand, when the miss log is on."""
+        kind = result.get("miss")
+        if self._miss_log is None or not kind:
+            return
+        plan = result.get("last_plan")
+        self._miss_log.record(
+            text,
+            str(kind),
+            intent=result.get("intent"),
+            had_plan=bool(plan and plan.get("status") == "ready"),
+        )
 
     async def summaries(self, session_ids: Sequence[str]) -> list[ChatSummary]:
         """The conversations among ``session_ids`` that are known, most recently used first.
