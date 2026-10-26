@@ -28,6 +28,36 @@ def metres(value: float | None) -> str:
     return "-" if value is None else f"{round(value)} m"
 
 
+def format_ms(ms: float | None) -> str:
+    """A time for a person: ``820 ms``, ``4.2 s``, ``2 min 5 s``."""
+    if ms is None or ms < 0:
+        return "-"
+    if ms < 1000:
+        return f"{round(ms)} ms"
+    if ms < 60_000:
+        return f"{ms / 1000:.1f} s"
+    minutes_, rest = divmod(round(ms / 1000), 60)
+    return f"{minutes_} min {rest} s"
+
+
+def trace_lines(trace: Sequence[dict[str, Any]]) -> list[str]:
+    """``Where the time went``: every step with its time, the slowest marked."""
+    from bike_routing_agent.tracing import STEP_LABELS, total_ms
+
+    steps = [s for s in trace if isinstance(s, dict) and s.get("node")]
+    if not steps:
+        return []
+    slowest = max(steps, key=lambda s: float(s.get("ms") or 0.0))
+    width = max(len(STEP_LABELS.get(str(s["node"]), str(s["node"]))) for s in steps)
+    lines = ["Where the time went:"]
+    for s in steps:
+        label = STEP_LABELS.get(str(s["node"]), str(s["node"]))
+        mark = "  <- slowest" if s is slowest and len(steps) > 1 else ""
+        lines.append(f"  {label:<{width}}  {format_ms(s.get('ms')):>8}{mark}")
+    lines.append(f"  {'Total':<{width}}  {format_ms(total_ms(steps)):>8}")
+    return lines
+
+
 def megabytes(size: int | None) -> str:
     return "size unknown" if not size else f"{size / 1e6:.0f} MB"
 
@@ -171,6 +201,8 @@ def plan_text(payload: dict[str, Any]) -> str:
     if errors:
         lines.extend(["", "Notes:"])
         lines.extend(f"  [{e.get('code')}] {e.get('message')}" for e in errors)
+    if payload.get("trace"):
+        lines.extend(["", *trace_lines(payload["trace"])])
     if payload.get("plan_id"):
         lines.extend(["", f"Recorded as {payload['plan_id']}"])
     return "\n".join(lines)

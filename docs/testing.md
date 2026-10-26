@@ -1,7 +1,7 @@
 # Testing
 
 ```bash
-poetry run pytest            # default run: everything except `live`
+poetry run pytest            # default run: everything except `live` (`make test`; `make check` is the quick gate)
 poetry run pytest -m live    # tests that hit real external services
 poetry run pytest tests/nodes -q   # one area
 ```

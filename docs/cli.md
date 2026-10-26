@@ -17,7 +17,21 @@ Exit codes: `0` success, `1` the command ran but failed (no route, a service is 
 | `chat` | plan routes by chatting in the terminal ([chat.md](chat.md)) |
 | `status` | readiness of every component and the active features |
 | `deploy` | build the image, (re)create the container, check it, roll back, publish to the tailnet |
+| `completion` | tab completion for bash, zsh and fish ([below](#tab-completion)) |
 | `serve`, `docker`, `config`, `providers`, `retention`, `db` | run and operate the stack (`docker` is the compose wrapper) |
+
+## Tab completion
+
+```bash
+echo 'source <(bike-router completion bash)' >> ~/.bashrc                    # bash
+echo 'source <(bike-router completion zsh)' >> ~/.zshrc                      # zsh
+bike-router completion fish > ~/.config/fish/completions/bike-router.fish    # fish
+```
+
+The scripts are generated from the command line parser itself, so they always know today's groups,
+commands and options, and the values an option takes (`--format` completes to `json` and `text`,
+`--engine` to `ors`, `brouter`, `valhalla`). Nothing is installed for you: the script is printed and
+you decide where it goes. Start a new shell afterwards.
 
 ## `route`
 
@@ -40,6 +54,8 @@ bike-router route export plan.json --candidate 2 --gpx second.gpx --geojson seco
 | `--poi-stops N` `--poi-categories` `--poi-corridor-km` `--poi-min-fame` | route past the N best-known sights ([pois.md](pois.md#routing-past-the-most-famous-sights)) |
 | `--format json\|text` | machine readable (default) or a readable summary: the route, every alternative with its pros and cons, weather, stops, warnings, files |
 | `--gpx FILE` `--geojson FILE` `--candidate RANK` | write the best route, or the alternative of that rank, as GPX / GeoJSON |
+| `--trace` | show where the time went, per step: a list under the summary in text, a `trace` key in json |
+| `--quiet`, `-q` | no progress lines (they are printed to stderr, one per finished step, only when stderr is a terminal; stdout stays the result alone) |
 | `--output FILE` | also save the JSON (with every alternative and its geometry) for `route show` / `route export` / `poi along` |
 
 The request is checked with the API's own rules before anything is routed (stops with a loop,

@@ -23,6 +23,7 @@ GROUP_MODULES: tuple[str, ...] = (
     "providers",
     "retention",
     "db",
+    "completion",
 )
 
 
