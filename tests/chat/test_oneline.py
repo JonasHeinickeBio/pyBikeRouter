@@ -162,6 +162,22 @@ def test_a_loop_length_can_be_given_in_hours_and_the_assumption_is_said():
     assert request["constraints"]["target_distance_km"] == 12.5
 
 
+@pytest.mark.parametrize(
+    "text, km",
+    [
+        ("loop from Braunschweig for 3-4 h on a gravel bike", 70.0),  # 3.5 h at gravel's 20 km/h
+        ("loop from Braunschweig for 3 to 4 hours", 63.0),  # 3.5 h at the default 18 km/h
+        ("loop from Braunschweig for 3\u20134 hours", 63.0),
+        ("Rundfahrt ab Braunschweig 60-80 km", 70.0),
+        ("60 to 80 km loop from Braunschweig", 70.0),
+    ],
+)
+def test_a_range_is_planned_at_its_middle_and_never_ends_up_in_the_place(text, km):
+    line, request = read(text)
+    assert line.origin == "Braunschweig"
+    assert request["constraints"]["target_distance_km"] == km
+
+
 def test_a_loop_with_the_start_only_in_a_word_order_is_still_a_loop():
     line = parse_one_line("Goslar to Goslar", now=NOW)
     assert line.loop and line.origin == "Goslar" and not line.complete()  # the length is asked

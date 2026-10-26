@@ -204,14 +204,14 @@ _ASCENT = re.compile(
 _SPEED = re.compile(rf"(?:(?:at|with|around|about)\s+)?{_NUM}\s*km\s*/\s*h\b", re.I)
 _DISTANCE = re.compile(
     rf"(?:(?P<q>{_MAX_WORDS}|about|around|approx(?:imately)?|ca\.?)\s+)?"
-    rf"(?P<n>{_NUM})\s*(?:km|kilomet(?:er|re)s?)\b"
+    rf"(?:(?P<lo>{_NUM})\s*(?:-|\u2013|\u2014|to|bis)\s*)?(?P<n>{_NUM})\s*(?:km|kilomet(?:er|re)s?)\b"
     r"(?:\s+(?:loop|round[\s-]?trip|ride|route|tour|trip|circuit))?"
     r"(?:\s+(?P<post>max(?:imum)?|at most|or less|or fewer|tops))?",
     re.I,
 )
 _DURATION = re.compile(
     rf"(?:(?P<q>{_MAX_WORDS}|about|around|approx(?:imately)?)\s+)?"
-    rf"(?:(?P<h>{_NUM})\s*(?:hours?|hrs?|h)\b(?:\s*(?:and\s+)?(?P<m>\d{{1,2}})\s*min\w*)?"
+    rf"(?:(?:(?P<lo>{_NUM})\s*(?:-|\u2013|\u2014|to|bis)\s*)?(?P<h>{_NUM})\s*(?:hours?|hrs?|h)\b(?:\s*(?:and\s+)?(?P<m>\d{{1,2}})\s*min\w*)?"
     r"|(?P<min>\d{1,3})\s*(?:minutes?|mins?)\b|(?P<half>half an hour)|(?P<one>an hour))"
     r"(?:\s+(?:loop|round[\s-]?trip|ride|route|tour|trip|circuit))?",
     re.I,
@@ -362,6 +362,8 @@ def parse_one_line(text: str, *, now: datetime | None = None) -> OneLine:
     if duration:
         if duration.group("h"):
             hours = float(duration.group("h").replace(",", "."))
+            if duration.group("lo"):  # "3-4 h": plan for the middle of the range
+                hours = (float(duration.group("lo").replace(",", ".")) + hours) / 2
             hours += int(duration.group("m") or 0) / 60
         elif duration.group("min"):
             hours = int(duration.group("min")) / 60
@@ -372,6 +374,8 @@ def parse_one_line(text: str, *, now: datetime | None = None) -> OneLine:
     distance = _DISTANCE.search(t)
     if distance:
         km = float(distance.group("n").replace(",", "."))
+        if distance.group("lo"):  # "60-80 km": plan for the middle of the range
+            km = (float(distance.group("lo").replace(",", ".")) + km) / 2
         qualifier = (distance.group("q") or "").lower()
         out.distance_km = km
         if (re.fullmatch(_MAX_WORDS, qualifier) or distance.group("post")) and not loop_word:
