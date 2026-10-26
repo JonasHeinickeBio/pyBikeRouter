@@ -369,20 +369,38 @@ def test_an_unknown_category_is_refused_before_the_api_is_asked(tools, api):
     assert len(api.requests) == 1  # only the plan
 
 
-def test_a_very_long_route_is_thinned_to_what_the_api_accepts(tools, api):
+@pytest.mark.parametrize("extra", [-1, 0, 1, 5])
+@pytest.mark.parametrize("times", [1, 2, 3])
+def test_a_very_long_route_is_thinned_to_what_the_api_accepts(tools, api, times, extra):
+    """The boundaries are where it went wrong: a route of exactly k * MAX points."""
     from bike_routing_agent.poi.models import MAX_ROUTE_POINTS
 
+    count = MAX_ROUTE_POINTS * times + extra
+    line = [[10.0 + i * 1e-5, 52.0, 80.0] for i in range(count)]
     plan = ready_plan()
-    plan["candidates"][0]["geometry_geojson"]["coordinates"] = [
-        [10.0 + i * 1e-5, 52.0] for i in range(MAX_ROUTE_POINTS * 2 + 5)
-    ]
+    plan["candidates"][0]["geometry_geojson"]["coordinates"] = line
     api.answers["/v1/route/plan"] = plan
     planned(tools)
     api.answers["/v1/pois/along-route"] = {"pois": []}
     call(tools, "sights_along_route", plan_ref="plan-1")
     sent = api.requests[-1][1]["coordinates"]
-    assert 2 < len(sent) <= MAX_ROUTE_POINTS
-    assert sent[-1] == [10.0 + (MAX_ROUTE_POINTS * 2 + 4) * 1e-5, 52.0]  # the end is kept
+    assert len(sent) <= MAX_ROUTE_POINTS  # the API would refuse more
+    assert sent[0] == line[0][:2] and sent[-1] == line[-1][:2]  # both ends, without elevation
+    assert len({tuple(p) for p in sent}) == len(sent)  # the end is not there twice
+    if count <= MAX_ROUTE_POINTS:
+        assert len(sent) == count  # a line that fits is not touched
+
+
+def test_thin_keeps_a_short_line_and_both_ends_of_a_long_one():
+    from bike_routing_agent.mcp_server.tools import thin
+
+    short = [[1.0, 2.0], [3.0, 4.0]]
+    assert thin(short, 10) is short
+    long_line = [[float(i), 0.0] for i in range(1000)]
+    for limit in (2, 3, 10, 999):
+        out = thin(long_line, limit)
+        assert 2 <= len(out) <= limit
+        assert out[0] == long_line[0] and out[-1] == long_line[-1]
 
 
 def test_text_from_the_map_is_returned_as_data_and_never_acted_on(tools, api):

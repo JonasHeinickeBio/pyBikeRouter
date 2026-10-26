@@ -148,3 +148,13 @@ def test_the_loop_answers_line_by_line_and_survives_garbage():
     assert all(
         "\n" not in line for line in out.getvalue().rstrip("\n").splitlines()
     )  # one per line
+
+
+def test_a_line_nested_deeper_than_python_parses_is_a_parse_error_not_the_end():
+    server = McpServer(FakeTools(), name="n", version="1")
+    deep = "[" * 100_000 + "]" * 100_000
+    out = io.StringIO()
+    server.serve(io.StringIO(deep + "\n" + json.dumps(request("ping", id=9)) + "\n"), out)
+    first, second = (json.loads(line) for line in out.getvalue().splitlines())
+    assert first["error"]["code"] == PARSE_ERROR
+    assert second["id"] == 9 and second["result"] == {}  # and the server is still serving

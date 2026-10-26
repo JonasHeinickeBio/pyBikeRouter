@@ -78,6 +78,13 @@ def run(
     from bike_routing_agent.mcp_server.protocol import McpServer
     from bike_routing_agent.mcp_server.tools import INSTRUCTIONS, BikeRouterTools
 
+    # The protocol is UTF-8 whatever the system's locale says (Windows redirects stdio in the ANSI
+    # code page); a stream that cannot be reconfigured (a test's StringIO) is used as it is.
+    source = stdin if stdin is not None else sys.stdin
+    for stream, errors in ((source, "replace"), (stdout, "strict")):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors=errors)
     # Standard output is the protocol: nothing else may be written to it.
     logging.basicConfig(stream=stderr, level=logging.WARNING, format="mcp: %(message)s")
     server = McpServer(
@@ -88,7 +95,7 @@ def run(
     )
     print(f"bike-router MCP server ready (API: {api})", file=stderr)
     try:
-        server.serve(stdin if stdin is not None else sys.stdin, stdout)
+        server.serve(source, stdout)
     except KeyboardInterrupt:
         pass
     return EXIT_OK

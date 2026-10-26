@@ -117,7 +117,7 @@ class McpServer:
                 continue
             try:
                 message = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):  # bad JSON, or nested deeper than Python parses
                 response: dict[str, Any] | None = _error(None, PARSE_ERROR, "invalid JSON")
             else:
                 response = self.handle(message)

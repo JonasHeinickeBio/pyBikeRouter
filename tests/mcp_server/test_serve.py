@@ -164,3 +164,34 @@ def test_the_api_must_be_an_http_url_and_can_come_from_the_environment(monkeypat
     assert json.loads(run("config")[1])["mcpServers"]["bike-router"]["args"][-1] == (
         "http://127.0.0.1:8000"
     )
+
+
+def test_stdio_is_utf8_whatever_the_locale_says(api_url):
+    """Windows hands a redirected child the ANSI code page; the protocol is UTF-8 regardless."""
+    import os
+
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PYTHONUTF8": "0"}
+    process = subprocess.Popen(
+        [sys.executable, "-m", "bike_routing_agent.cli", "mcp", "serve", "--api", api_url],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    try:
+        assert process.stdin is not None and process.stdout is not None
+        message = {"jsonrpc": "2.0", "id": 1, "method": "tools/call"}
+        message["params"] = {"name": "plan_route", "arguments": {"origin": "Zürich → 東京"}}
+        process.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8"))
+        process.stdin.flush()
+        reply = json.loads(process.stdout.readline().decode("utf-8"))
+        assert reply["result"]["isError"] is True  # no destination: refused, with the text intact
+        assert FakeApi.seen == []  # (it never reached the API)
+        message["params"]["arguments"] = {"origin": "Zürich → 東京", "destination": "Köln"}
+        process.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode("utf-8"))
+        process.stdin.flush()
+        process.stdout.readline()
+        assert FakeApi.seen[0]["body"]["origin"] == "Zürich → 東京"
+    finally:
+        process.stdin.close()
+    assert process.wait(timeout=10) == 0

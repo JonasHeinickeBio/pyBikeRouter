@@ -490,9 +490,7 @@ class BikeRouterTools:
             [position[0], position[1]]
             for position in (candidate.get("geometry_geojson") or {}).get("coordinates") or []
         ]
-        if len(coordinates) > MAX_ROUTE_POINTS:  # a very long route: every n-th point is enough
-            step = -(-len(coordinates) // MAX_ROUTE_POINTS)
-            coordinates = coordinates[::step] + [coordinates[-1]]
+        coordinates = thin(coordinates, MAX_ROUTE_POINTS)
         kind = args.get("kind", "sight")
         body: dict[str, Any] = {"coordinates": coordinates}
         categories = args.get("categories") or (list(SIGHT_KEYS) if kind == "sight" else None)
@@ -532,6 +530,19 @@ class BikeRouterTools:
                 for p in shown
             ],
         }
+
+
+def thin(points: list[list[float]], limit: int) -> list[list[float]]:
+    """At most ``limit`` points of a line, evenly spread, keeping the first and the last.
+
+    A very long route needs only every n-th point to find what lies along it. The stride is chosen
+    so the strided part (which leaves out the last point) holds at most ``limit - 1`` points, and
+    the last point is then added once: never more than ``limit`` points, never the end twice.
+    """
+    if len(points) <= limit:
+        return points
+    step = -(-len(points) // (limit - 1))
+    return points[:-1:step] + [points[-1]]
 
 
 def _latlon(coordinate: Any) -> str | None:
