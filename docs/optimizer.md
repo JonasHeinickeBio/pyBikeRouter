@@ -125,6 +125,36 @@ avoided"), length, detour, the measured values (`values` raw, `shown` formatted)
 `pareto`, `feasible`. `candidates` are re-ranked (rank 1 = the best fit) and `route` is that
 candidate; the exported GPX/GeoJSON is it too; `explanation` starts with the summary.
 
+## What people pick
+
+The optimiser's weights are a judgement (how much a quiet road is worth next to a longer ride), and
+nothing yet checks it against what riders do. An **opt-in pick log** makes that visible without
+changing anything: set `PICK_LOG_PATH=./data/picks.jsonl` and, when the web page compared several
+routes and the rider **downloads** one of them (the alternatives' GPX or GeoJSON), the page tells the
+server which one -- `POST /v1/route/pick` ([api.md](api.md#post-v1routepick)), and the server appends
+one line to that file, on this machine.
+
+A line is numbers only: for every distinct route that was on screen the value of each optimiser
+metric (traffic, busy roads, paved, unpaved, cobbles, distance, time, sights, climbing; `null` where the
+engine gave no data), which one the optimiser recommended, which one was taken, the goals and weights of
+the plan, the bike type and the time. No place, coordinate, route shape, turn text, address or session
+is stored or sent anywhere. The file is capped at 2 MB (the older half is kept once as `.1`).
+
+```bash
+bike-router route picks              # how often the recommendation was the one taken, and the lean
+bike-router route picks --format json
+bike-router route picks --clear      # delete the log
+```
+
+The summary gives the share of picks that kept the recommendation and, for those that took another
+route, the **lean**: for each metric the mean of (taken route's goodness - recommended route's
+goodness) on the optimiser's own 0..1 scale. A positive `+0.485` for "more asphalt" means people who
+left the recommendation went for more asphalt; a negative one for "shorter" means they gave length away
+for it. Below 20 picks (a quarter of them another route) the summary says it is too early and nothing
+in it is a finding. Nothing is ever changed from it: a person reads the lean and decides whether a
+default weight should move. A download is a weak signal (people also download to compare), so a lean
+is a reason to look, not a result.
+
 ## Example (live, real BRouter, 2026-10-12)
 
 Braunschweig -> Wernigerode (gravel bike), `traffic` 1.0 + `paved` 0.7, 39 s, 9 routes (7 distinct):

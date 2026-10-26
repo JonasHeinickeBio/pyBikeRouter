@@ -84,7 +84,9 @@ decisions still open.
   ([optimizer.md](optimizer.md)). Also: optional sideways detours (`detours`, off by default: on two trips they
   were valid but never beat a profile route). Open: candidates from other engines (they give no road
   tags), detours that are chosen where the road data shows a busy stretch rather than by geometry
-  alone, and learning the weights from what people pick.
+  alone, and learning the weights from what people pick (done as far as looking: an opt-in pick log and
+  `bike-router route picks` show what riders take, [optimizer.md](optimizer.md#what-people-pick); no weight
+  is changed from it until there is enough data to trust).
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).

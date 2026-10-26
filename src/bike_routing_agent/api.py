@@ -53,6 +53,7 @@ from bike_routing_agent.models import (
     RoutePlanResponse,
     TraceStep,
 )
+from bike_routing_agent.optimizer.picklog import PickLog, PickRequest, build_record
 from bike_routing_agent.poi.categories import CATEGORIES, resolve_categories
 from bike_routing_agent.poi.fetcher import OverpassPoiFetcher
 from bike_routing_agent.poi.models import (
@@ -490,6 +491,7 @@ _plan_cache = NamespacedCache(_cache, "plan")
 _T = TypeVar("_T")
 _geocode_provider, _routing_providers = build_providers(settings, cache=_cache)
 _artifact_store, _history = build_storage(settings)
+_pick_log = PickLog(settings.pick_log_path) if settings.pick_log_path else None
 
 _weather_service = build_weather_service(settings, cache=_cache)
 _llm_parser = build_llm_parser(settings)
@@ -714,6 +716,19 @@ async def plan_route_endpoint(
 ) -> RoutePlanResponse:
     result = await _until_disconnected(http_request, plan_route(request))
     return _shaped(result, response, trace)
+
+
+@app.post("/v1/route/pick", status_code=204)
+async def record_pick(request: PickRequest) -> Response:
+    """Keep, on this machine, which of the compared routes a person took (``PICK_LOG_PATH``).
+
+    Numbers only (optimizer/picklog.py). 404 when the log is off, so a page can tell; a log that
+    cannot be written is a 204 all the same (it never fails the person's download).
+    """
+    if _pick_log is None:
+        raise HTTPException(status_code=404, detail="the pick log is off (set PICK_LOG_PATH)")
+    await run_in_threadpool(_pick_log.record, build_record(request))
+    return Response(status_code=204)
 
 
 def _sse(event: str, data: Any) -> str:
@@ -1104,6 +1119,8 @@ async def capabilities() -> dict[str, Any]:
         "pois": _poi_service is not None,
         "segment_downloads": _segment_downloader is not None,
         "chat": _chat_service is not None,
+        # The page reports which route a person downloads only when this is on (PICK_LOG_PATH).
+        "pick_log": _pick_log is not None,
         # The route optimiser needs an engine that can return many routes with road tags.
         "optimizer": any(hasattr(p, "optimization_candidates") for p in _routing_providers),
         "engines": [p.name for p in [*_routing_providers, *_optional_routing_providers]],

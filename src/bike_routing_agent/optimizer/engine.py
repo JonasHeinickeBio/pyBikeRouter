@@ -120,7 +120,7 @@ class Outcome:
     report: dict[str, Any]
 
 
-def _goodness(values: dict[int, float | None], metric: Metric) -> dict[int, float]:
+def goodness(values: dict[int, float | None], metric: Metric) -> dict[int, float]:
     present = [v for v in values.values() if v is not None]
     if not present:
         return {i: 0.0 for i in values}
@@ -162,7 +162,7 @@ def optimize(
             )
             dropped.append({"metric": goal.metric, "reason": reason})
             continue
-        active.append((goal, metric, values, _goodness(values, metric)))
+        active.append((goal, metric, values, goodness(values, metric)))
 
     # --- hard limits -----------------------------------------------------------------------
     distances = {i: c.metrics.distance_m for i, c in pool.items()}

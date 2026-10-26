@@ -180,6 +180,7 @@ const state = {
   renderedGeneration: 0, // generation of the plan on the map
   deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
+  pickKeys: new Set(), // downloads already reported to the pick log (opt-in, PICK_LOG_PATH)
   tab: "plan", // "plan" | "optimize" (the Optimize tab exists when capabilities.optimizer)
   optimizeGoals: {}, // metric -> "high" | "medium" | "low" for the goals that are ticked
   optimizeCaps: { pois: false },
@@ -1409,6 +1410,35 @@ function downloadActiveCandidate(format) {
     saveFile(file.text, file.type, file.filename);
   } catch (err) {
     setStatus("error", `Could not export this route: ${escapeHtml(String(err.message || err))}`);
+    return;
+  }
+  reportPick();
+}
+
+/**
+ * Tell the server which of the compared routes was taken, if its owner switched the pick log on
+ * (capabilities.pick_log). Numbers only (picks.js); never delays or fails the download.
+ */
+async function reportPick() {
+  try {
+    if (!(await getCapabilities()).pick_log) return;
+    const body = BikePicks.payload(
+      state.candidates,
+      state.activeIndex,
+      findCandidateIndex(state.candidates, state.selectedRoute),
+      els.bikeType.value,
+      state.lastResponse && state.lastResponse.optimization && state.lastResponse.optimization.goals,
+    );
+    if (!body || state.pickKeys.has(BikePicks.key(body))) return;
+    state.pickKeys.add(BikePicks.key(body));
+    await fetch(`${API_BASE}/v1/route/pick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive: true,
+    });
+  } catch {
+    /* the pick log is a convenience of its owner; a failure is not the rider's problem */
   }
 }
 

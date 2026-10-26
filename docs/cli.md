@@ -43,6 +43,7 @@ bike-router route plan --origin "Füssen" --destination "Oberammergau" --poi-sto
 bike-router route plan --origin 51.75,-1.25 --destination 51.80,-1.20 --engine ors
 bike-router route show plan.json                       # the same summary, later
 bike-router route export plan.json --candidate 2 --gpx second.gpx --geojson second.geojson
+bike-router route picks                                # which compared route people take (opt-in log)
 ```
 
 `route plan` takes everything the API request does: `--via` (repeatable), `--loop` /

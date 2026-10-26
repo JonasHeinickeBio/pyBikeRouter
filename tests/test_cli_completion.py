@@ -65,7 +65,7 @@ def test_a_help_text_with_a_quote_cannot_break_the_script():
     ("words", "expected"),
     [
         (["ro"], {"route"}),
-        (["route", ""], {"plan", "show", "export"}),
+        (["route", ""], {"plan", "show", "export", "picks"}),
         (["route", "plan", "--for"], {"--format"}),
         (["route", "plan", "--format", ""], {"json", "text"}),
         (["route", "plan", "--origin", "Berlin", "--eng"], {"--engine"}),  # a value is not a word
