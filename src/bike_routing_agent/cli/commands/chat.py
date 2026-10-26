@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import IO, Any
 
 from bike_routing_agent.chat.models import ChatReply
@@ -41,7 +42,118 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     )
     start.add_argument("--timezone", default=None, metavar="IANA", help="e.g. Europe/Berlin")
     start.add_argument("--format", choices=("text", "json"), default="text")
+
+    evaluate = sub.add_parser(
+        "eval",
+        help="score how the chat reads messages against benchmarks/chat-v1.json (free, offline)",
+    )
+    evaluate.add_argument("--benchmark", type=Path, default=None, metavar="FILE")
+    evaluate.add_argument(
+        "--rules-only",
+        action="store_true",
+        help="as without a language-model parser: a message no rule claims goes to the dialogue",
+    )
+    evaluate.add_argument(
+        "--fail-under",
+        type=float,
+        default=0.0,
+        metavar="ACCURACY",
+        help="exit 1 below this accuracy (0-1; default: never)",
+    )
+    evaluate.add_argument("--format", choices=("text", "json"), default="text")
+
+    misses = sub.add_parser(
+        "misses", help="what the chat could not read (the opt-in log, CHAT_MISS_LOG_PATH)"
+    )
+    misses.add_argument(
+        "--path", type=Path, default=None, metavar="FILE", help="default: CHAT_MISS_LOG_PATH"
+    )
+    misses.add_argument("--top", type=int, default=15, metavar="N", help="phrases to list")
+    misses.add_argument(
+        "--export-cases",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="write the distinct misses as unlabelled benchmark cases to fill in",
+    )
+    misses.add_argument("--clear", action="store_true", help="delete the log")
+    misses.add_argument("--format", choices=("text", "json"), default="text")
     return chat
+
+
+def _eval(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
+    from bike_routing_agent.chat.evaluation import DEFAULT_PATH, load_benchmark, run_benchmark
+
+    path = args.benchmark or DEFAULT_PATH
+    try:
+        benchmark = load_benchmark(path)
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=stderr)
+        return EXIT_USAGE
+    report = run_benchmark(benchmark, text_enabled=not args.rules_only)
+    if args.format == "json":
+        print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False), file=stdout)
+    else:
+        print(_eval_text(report, rules_only=args.rules_only), file=stdout)
+    return EXIT_FAILURE if report.accuracy < args.fail_under else EXIT_OK
+
+
+def _eval_text(report: Any, *, rules_only: bool) -> str:
+    mode = "rules only" if rules_only else "with a free-text parser"
+    lines = [
+        f"Chat benchmark ({mode}): {report.passed}/{len(report.results)} read as expected "
+        f"({report.accuracy:.1%})",
+        "",
+        f"  {'intent':<13}{'cases':>6}{'recall':>8}{'chosen':>8}{'precision':>10}",
+    ]
+    for intent, row in report.by_intent().items():
+        lines.append(
+            f"  {intent:<13}{row['cases']:>6}{row['recall']:>8.0%}{row['chosen']:>8}"
+            f"{row['precision']:>10.0%}"
+        )
+    if report.failed:
+        lines += ["", "Read differently than expected:"]
+        for r in report.failed:
+            lines.append(f"  [{r.state}] {r.text!r}: expected {r.expected}, got {r.got}")
+    return "\n".join(lines)
+
+
+def _misses(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
+    from bike_routing_agent.chat import misslog
+    from bike_routing_agent.config import settings
+
+    path = args.path or settings.chat_miss_log_path
+    if path is None:
+        print(
+            "error: no miss log: set CHAT_MISS_LOG_PATH (it is off by default) or give --path",
+            file=stderr,
+        )
+        return EXIT_USAGE
+    if args.clear:
+        removed = misslog.MissLog(path).clear()
+        print(f"removed {removed} file(s) of the miss log {path}", file=stdout)
+        return EXIT_OK
+    records = misslog.load(path)
+    summary = misslog.summarise(records, top=args.top)
+    if args.export_cases is not None:
+        cases = misslog.candidate_cases(records)
+        args.export_cases.parent.mkdir(parents=True, exist_ok=True)
+        args.export_cases.write_text(
+            json.dumps({"schema_version": 1, "cases": cases}, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        print(f"wrote {len(cases)} unlabelled case(s) to {args.export_cases}", file=stderr)
+    if args.format == "json":
+        print(json.dumps(summary, indent=2, ensure_ascii=False), file=stdout)
+        return EXIT_OK
+    if not summary["total"]:
+        print(f"No misses recorded in {path}.", file=stdout)
+        return EXIT_OK
+    kinds = ", ".join(f"{kind} {n}" for kind, n in summary["by_kind"].items())
+    lines = [f"{summary['total']} message(s) the chat could not read ({kinds}).", ""]
+    lines += [f"  {item['count']:>3}x  {item['text']}" for item in summary["top"]]
+    print("\n".join(lines), file=stdout)
+    return EXIT_OK
 
 
 def _default_service() -> ChatService:
@@ -97,6 +209,10 @@ def run(
     service_factory: Callable[[], ChatService] | None = None,
     reader: Callable[[str], str] = input,
 ) -> int:
+    if args.command == "eval":
+        return _eval(args, stdout, stderr)
+    if args.command == "misses":
+        return _misses(args, stdout, stderr)
     if args.command != "start":
         print("unknown chat command", file=stderr)
         return EXIT_USAGE

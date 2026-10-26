@@ -66,6 +66,7 @@ class ChatState(TypedDict, total=False):
     clarification: list[dict[str, Any]]
     clarify_result: str | None
     # What this turn produced (reset at the start of every turn).
+    miss: str | None  # why the turn counts as "not understood" (misslog.KINDS), else None
     reply: str
     suggestions: list[str]
     plan: dict[str, Any] | None

@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from bike_routing_agent import __version__
+from bike_routing_agent.chat.misslog import MissLog
 from bike_routing_agent.chat.models import (
     ChatRequest,
     PlanError,
@@ -958,6 +959,7 @@ def build_chat_service(cfg: Settings) -> ChatService | None:
         text_enabled=_llm_parser is not None,
         checkpointer=checkpointer,
         max_sessions=cfg.chat_max_sessions,
+        miss_log=MissLog(cfg.chat_miss_log_path) if cfg.chat_miss_log_path else None,
     )
 
 

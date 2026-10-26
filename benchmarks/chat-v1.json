@@ -1,0 +1,768 @@
+{
+  "schema_version": 1,
+  "notes": [
+    "Which way the chat reads a message (chat.graph.decide_intent): the message, the situation it arrives in and the intent a sensible person would call it. The rules decide; nothing is planned and no model is called.",
+    "Situations: none = nothing planned yet; route = a route with two alternatives is on screen; asking = the step-by-step dialogue waits for an answer; failed = the last request found no route.",
+    "'expected' is what the chat SHOULD do, not what the rules happen to do. The cases the rules get wrong are the point: they are where a better reader (more rules, or a model behind them) has to improve, and a rule change must not lose the others.",
+    "plan_text cases assume a configured language-model parser (the runner's text_enabled=True); without one, free text goes to the question-and-answer dialogue.",
+    "New cases come from real messages: 'bike-router chat misses --export-cases' lists the ones the chat could not read; a person labels 'expected' and adds them."
+  ],
+  "cases": [
+    {
+      "id": "start-plan-01",
+      "text": "from Braunschweig to Goslar",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-02",
+      "text": "Braunschweig to Goslar by gravel bike",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-03",
+      "text": "40 km loop from Goslar",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-04",
+      "text": "from Hannover to Celle via Wolfsburg",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-05",
+      "text": "route from 52.26,10.52 to 52.49,10.55",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-06",
+      "text": "Goslar to Wernigerode on a road bike",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-07",
+      "text": "50 km round trip from Bremen",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-08",
+      "text": "from Kassel to Göttingen avoiding busy roads",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-09",
+      "text": "gravel route from Hildesheim to Hannover",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-10",
+      "text": "ride from Berlin to Potsdam tomorrow at 8",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-11",
+      "text": "from Oxford to Bicester",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-12",
+      "text": "Bremen to Oldenburg, about 50 km",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-guided-01",
+      "text": "plan a route",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-02",
+      "text": "I want to plan a ride",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-03",
+      "text": "hi",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-04",
+      "text": "hello",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-05",
+      "text": "let's go",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-06",
+      "text": "route please",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-guided-07",
+      "text": "Goslar",
+      "state": "none",
+      "expected": "guided"
+    },
+    {
+      "id": "start-text-01",
+      "text": "a relaxed afternoon ride around Goslar with a coffee stop",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-02",
+      "text": "something scenic from Braunschweig into the Harz this weekend",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-03",
+      "text": "I'd like to cycle somewhere flat near Hannover, about 60 km",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-04",
+      "text": "show me a quiet gravel loop starting in Wolfenbüttel",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-05",
+      "text": "how do I get to Wernigerode from Braunschweig on a mountain bike?",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-06",
+      "text": "a day trip by bike from Göttingen to the Weser, nothing too steep",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-07",
+      "text": "I have two hours on Sunday morning and live in Celle, what can I ride?",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-text-08",
+      "text": "e-bike tour from Hamburg along the Elbe, two days",
+      "state": "none",
+      "expected": "plan_text"
+    },
+    {
+      "id": "start-reset-01",
+      "text": "new route",
+      "state": "none",
+      "expected": "reset"
+    },
+    {
+      "id": "start-reset-02",
+      "text": "start over",
+      "state": "none",
+      "expected": "reset"
+    },
+    {
+      "id": "start-reset-03",
+      "text": "reset",
+      "state": "none",
+      "expected": "reset"
+    },
+    {
+      "id": "start-help-01",
+      "text": "help",
+      "state": "none",
+      "expected": "help"
+    },
+    {
+      "id": "start-help-02",
+      "text": "what can you do",
+      "state": "none",
+      "expected": "help"
+    },
+    {
+      "id": "start-help-03",
+      "text": "?",
+      "state": "none",
+      "expected": "help"
+    },
+    {
+      "id": "start-help-04",
+      "text": "how does this work",
+      "state": "none",
+      "expected": "help"
+    },
+    {
+      "id": "start-help-05",
+      "text": "commands",
+      "state": "none",
+      "expected": "help"
+    },
+    {
+      "id": "route-refine-01",
+      "text": "make it shorter",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-02",
+      "text": "shorter please",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-03",
+      "text": "flatter",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-04",
+      "text": "avoid ferries",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-05",
+      "text": "on a road bike",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-06",
+      "text": "add a stop at Wolfenbüttel",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-07",
+      "text": "use a gravel bike",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-08",
+      "text": "avoid busy roads",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-09",
+      "text": "less climbing",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-10",
+      "text": "make it 50 km",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-11",
+      "text": "leave tomorrow at 9",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-12",
+      "text": "start at 7:30",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-13",
+      "text": "past 2 castles",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-14",
+      "text": "with a stop in Celle",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-15",
+      "text": "can you make it a bit longer",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-16",
+      "text": "avoid cobblestones",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-17",
+      "text": "prefer paved roads",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-18",
+      "text": "go via Hildesheim",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-19",
+      "text": "use brouter",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-20",
+      "text": "no ferries please",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-21",
+      "text": "I'd rather ride a touring bike",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-22",
+      "text": "make the ride longer, about 60 km",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-23",
+      "text": "drop the stop",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-24",
+      "text": "avoid motorways",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-alternatives-01",
+      "text": "alternatives",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-02",
+      "text": "show me other routes",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-03",
+      "text": "the mtb version",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-04",
+      "text": "the second one",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-05",
+      "text": "the fastest one",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-06",
+      "text": "compare them",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-07",
+      "text": "what other options are there",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-08",
+      "text": "use the touring version",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-09",
+      "text": "show the first alternative",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-alternatives-10",
+      "text": "other versions?",
+      "state": "route",
+      "expected": "alternatives"
+    },
+    {
+      "id": "route-sights-01",
+      "text": "what sights are along the way?",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-02",
+      "text": "any castles on the route?",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-03",
+      "text": "points of interest",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-04",
+      "text": "what is there to see",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-05",
+      "text": "museums on the way?",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-06",
+      "text": "anything worth seeing near the route?",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-07",
+      "text": "show me sights",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-sights-08",
+      "text": "where can I stop for a view?",
+      "state": "route",
+      "expected": "sights"
+    },
+    {
+      "id": "route-explain-01",
+      "text": "weather?",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-02",
+      "text": "how steep is it?",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-03",
+      "text": "how much climbing is that",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-04",
+      "text": "is it paved?",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-05",
+      "text": "what's the surface like",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-06",
+      "text": "how long will it take",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-07",
+      "text": "will it rain",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-08",
+      "text": "how far is it",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-09",
+      "text": "why this route?",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-10",
+      "text": "how busy are the roads",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-11",
+      "text": "what is the elevation",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-explain-12",
+      "text": "when should I leave to avoid the heat",
+      "state": "route",
+      "expected": "explain"
+    },
+    {
+      "id": "route-export-01",
+      "text": "send me the gpx",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-export-02",
+      "text": "download",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-export-03",
+      "text": "export for my garmin",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-export-04",
+      "text": "give me the geojson file",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-export-05",
+      "text": "save it",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-export-06",
+      "text": "can I get the file for my wahoo",
+      "state": "route",
+      "expected": "export"
+    },
+    {
+      "id": "route-optimize-01",
+      "text": "optimise for less traffic",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-02",
+      "text": "the quietest route with as much asphalt as possible",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-03",
+      "text": "find the route with the fewest busy roads",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-04",
+      "text": "optimize for the most castles",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-05",
+      "text": "I want the smoothest and quietest route",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-reset-01",
+      "text": "new route",
+      "state": "route",
+      "expected": "reset"
+    },
+    {
+      "id": "route-reset-02",
+      "text": "start over",
+      "state": "route",
+      "expected": "reset"
+    },
+    {
+      "id": "route-help-01",
+      "text": "help",
+      "state": "route",
+      "expected": "help"
+    },
+    {
+      "id": "route-help-02",
+      "text": "what can I ask you",
+      "state": "route",
+      "expected": "help"
+    },
+    {
+      "id": "route-newplan-01",
+      "text": "from Hannover to Celle",
+      "state": "route",
+      "expected": "plan"
+    },
+    {
+      "id": "route-newplan-02",
+      "text": "40 km loop from Bremen",
+      "state": "route",
+      "expected": "plan"
+    },
+    {
+      "id": "route-newplan-03",
+      "text": "Kassel to Marburg by road bike",
+      "state": "route",
+      "expected": "plan"
+    },
+    {
+      "id": "asking-answer-01",
+      "text": "Braunschweig",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-02",
+      "text": "gravel",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-03",
+      "text": "30",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-04",
+      "text": "a loop",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-05",
+      "text": "skip",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-06",
+      "text": "Goslar, Germany",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-07",
+      "text": "52.26, 10.52",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-08",
+      "text": "about 40 km",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-09",
+      "text": "no preference",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-answer-10",
+      "text": "yes",
+      "state": "asking",
+      "expected": "guided"
+    },
+    {
+      "id": "asking-reset-01",
+      "text": "new route",
+      "state": "asking",
+      "expected": "reset"
+    },
+    {
+      "id": "asking-reset-02",
+      "text": "start over",
+      "state": "asking",
+      "expected": "reset"
+    },
+    {
+      "id": "asking-help-01",
+      "text": "help",
+      "state": "asking",
+      "expected": "help"
+    },
+    {
+      "id": "failed-retry-01",
+      "text": "use openrouteservice",
+      "state": "failed",
+      "expected": "refine"
+    },
+    {
+      "id": "failed-retry-02",
+      "text": "try again",
+      "state": "failed",
+      "expected": "refine"
+    },
+    {
+      "id": "failed-retry-03",
+      "text": "use brouter instead",
+      "state": "failed",
+      "expected": "refine"
+    },
+    {
+      "id": "failed-retry-04",
+      "text": "retry with ors",
+      "state": "failed",
+      "expected": "refine"
+    },
+    {
+      "id": "failed-newplan-01",
+      "text": "from Hannover to Celle",
+      "state": "failed",
+      "expected": "plan"
+    },
+    {
+      "id": "failed-newplan-02",
+      "text": "Bremen to Oldenburg",
+      "state": "failed",
+      "expected": "plan"
+    }
+  ]
+}
