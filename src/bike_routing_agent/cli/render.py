@@ -80,7 +80,7 @@ def pick_lines(summary: dict[str, Any]) -> list[str]:
             f"Too few to read a lean from (needs {summary['min_picks']} picks, a quarter of them "
             "another route); nothing below is a finding yet."
         )
-    if took:
+    if took and summary["lean"]:
         lines += ["", "Where the route taken beat the recommended one (mean, 0..1 scale):"]
         width = max(len(row["label"]) for row in summary["lean"])
         lines += [

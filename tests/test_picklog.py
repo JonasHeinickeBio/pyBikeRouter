@@ -238,6 +238,13 @@ def test_picks_json_empty_log_and_the_configured_path(tmp_path, monkeypatch):
     assert rc == 0 and json.loads(out)["total"] == 1
 
 
+def test_picks_with_no_data_to_compare_prints_the_counts_without_a_table(tmp_path):
+    path = tmp_path / "p.jsonl"
+    path.write_text('{"values": [{}, {}], "picked": 1, "selected": 0}\n', encoding="utf-8")
+    rc, out, _ = run("--path", str(path))
+    assert rc == 0 and "another 1x" in out and "Where the route taken" not in out
+
+
 def test_picks_clear_deletes_the_log(tmp_path):
     path = tmp_path / "p.jsonl"
     PickLog(path).record(build_record(PickRequest.model_validate(body())))
