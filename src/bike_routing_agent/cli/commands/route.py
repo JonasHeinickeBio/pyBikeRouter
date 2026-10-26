@@ -6,13 +6,14 @@ import argparse
 import asyncio
 import json
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
 from pydantic import ValidationError
 
-from bike_routing_agent.cli.render import plan_text
+from bike_routing_agent.cli.render import format_ms, plan_text
 from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate, RoutePlanAPIRequest
 from bike_routing_agent.storage.history import record_from_state
 
@@ -176,6 +177,17 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         choices=("json", "text"),
         default="json",
         help="json (default; machine readable) or text (a readable summary)",
+    )
+    plan.add_argument(
+        "--trace",
+        action="store_true",
+        help="show where the time went, per step (a list in text, a 'trace' key in json)",
+    )
+    plan.add_argument(
+        "--quiet",
+        "-q",
+        action="store_true",
+        help="no progress lines on stderr (they are shown only when stderr is a terminal)",
     )
     plan.add_argument(
         "--candidate",
@@ -437,9 +449,12 @@ def run(
         return 2
 
     factory = graph_factory or _default_graph_factory
+    show_progress = not args.quiet and bool(getattr(stderr, "isatty", lambda: False)())
     try:
         graph = factory()
-        final_state = asyncio.run(graph.ainvoke({"raw_input": request}))
+        final_state = asyncio.run(
+            _run_graph(graph, request, _progress_printer(stderr) if show_progress else None)
+        )
     except ValueError as exc:
         print(f"invalid request: {exc}", file=stderr)
         return 2
@@ -448,6 +463,8 @@ def run(
         return EXIT_FAILURE
 
     payload = _response_payload(final_state)
+    if args.trace:
+        payload["trace"] = final_state.get("trace") or []
     payload["plan_id"] = (
         None
         if args.no_record
@@ -539,6 +556,37 @@ def _write_exports(
             path.write_text(render(candidate), encoding="utf-8")
             print(f"wrote {path}", file=stderr)
     return EXIT_OK
+
+
+async def _run_graph(
+    graph: Any, request: dict[str, Any], progress: Callable[[str, dict[str, Any]], None] | None
+) -> dict[str, Any]:
+    """Run the planning graph. With ``progress`` (called as each step finishes) the graph is
+    streamed; a graph that cannot stream, or no ``progress``, is simply invoked."""
+    if progress is None or not hasattr(graph, "astream"):
+        return await graph.ainvoke({"raw_input": request})
+    final: dict[str, Any] = {}
+    async for mode, chunk in graph.astream(
+        {"raw_input": request}, stream_mode=["updates", "values"]
+    ):
+        if mode == "updates":
+            for node, update in chunk.items():
+                progress(node, update if isinstance(update, dict) else {})
+        elif mode == "values":
+            final = chunk
+    return final
+
+
+def _progress_printer(stderr: IO[str]) -> Callable[[str, dict[str, Any]], None]:
+    """One line on stderr per finished step: ``  Routing ... 8.2 s``."""
+    from bike_routing_agent.tracing import STEP_LABELS
+
+    def show(node: str, update: dict[str, Any]) -> None:
+        steps = update.get("trace") or []
+        took = f" {format_ms(steps[-1].get('ms'))}" if steps else ""
+        print(f"  {STEP_LABELS.get(node, node)} ...{took}", file=stderr, flush=True)
+
+    return show
 
 
 def _response_payload(final_state: dict[str, Any]) -> dict[str, Any]:
