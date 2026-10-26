@@ -104,7 +104,7 @@ entry says how to run it. Everything that can be prepared in the repository is:
 | `server.json` | The registry entry: name `io.github.JonasHeinickeBio/bike-router`, description, repository, the PyPI package `bike-router` run with `uvx` as `mcp serve`, and the one environment variable (`BIKE_ROUTER_API_URL`). Validated against the registry's schema (`2025-12-11`). |
 | `README.md` | Ends with a hidden `mcp-name: io.github.JonasHeinickeBio/bike-router`: PyPI shows the README as the package description, and the registry proves ownership by finding that string there. |
 | `pyproject.toml` | PyPI metadata (keywords, classifiers, URLs); the package is named `bike-router`, like its command. |
-| `.github/workflows/publish-pypi.yml` | Builds and uploads to PyPI when a `v*` tag is pushed, with PyPI trusted publishing (no token stored). |
+| `.github/workflows/publish-pypi.yml` | On a `v*` tag, in three jobs: **build** (version guard, build, `twine check --strict`), **publish** (upload to PyPI, environment `pypi`, trusted publishing: no token stored), **github-release** (attach the same files to the GitHub release, environment `github-release`, only after PyPI accepted them). |
 | `scripts/check_release_version.py` | Run first by that workflow: the tag, `pyproject.toml`, `__version__` and both versions in `server.json` must be the same, or nothing is built. |
 
 The version is written in those four places, so a release is: change them together, merge, then tag.
@@ -113,11 +113,16 @@ The version is written in those four places, so a release is: change them togeth
 
 1. **Once, on PyPI:** create an account, then *Your projects > Publishing > Add a pending publisher*: PyPI project
    name `bike-router`, owner `JonasHeinickeBio`, repository `pyBikeRouter`, workflow
-   `publish-pypi.yml`, environment `pypi`. In the GitHub repository create the environment `pypi`
-   (Settings > Environments); requiring your approval there is a good guard.
+   `publish-pypi.yml`, environment `pypi`.
+   **Once, on GitHub** (Settings > Environments > New environment): create **`pypi`** and
+   **`github-release`**, the two environments the workflow's jobs run in. Add *Required reviewers* (yourself) to
+   both: the job then waits for your approval in the Actions tab before it uploads anything, so a mistaken tag
+   can still be stopped. (A job whose environment does not exist is created without protection on first
+   run: create them first.)
 2. **Each release:** bump the version (the four places), merge, then `git tag v0.3.0 && git push origin v0.3.0`.
-   `release.yml` builds the container image and the easy-install zip, `publish-pypi.yml` uploads the package.
-   Check <https://pypi.org/project/bike-router/>.
+   `release.yml` builds the container image and the easy-install zip; `publish-pypi.yml` builds the package and
+   waits for your approval of `pypi`, uploads it, then waits for `github-release` and attaches the files to the
+   release. Check <https://pypi.org/project/bike-router/>.
 3. **Then the registry entry**, from a checkout of that tag:
 
    ```bash

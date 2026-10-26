@@ -130,13 +130,52 @@ def test_the_guard_notices_a_package_that_the_registry_entry_would_not_find(tmp_
     assert guard.package_names()["pyproject.toml name"] == PYPROJECT["project"]["name"]
 
 
-def test_the_publish_workflow_builds_from_the_tag_and_publishes_without_a_token():
-    workflow = (ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
-    assert 'tags: ["v*"]' in workflow and "workflow_dispatch" not in workflow  # only on a tag
-    assert 'check_release_version.py "$GITHUB_REF_NAME"' in workflow
-    assert workflow.index("check_release_version.py") < workflow.index("python -m build")
-    assert "id-token: write" in workflow and "environment: pypi" in workflow
-    assert "secrets." not in workflow and "password:" not in workflow  # trusted publishing
-    # the permission to publish is only on the publish job, not the build job
-    assert workflow.count("id-token: write") == 1
-    assert re.search(r"pypa/gh-action-pypi-publish@[0-9a-f]{40} # v", workflow)  # pinned by hash
+def workflow_jobs() -> dict[str, str]:
+    """The text of each job of the publish workflow, by job id."""
+    text = (ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
+    body = text[text.index("\njobs:\n") + len("\njobs:\n") :]
+    parts = re.split(r"^  ([a-z-]+):\n", body, flags=re.MULTILINE)
+    return dict(zip(parts[1::2], parts[2::2], strict=True))
+
+
+def test_the_publish_workflow_runs_only_on_a_tag_with_nothing_written_by_default():
+    text = (ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
+    assert 'tags: ["v*"]' in text and "workflow_dispatch" not in text  # only on a tag
+    assert re.search(r"^permissions:\n  contents: read$", text, flags=re.MULTILINE)
+    assert "secrets." not in text.replace("secrets.GITHUB_TOKEN", "")  # no stored credentials
+    assert "password:" not in text  # PyPI trusted publishing: nothing to store
+
+
+def test_each_outward_facing_step_is_a_job_in_its_own_github_environment():
+    jobs = workflow_jobs()
+    assert list(jobs) == ["build", "publish", "github-release"]
+    assert "environment:" not in jobs["build"]  # building publishes nothing
+    assert "environment: pypi\n" in jobs["publish"]
+    assert "environment: github-release\n" in jobs["github-release"]
+    # in order: build, then PyPI, then the GitHub release (never announced before PyPI accepted it)
+    assert "needs: build" in jobs["publish"] and "needs: publish" in jobs["github-release"]
+
+
+def test_a_job_has_only_the_permission_its_step_needs():
+    jobs = workflow_jobs()
+    assert "id-token: write" in jobs["publish"] and "contents: write" not in jobs["publish"]
+    assert "contents: write" in jobs["github-release"]
+    assert "id-token" not in jobs["github-release"] and "permissions" not in jobs["build"]
+
+
+def test_the_build_checks_before_it_builds_and_the_package_before_it_ships():
+    build = workflow_jobs()["build"]
+    assert 'check_release_version.py "$GITHUB_REF_NAME"' in build
+    assert build.index("check_release_version.py") < build.index("python -m build")
+    assert build.index("python -m build") < build.index("twine check --strict dist/*")
+    assert "upload-artifact" in build  # the same files go to both PyPI and the release
+
+
+def test_the_upload_steps_use_the_built_files_and_pinned_actions():
+    jobs = workflow_jobs()
+    for name in ("publish", "github-release"):
+        assert "download-artifact" in jobs[name]  # nothing is rebuilt: what was checked is shipped
+    assert re.search(r"pypa/gh-action-pypi-publish@[0-9a-f]{40} # v", jobs["publish"])  # by hash
+    release = jobs["github-release"]
+    assert "gh release upload" in release and "--clobber" in release
+    assert "gh release create" in release  # release.yml may not have made it yet
