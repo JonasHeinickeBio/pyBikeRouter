@@ -116,7 +116,7 @@ AWS_SECRET_ACCESS_KEY=...
 ```
 
 Install the extra: `poetry install --extras s3` (or `pip install
-'bike-routing-agent[s3]'`). The bucket must exist; the app never creates one.
+'bike-router[s3]'`). The bucket must exist; the app never creates one.
 
 `GET /v1/routes/{filename}` streams the object through the API by default, which
 keeps one URL, the right media type and no bucket exposure. Setting

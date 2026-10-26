@@ -49,9 +49,10 @@ def test_the_package_is_this_project_on_pypi_and_run_with_uvx():
 
 
 def test_uvx_finds_an_executable_called_like_the_package():
+    """``uvx <package> ...`` runs the executable that has the package's name."""
     scripts = PYPROJECT["project"]["scripts"]
     assert scripts[PACKAGE["identifier"]] == "bike_routing_agent.cli:main"
-    assert scripts["bike-router"] == scripts[PACKAGE["identifier"]]  # the same program, two names
+    assert PACKAGE["identifier"] == "bike-router"  # the command people already know
 
 
 def test_the_arguments_are_a_real_command_and_the_environment_variable_is_the_one_read():

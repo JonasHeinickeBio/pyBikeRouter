@@ -1,5 +1,5 @@
 [project]
-name = "bike-routing-agent"
+name = "bike-router"
 version = "0.3.0"
 description = "OSM-based bike routing service with a LangGraph orchestration workflow"
 readme = "README.md"
@@ -40,10 +40,9 @@ Documentation = "https://github.com/JonasHeinickeBio/pyBikeRouter/tree/main/docs
 Issues = "https://github.com/JonasHeinickeBio/pyBikeRouter/issues"
 
 [project.scripts]
+# Called like the package, so `uvx bike-router mcp serve` finds it (the MCP Registry's server.json
+# relies on that).
 bike-router = "bike_routing_agent.cli:main"
-# The same command under the package's own name: `uvx bike-routing-agent mcp serve` runs the
-# executable called like the package (the MCP Registry's server.json relies on it).
-bike-routing-agent = "bike_routing_agent.cli:main"
 
 [tool.poetry]
 packages = [{ include = "bike_routing_agent", from = "src" }]

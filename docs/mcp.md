@@ -29,12 +29,11 @@ Once a release is on PyPI (see [Publishing](#publishing-to-pypi-and-the-mcp-regi
 server with no checkout and no install step, with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-BIKE_ROUTER_API_URL=http://127.0.0.1:8765 uvx bike-routing-agent mcp serve
+BIKE_ROUTER_API_URL=http://127.0.0.1:8765 uvx bike-router mcp serve
 ```
 
-`bike-routing-agent` is the same program as `bike-router` under the package's own name (that is what `uvx`
-looks for). The server still needs a **running pyBikeRouter API** to ask: the package is the thin client, not
-the routing engine; the API address comes from `BIKE_ROUTER_API_URL` or `--api`.
+The package is called like the command (`bike-router`), which is what `uvx` looks for. The server still needs a
+**running pyBikeRouter API** to ask: the package is the thin client, not the routing engine; the API address comes from `BIKE_ROUTER_API_URL` or `--api`.
 
 ## The tools
 
@@ -102,9 +101,9 @@ entry says how to run it. Everything that can be prepared in the repository is:
 
 | File | What it is |
 | --- | --- |
-| `server.json` | The registry entry: name `io.github.JonasHeinickeBio/bike-router`, description, repository, the PyPI package `bike-routing-agent` run with `uvx` as `mcp serve`, and the one environment variable (`BIKE_ROUTER_API_URL`). Validated against the registry's schema (`2025-12-11`). |
+| `server.json` | The registry entry: name `io.github.JonasHeinickeBio/bike-router`, description, repository, the PyPI package `bike-router` run with `uvx` as `mcp serve`, and the one environment variable (`BIKE_ROUTER_API_URL`). Validated against the registry's schema (`2025-12-11`). |
 | `README.md` | Ends with a hidden `mcp-name: io.github.JonasHeinickeBio/bike-router`: PyPI shows the README as the package description, and the registry proves ownership by finding that string there. |
-| `pyproject.toml` | PyPI metadata (keywords, classifiers, URLs) and the `bike-routing-agent` command. |
+| `pyproject.toml` | PyPI metadata (keywords, classifiers, URLs); the package is named `bike-router`, like its command. |
 | `.github/workflows/publish-pypi.yml` | Builds and uploads to PyPI when a `v*` tag is pushed, with PyPI trusted publishing (no token stored). |
 | `scripts/check_release_version.py` | Run first by that workflow: the tag, `pyproject.toml`, `__version__` and both versions in `server.json` must be the same, or nothing is built. |
 
@@ -113,12 +112,12 @@ The version is written in those four places, so a release is: change them togeth
 **What only you can do** (these use your own accounts; nothing here is done for you):
 
 1. **Once, on PyPI:** create an account, then *Your projects > Publishing > Add a pending publisher*: PyPI project
-   name `bike-routing-agent`, owner `JonasHeinickeBio`, repository `pyBikeRouter`, workflow
+   name `bike-router`, owner `JonasHeinickeBio`, repository `pyBikeRouter`, workflow
    `publish-pypi.yml`, environment `pypi`. In the GitHub repository create the environment `pypi`
    (Settings > Environments); requiring your approval there is a good guard.
 2. **Each release:** bump the version (the four places), merge, then `git tag v0.3.0 && git push origin v0.3.0`.
    `release.yml` builds the container image and the easy-install zip, `publish-pypi.yml` uploads the package.
-   Check <https://pypi.org/project/bike-routing-agent/>.
+   Check <https://pypi.org/project/bike-router/>.
 3. **Then the registry entry**, from a checkout of that tag:
 
    ```bash

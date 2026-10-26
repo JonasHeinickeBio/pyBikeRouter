@@ -50,7 +50,7 @@ class S3ArtifactStore:
         except ImportError as exc:  # pragma: no cover - depends on the environment
             raise RuntimeError(
                 "ARTIFACT_BACKEND=s3 needs boto3; install the s3 extra: "
-                "pip install 'bike-routing-agent[s3]'"
+                "pip install 'bike-router[s3]'"
             ) from exc
         config = Config(s3={"addressing_style": "path" if path_style else "auto"})
         return boto3.client("s3", endpoint_url=endpoint_url, region_name=region, config=config)

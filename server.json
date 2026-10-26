@@ -12,7 +12,7 @@
   "packages": [
     {
       "registryType": "pypi",
-      "identifier": "bike-routing-agent",
+      "identifier": "bike-router",
       "version": "0.3.0",
       "runtimeHint": "uvx",
       "transport": {
