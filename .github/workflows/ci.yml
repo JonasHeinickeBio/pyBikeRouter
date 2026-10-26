@@ -47,7 +47,7 @@ jobs:
       - name: Mypy
         run: poetry run mypy src
 
-  # Job names are kept as "test (3.11)" / "test (3.12)" so any existing
+  # Job names are kept as "test (3.11)" / "test (3.12)" / "test (3.14)" so any existing
   # required-status-check configuration keeps matching.
   test:
     name: test (${{ matrix.python-version }})
@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-python-poetry
