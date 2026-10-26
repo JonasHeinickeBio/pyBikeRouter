@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.JonasHeinickeBio/bike-router",
+  "title": "Bike Router",
+  "description": "Plan bike routes with a self-hosted OSM service: facts only, with weather and sights.",
+  "websiteUrl": "https://github.com/JonasHeinickeBio/pyBikeRouter/blob/main/docs/mcp.md",
+  "repository": {
+    "url": "https://github.com/JonasHeinickeBio/pyBikeRouter",
+    "source": "github"
+  },
+  "version": "0.3.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "bike-router",
+      "version": "0.3.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        },
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "BIKE_ROUTER_API_URL",
+          "description": "Address of the running pyBikeRouter API this server asks (http or https).",
+          "isRequired": true,
+          "format": "string",
+          "default": "http://127.0.0.1:8000"
+        }
+      ]
+    }
+  ]
+}

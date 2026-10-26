@@ -59,7 +59,7 @@ class RedisCacheBackend:
         except ImportError as exc:  # pragma: no cover - depends on the environment
             raise RuntimeError(
                 "CACHE_BACKEND=redis needs the redis client; install the cache extra: "
-                "pip install 'bike-routing-agent[cache]'"
+                "pip install 'bike-router[cache]'"
             ) from exc
         return redis_asyncio.from_url(
             url,

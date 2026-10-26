@@ -61,7 +61,7 @@ class AnthropicBackend:
         except ImportError as exc:  # pragma: no cover - depends on the environment
             raise RuntimeError(
                 "LLM_PROVIDER=anthropic needs the Anthropic SDK; install the llm extra: "
-                "pip install 'bike-routing-agent[llm]'"
+                "pip install 'bike-router[llm]'"
             ) from exc
         # With no key given the SDK resolves credentials itself (environment,
         # auth token, profile). Retries stay at the SDK default for transient errors.

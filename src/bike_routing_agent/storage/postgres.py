@@ -77,7 +77,7 @@ def _import_psycopg() -> Any:
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise RuntimeError(
             "DATABASE_URL is set but psycopg is not installed; "
-            "install the database extra: pip install 'bike-routing-agent[db]'"
+            "install the database extra: pip install 'bike-router[db]'"
         ) from exc
     return psycopg, psycopg_pool
 

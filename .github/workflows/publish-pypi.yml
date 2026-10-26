@@ -1,0 +1,89 @@
+name: publish-pypi
+
+# Publishes the package to PyPI when a version tag is pushed (the same tag release.yml builds the
+# container image from):
+#
+#   git tag v0.3.0 && git push origin v0.3.0
+#
+# Three jobs, each outward-facing one in its own GitHub environment (Settings > Environments), so
+# that "required reviewers" can make a person approve every step before it runs:
+#
+#   build           no environment: checks the versions, builds, `twine check`s the description
+#   publish         environment `pypi`: uploads to PyPI (trusted publishing: no token is stored)
+#   github-release  environment `github-release`: attaches the same files to the GitHub release,
+#                   only after PyPI accepted them
+#
+# PyPI has to be told to trust this workflow first (PyPI > Publishing > add a publisher: owner
+# JonasHeinickeBio, repository pyBikeRouter, workflow publish-pypi.yml, environment pypi); until then
+# the publish job fails and nothing is released. The MCP Registry entry (server.json) is published
+# by hand afterwards, see docs/mcp.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: The tag, pyproject.toml, __version__ and server.json agree
+        run: python scripts/check_release_version.py "$GITHUB_REF_NAME"
+      - name: Build the sdist and the wheel
+        run: |
+          python -m pip install --upgrade build twine
+          python -m build
+      - name: The package description renders on PyPI (it carries the registry's mcp-name)
+        run: python -m twine check --strict dist/*
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write   # the OIDC token PyPI exchanges for a short-lived upload credential
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+
+  github-release:
+    name: attach to the GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: github-release
+    permissions:
+      contents: write   # create the release if release.yml has not yet, and upload the files
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - name: Attach the sdist and the wheel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # release.yml creates the release too: whichever job is second finds it there.
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
+            || gh release view "$GITHUB_REF_NAME" >/dev/null
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
