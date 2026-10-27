@@ -19,11 +19,20 @@ the plan is recorded in state as provenance for the explanation.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import logging
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from bike_routing_agent.errors import ProviderCoverageError, ProviderError, ProviderNoRouteError
-from bike_routing_agent.loops import synthesize_loop_vias
+from bike_routing_agent.loops import (
+    LOOP_BEARINGS_DEG,
+    LOOP_MAX_ROUTES,
+    LOOP_TOLERANCE,
+    LoopPlan,
+    next_chord_target,
+    synthesize_loop_vias,
+)
 from bike_routing_agent.models import (
     Coordinate,
     OptimizeSpec,
@@ -35,6 +44,8 @@ from bike_routing_agent.providers.base import RoutingProvider
 from bike_routing_agent.providers.brouter_optimize import PoiVia
 from bike_routing_agent.providers.brouter_segments import SEGMENTS_BASE_URL, segments_for_points
 from bike_routing_agent.state import RouteAgentState
+
+logger = logging.getLogger(__name__)
 
 NodeFn = Callable[[RouteAgentState], Awaitable[dict[str, Any]]]
 
@@ -150,6 +161,56 @@ def _engines_for(
     return chosen or configured
 
 
+async def _sized_loop(
+    provider: RoutingProvider,
+    origin: Coordinate,
+    destination: Coordinate,
+    constraints: RouteConstraints,
+    goal_m: float,
+) -> LoopPlan | None:
+    """A loop whose *road* distance is near ``goal_m``, found by routing it.
+
+    A loop drawn with chords of the target length comes out 25-45 % longer on real roads, so the
+    first route is measured and the circuit redrawn by the ratio (at most ``LOOP_MAX_ROUTES``
+    requests). When an engine cannot reach a waypoint the circuit is turned around the start and
+    tried again. ``None`` when no attempt got a route: the ordinary request then reports why.
+    """
+    chord_m = goal_m
+    turns = 0
+    best: tuple[float, LoopPlan] | None = None
+    for attempt in range(1, LOOP_MAX_ROUTES + 1):
+        plan = synthesize_loop_vias(
+            origin,
+            chord_m,
+            direction=constraints.loop_direction,
+            bearing_deg=LOOP_BEARINGS_DEG[turns % len(LOOP_BEARINGS_DEG)],
+        )
+        request = RoutingRequest(
+            origin=origin, destination=destination, via=list(plan.vias), constraints=constraints
+        )
+        try:
+            candidate = await provider.route(request)
+        except ProviderCoverageError:
+            return None  # turning the loop does not bring the map data
+        except ProviderError:
+            turns += 1  # a waypoint the engine cannot reach: another direction
+            continue
+        except Exception:  # sizing is best effort; the ordinary request reports real trouble
+            logger.warning("loop sizing stopped", exc_info=True)
+            break
+        routed_m = float(candidate.metrics.distance_m or 0.0)
+        if routed_m <= 0:
+            break
+        miss = abs(routed_m - goal_m) / goal_m
+        sized = dataclasses.replace(plan, routed_m=routed_m, attempts=attempt)
+        if best is None or miss < best[0]:
+            best = (miss, sized)
+        if miss <= LOOP_TOLERANCE:
+            break
+        chord_m = next_chord_target(chord_m, routed_m, goal_m)
+    return best[1] if best else None
+
+
 def build_route_node(
     *,
     routing_providers: Sequence[RoutingProvider],
@@ -171,18 +232,21 @@ def build_route_node(
         # Loop contract (issue #5): geocode has already snapped the
         # destination onto the origin. A caller who supplied vias drew the
         # loop themselves and gets exactly that shape; otherwise the circuit
-        # is synthesized around the origin at the requested size, because
-        # origin == destination alone would ask the engines for a
-        # zero-length route.
+        # is synthesized around the origin at the requested size (and sized
+        # against a real route, see _sized_loop), because origin == destination
+        # alone would ask the engines for a zero-length route.
         # The sight stops of a loop (select_poi_stops) draw the circuit themselves.
         loop_plan: dict[str, Any] | None = state.get("loop_plan")
         if constraints.return_to_origin and not via:
             assert constraints.target_distance_km is not None  # RouteConstraints validator
-            plan = synthesize_loop_vias(
+            goal_m = constraints.target_distance_km * 1000.0
+            plan = await _sized_loop(
+                routing_providers[0],
                 origin,
-                constraints.target_distance_km * 1000.0,
-                direction=constraints.loop_direction,
-            )
+                Coordinate.model_validate(state["resolved_destination"]),
+                constraints,
+                goal_m,
+            ) or synthesize_loop_vias(origin, goal_m, direction=constraints.loop_direction)
             via = list(plan.vias)
             loop_plan = plan.to_state()
 

@@ -44,6 +44,19 @@ METERS_PER_DEGREE_LAT = 111_320.0
 # origin (see module docstring for why two is the exact right number).
 SYNTHESIZED_VIA_COUNT = 2
 
+# Roads wind: the road distance of a loop drawn with chords of the target length comes out 25-45 %
+# longer. The route node therefore measures the first route and redraws the loop smaller (or
+# larger) by the ratio, until the road distance is within this share of the target.
+LOOP_TOLERANCE = 0.10
+# At most this many routes are asked for while sizing one loop (the final one is routed again with
+# every engine, so a loop costs up to this many requests more than a trip).
+LOOP_MAX_ROUTES = 3
+# The loop is turned around the start by these angles when an engine cannot reach a waypoint (a
+# via in a lake or behind a railway: "target island detected").
+LOOP_BEARINGS_DEG = (0.0, 120.0, 240.0)
+# However wrong the first guess was, the next chord target stays within these factors of the goal.
+_CHORD_FACTORS = (0.4, 1.6)
+
 # Above this |latitude| the equirectangular projection below degenerates
 # (cos(lat) -> 0); polar loop planning is deliberately unsupported.
 _MAX_SUPPORTABLE_LAT = 89.5
@@ -63,6 +76,10 @@ class LoopPlan:
     radius_m: float
     direction: LoopDirection
     sides: int
+    bearing_deg: float = 0.0
+    # Set once the loop was sized against a real route: its road distance and the routes asked for.
+    routed_m: float | None = None
+    attempts: int = 1
 
     @property
     def reach_m(self) -> float:
@@ -71,13 +88,18 @@ class LoopPlan:
 
     def to_state(self) -> dict[str, object]:
         """JSON-safe record for graph state / candidate provenance."""
-        return {
+        state: dict[str, object] = {
             "vias": [v.model_dump(mode="json") for v in self.vias],
             "radius_m": self.radius_m,
             "reach_m": round(self.reach_m, 1),
             "direction": self.direction,
             "sides": self.sides,
+            "bearing_deg": self.bearing_deg,
         }
+        if self.routed_m is not None:
+            state["routed_km"] = round(self.routed_m / 1000, 1)
+            state["attempts"] = self.attempts
+        return state
 
 
 def _meters_per_degree_lon(lat_deg: float) -> float:
@@ -104,6 +126,7 @@ def synthesize_loop_vias(
     target_distance_m: float,
     *,
     direction: LoopDirection = "clockwise",
+    bearing_deg: float = 0.0,
 ) -> LoopPlan:
     """Plan a circuit of ``target_distance_m`` starting and ending at ``origin``.
 
@@ -111,6 +134,8 @@ def synthesize_loop_vias(
     common circumcircle; consecutive legs are its chords, so the straight-line
     circuit length is exactly the target (road routing adds the usual detour
     overhead on top, the same way it does for any waypoint route).
+
+    ``bearing_deg`` turns the whole circuit around the origin (0 = the circle's centre due west).
 
     Raises ``ValueError`` for a non-positive target or a polar origin.
     """
@@ -134,11 +159,28 @@ def synthesize_loop_vias(
     sign = 1.0 if direction == "counterclockwise" else -1.0
     center_x, center_y = -radius_m, 0.0
 
+    turn = math.radians(bearing_deg)
     vias: list[Coordinate] = []
     for step in range(1, sides):
         angle = sign * 2.0 * math.pi * step / sides
         x = center_x + radius_m * math.cos(angle)
         y = center_y + radius_m * math.sin(angle)
+        # (the circuit turns about the origin, which is the plane's (0, 0))
+        x, y = x * math.cos(turn) - y * math.sin(turn), x * math.sin(turn) + y * math.cos(turn)
         vias.append(_plane_to_coordinate(origin, x, y))
 
-    return LoopPlan(vias=tuple(vias), radius_m=round(radius_m, 1), direction=direction, sides=sides)
+    return LoopPlan(
+        vias=tuple(vias),
+        radius_m=round(radius_m, 1),
+        direction=direction,
+        sides=sides,
+        bearing_deg=bearing_deg,
+    )
+
+
+def next_chord_target(chord_m: float, routed_m: float, goal_m: float) -> float:
+    """The chord length to draw next so the road distance lands on ``goal_m``: the current chord
+    scaled by goal / routed (the detour factor of these roads stays about the same), kept within
+    sane bounds of the goal so one odd route cannot send the next one far off."""
+    low, high = _CHORD_FACTORS
+    return min(max(chord_m * goal_m / routed_m, low * goal_m), high * goal_m)
