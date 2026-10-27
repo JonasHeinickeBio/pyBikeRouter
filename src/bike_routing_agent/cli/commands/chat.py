@@ -45,7 +45,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
 
     evaluate = sub.add_parser(
         "eval",
-        help="score how the chat reads messages against benchmarks/chat-v1.json (free, offline)",
+        help="score how the chat reads messages against the shipped chat-v1.json (free, offline)",
     )
     evaluate.add_argument("--benchmark", type=Path, default=None, metavar="FILE")
     evaluate.add_argument(

@@ -170,6 +170,11 @@ def test_a_loop_length_can_be_given_in_hours_and_the_assumption_is_said():
         ("loop from Braunschweig for 3\u20134 hours", 63.0),
         ("Rundfahrt ab Braunschweig 60-80 km", 70.0),
         ("60 to 80 km loop from Braunschweig", 70.0),
+        ("Schleife ab Braunschweig 3-4 Stunden", 63.0),
+        ("Rundtour ab Braunschweig 2 Stunden", 36.0),
+        ("loop from Braunschweig 2 Stunden 30 Minuten", 45.0),
+        ("loop from Braunschweig 1,5 Std", 27.0),
+        ("loop from Braunschweig eine halbe Stunde", 9.0),
     ],
 )
 def test_a_range_is_planned_at_its_middle_and_never_ends_up_in_the_place(text, km):

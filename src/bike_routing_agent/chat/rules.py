@@ -189,7 +189,7 @@ _FROM = re.compile(r"\b(?:from|von|ab|starting\s+(?:at|in|from)|start(?:ing)?\s+
 _LOOP_WORDS = re.compile(
     r"\b(?:loop|round[\s-]?trip|circuit|circular(?:\s+(?:route|ride|tour))?|there and back|"
     r"out and back|and back|then back|and return|and then back|rundtour|rundfahrt|"
-    r"und zur[üu]ck)\b",
+    r"schleife|rundkurs|und zur[üu]ck)\b",
     re.I,
 )
 _ENGINE = re.compile(
@@ -209,10 +209,13 @@ _DISTANCE = re.compile(
     r"(?:\s+(?P<post>max(?:imum)?|at most|or less|or fewer|tops))?",
     re.I,
 )
+_HOUR_UNIT = r"(?:hours?|hrs?|h|stunden?|std)\b\.?"
 _DURATION = re.compile(
     rf"(?:(?P<q>{_MAX_WORDS}|about|around|approx(?:imately)?)\s+)?"
-    rf"(?:(?:(?P<lo>{_NUM})\s*(?:-|\u2013|\u2014|to|bis)\s*)?(?P<h>{_NUM})\s*(?:hours?|hrs?|h)\b(?:\s*(?:and\s+)?(?P<m>\d{{1,2}})\s*min\w*)?"
-    r"|(?P<min>\d{1,3})\s*(?:minutes?|mins?)\b|(?P<half>half an hour)|(?P<one>an hour))"
+    rf"(?:(?:(?P<lo>{_NUM})\s*(?:-|\u2013|\u2014|to|bis)\s*)?(?P<h>{_NUM})\s*{_HOUR_UNIT}"
+    r"(?:\s*(?:and|und)?\s*(?P<m>\d{1,2})\s*min\w*)?"
+    r"|(?P<min>\d{1,3})\s*(?:minutes?|mins?|minuten)\b"
+    r"|(?P<half>half an hour|(?:eine\s+)?halbe stunde)|(?P<one>an hour|eine stunde))"
     r"(?:\s+(?:loop|round[\s-]?trip|ride|route|tour|trip|circuit))?",
     re.I,
 )
@@ -254,7 +257,7 @@ _LEAD = re.compile(
 )
 # Words that make a "place" no place: a clause that got into it.
 _NOT_A_PLACE = re.compile(
-    r"\b(?:avoid\w*|without|max|maximum|min|km|hours?|tomorrow|today|bike|route|please|"
+    r"\b(?:avoid\w*|without|max|maximum|min|km|hours?|stunden?|tomorrow|today|bike|route|please|"
     r"ferr\w+|climb\w*|ascent|paved|unpaved|flat|hilly|quiet|using|loop|"
     # a sentence, not a place:
     r"i|we|you|me|my|would|love|want|wanna|need|can|could|ride|rides|cycle|cycling|plan|go|"

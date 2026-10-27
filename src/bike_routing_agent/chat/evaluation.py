@@ -1,4 +1,4 @@
-"""Measure which way the chat reads a message against ``benchmarks/chat-v1.json``.
+"""Measure which way the chat reads a message against the shipped ``data/chat-v1.json``.
 
 Each case is a message, the situation it arrives in and the intent a sensible person would say it
 is. The rules decide (``graph.decide_intent``), nothing is planned and no model is called, so it
@@ -23,7 +23,7 @@ from bike_routing_agent.chat.graph import fallback_intent, rule_intent
 from bike_routing_agent.chat.intent_model import IntentModel
 from bike_routing_agent.chat.models import ChatState
 
-DEFAULT_PATH = Path(__file__).resolve().parents[3] / "benchmarks" / "chat-v1.json"
+DEFAULT_PATH = Path(__file__).resolve().parent / "data" / "chat-v1.json"
 INTENTS = (
     "plan",
     "plan_text",

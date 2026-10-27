@@ -48,6 +48,7 @@ bike-router = "bike_routing_agent.cli:main"
 packages = [{ include = "bike_routing_agent", from = "src" }]
 include = [
     { path = "src/bike_routing_agent/frontend/**/*", format = ["sdist", "wheel"] },
+    { path = "src/bike_routing_agent/chat/data/*.json", format = ["sdist", "wheel"] },
     # The schema migrations ship as package data (issue #28).
     { path = "src/bike_routing_agent/storage/migrations/*.sql", format = ["sdist", "wheel"] },
 ]
