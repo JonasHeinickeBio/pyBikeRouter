@@ -118,12 +118,40 @@ bike-router chat eval --rules-only       # without one: 107 of 126 (84.9 %)
 bike-router chat eval --format json --fail-under 0.85
 ```
 
-It runs the rules only -- nothing is planned and no model is called, so it is free and offline, and a
-test keeps a floor under the score. The table gives recall and precision per intent. What the rules
+It runs the rules only -- nothing is planned and no model is called, so it is free and offline (unless
+you add `--intent-model`, below), and a test keeps a floor under the score. The table gives recall and precision per intent. What the rules
 read wrongly today is the useful part: things people say about sights (*points of interest*, *what is
 there to see*), changes phrased as a request (*no ferries please*, *with a stop in Celle*, *drop the
 stop*), and the plain starters (*plan a route*, *let's go*), which go to the free-text parser instead of
 the dialogue when one is configured.
+
+**A model behind the rules** -- off by default (`CHAT_INTENT_MODEL=true`, with a language model configured
+as for [free text](llm-parser.md)). The rules still go first. Only a message they give up on -- the
+ones that would otherwise be planned as a new trip (`plan_text`) or sent to the dialogue -- is put to
+the model, which answers with **one word** from a fixed list (`plan_text`, `guided`, `refine`,
+`alternatives`, `sights`, `explain`, `export`, `optimize`, `help`). It is deliberately small:
+
+- It only *routes*. The handler it picks reads the message with the same rules as always, so the
+  model can send *what is there to see* to the sights lookup, but it cannot put a place, a distance or
+  a bike type into a request. Nothing the model writes is used except that word.
+- The word must make sense where the person is: with no route on screen, `alternatives`, `sights`,
+  `explain`, `export` and `optimize` are not offered (and a reply naming one is refused); with a failed
+  request `refine` is (*try another engine*).
+- An error, a timeout, a reply that is not one of the allowed words: no answer, and the chat does what
+  it does without a model. The answer to an open question of the dialogue never goes to the model.
+- The message goes in as data between `<message>` tags (at most 500 characters), and **to the model
+  you configured**, exactly as free text does; with a hosted model that means it leaves this machine.
+
+```bash
+LLM_PARSER_ENABLED=true LLM_PROVIDER=openai LLM_BASE_URL=http://127.0.0.1:11434/v1 \
+  LLM_MODEL=llama3.2:3b bike-router chat eval --intent-model
+```
+
+scores the benchmark again with the model behind the rules and prints the rules' own score next to it,
+how many messages the model placed and how many of those it got as expected, and marks its
+placements `(model)` in the list of differences. It makes one model call per message the rules give up
+on (about 23 of the 126, all made-up examples). Use it before switching `CHAT_INTENT_MODEL` on, and
+again when you change the model: a small model can place a message worse than the plain fallback.
 
 **A miss log** -- off by default. Set `CHAT_MISS_LOG_PATH=./data/chat/misses.jsonl` and every message
 the rules could not read is appended there, one line of JSON each: the message (cut at 500 characters),
@@ -243,8 +271,7 @@ Not verified / not covered:
   conversations; they will still meet phrasings nobody tried. Places are looked up as typed, so a
   misspelt place is the geocoder's to find.
 - Follow-ups ("shorter", "avoid ferries" ...) are understood by **rules**, not by a model: phrasing
-  outside them gets "I did not catch what to change" plus examples. A model-based intent step could
-  be added behind the same graph.
+  outside them gets "I did not catch what to change" plus examples. A model-based intent step is available behind the same graph (`CHAT_INTENT_MODEL`, above).
 - Sessions are persisted only when `CHAT_STORE_PATH` is set, and never authenticated: anyone who can
   reach the API can chat and read a session's history; a session id (random, 128 bit) is the only
   handle.

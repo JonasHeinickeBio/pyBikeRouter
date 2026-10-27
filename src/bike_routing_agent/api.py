@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from bike_routing_agent import __version__
+from bike_routing_agent.chat.intent_model import IntentModel
 from bike_routing_agent.chat.misslog import MissLog
 from bike_routing_agent.chat.models import (
     ChatRequest,
@@ -39,7 +40,7 @@ from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.errors import ProviderError
 from bike_routing_agent.graph import build_graph
 from bike_routing_agent.health import build_health_monitor
-from bike_routing_agent.llm.backends import OpenAICompatBackend
+from bike_routing_agent.llm.backends import AnthropicBackend, LLMBackend, OpenAICompatBackend
 from bike_routing_agent.llm.parser import RouteRequestParser
 from bike_routing_agent.models import (
     MAX_TEXT_CHARS,
@@ -135,6 +136,35 @@ def build_cache(cfg: Settings) -> CacheBackend:
             timeout_s=cfg.cache_redis_timeout_s,
         )
     return InMemoryTTLCache()
+
+
+def build_llm_backend(cfg: Settings, *, max_output_tokens: int | None = None) -> LLMBackend | None:
+    """The model transport for a configuration, or ``None`` when no model is configured."""
+    if not cfg.llm_parser_enabled:
+        return None
+    tokens = max_output_tokens or cfg.llm_max_output_tokens
+    if cfg.llm_provider == "openai":
+        return OpenAICompatBackend(
+            base_url=str(cfg.llm_base_url),
+            model=str(cfg.llm_model),
+            api_key=cfg.llm_api_key.get_secret_value() if cfg.llm_api_key else None,
+            timeout_s=cfg.llm_timeout_s,
+            max_output_tokens=tokens,
+        )
+    key = cfg.anthropic_api_key.get_secret_value() if cfg.anthropic_api_key else None
+    return AnthropicBackend(
+        client=AnthropicBackend.build_client(key, cfg.llm_timeout_s),
+        model=str(cfg.llm_model),
+        max_output_tokens=tokens,
+    )
+
+
+def build_intent_model(cfg: Settings) -> IntentModel | None:
+    """The chat's intent model, or ``None`` unless ``CHAT_INTENT_MODEL`` is set and a model is."""
+    if not cfg.chat_intent_model:
+        return None
+    backend = build_llm_backend(cfg, max_output_tokens=min(cfg.llm_max_output_tokens, 1000))
+    return IntentModel(backend) if backend is not None else None
 
 
 def build_llm_parser(
@@ -972,6 +1002,7 @@ def build_chat_service(cfg: Settings) -> ChatService | None:
         _ApiPlanner(),
         sights=_ApiSights() if _poi_service is not None else None,
         text_enabled=_llm_parser is not None,
+        intent_model=build_intent_model(cfg),
         checkpointer=checkpointer,
         max_sessions=cfg.chat_max_sessions,
         miss_log=MissLog(cfg.chat_miss_log_path) if cfg.chat_miss_log_path else None,

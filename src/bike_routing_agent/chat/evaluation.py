@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from bike_routing_agent.chat.graph import decide_intent
+from bike_routing_agent.chat.graph import fallback_intent, rule_intent
+from bike_routing_agent.chat.intent_model import IntentModel
 from bike_routing_agent.chat.models import ChatState
 
 DEFAULT_PATH = Path(__file__).resolve().parents[3] / "benchmarks" / "chat-v1.json"
@@ -92,6 +93,7 @@ class CaseResult:
     state: str
     expected: str
     got: str
+    by_model: bool = False  # the rules gave up and the intent model placed the message
 
     @property
     def passed(self) -> bool:
@@ -109,6 +111,10 @@ class Report:
     @property
     def accuracy(self) -> float:
         return self.passed / len(self.results) if self.results else 0.0
+
+    @property
+    def decided_by_model(self) -> list[CaseResult]:
+        return [r for r in self.results if r.by_model]
 
     @property
     def failed(self) -> list[CaseResult]:
@@ -138,6 +144,8 @@ class Report:
             "cases": len(self.results),
             "passed": self.passed,
             "accuracy": round(self.accuracy, 4),
+            "decided_by_model": len(self.decided_by_model),
+            "right_by_model": sum(1 for r in self.decided_by_model if r.passed),
             "by_intent": self.by_intent(),
             "failures": [
                 {
@@ -173,13 +181,30 @@ def load_benchmark(path: Path | str = DEFAULT_PATH) -> dict[str, Any]:
     return data
 
 
-def run_benchmark(benchmark: dict[str, Any], *, text_enabled: bool = True) -> Report:
+def run_benchmark(
+    benchmark: dict[str, Any],
+    *,
+    text_enabled: bool = True,
+    intent_model: IntentModel | None = None,
+) -> Report:
     """Read every case with the rules. ``text_enabled`` stands for a configured language-model
-    parser: with it, a message no rule claims is routed to free-text planning (``plan_text``)."""
+    parser: with it, a message no rule claims is routed to free-text planning (``plan_text``).
+    With an ``intent_model`` that message is first put to the model (a real call per message the
+    rules give up on), exactly where the chat would ask it."""
     report = Report()
     for case in benchmark["cases"]:
-        got = decide_intent(case["text"], build_state(case["state"]), text_enabled=text_enabled)
+        text, state = case["text"], build_state(case["state"])
+        got = rule_intent(text, state)
+        by_model = False
+        if got is None and intent_model is not None:
+            got = intent_model.classify_sync(
+                text,
+                has_plan=bool(state.get("last_plan")),
+                failed=bool(state.get("failed_request")),
+            )
+            by_model = got is not None
+        got = got or fallback_intent(text, text_enabled=text_enabled)
         report.results.append(
-            CaseResult(case["id"], case["text"], case["state"], case["expected"], got)
+            CaseResult(case["id"], text, case["state"], case["expected"], got, by_model)
         )
     return report

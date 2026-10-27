@@ -54,6 +54,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="as without a language-model parser: a message no rule claims goes to the dialogue",
     )
     evaluate.add_argument(
+        "--intent-model",
+        action="store_true",
+        help="also ask the configured language model (LLM_* settings) about each message the rules "
+        "give up on, as CHAT_INTENT_MODEL does, and show it next to the rules' own score. This "
+        "sends those benchmark messages (about 20, made-up examples) to that model",
+    )
+    evaluate.add_argument(
         "--fail-under",
         type=float,
         default=0.0,
@@ -90,19 +97,47 @@ def _eval(args: argparse.Namespace, stdout: IO[str], stderr: IO[str]) -> int:
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=stderr)
         return EXIT_USAGE
-    report = run_benchmark(benchmark, text_enabled=not args.rules_only)
+    baseline = run_benchmark(benchmark, text_enabled=not args.rules_only)
+    report = baseline
+    if args.intent_model:
+        from bike_routing_agent.api import build_intent_model
+        from bike_routing_agent.config import settings
+
+        model = build_intent_model(settings.model_copy(update={"chat_intent_model": True}))
+        if model is None:
+            print(
+                "error: --intent-model needs a language model: set LLM_PARSER_ENABLED, LLM_MODEL "
+                "and the provider's settings (docs/llm-parser.md)",
+                file=stderr,
+            )
+            return EXIT_USAGE
+        report = run_benchmark(benchmark, text_enabled=not args.rules_only, intent_model=model)
     if args.format == "json":
-        print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False), file=stdout)
+        data = report.as_dict()
+        if report is not baseline:
+            data["rules_accuracy"] = round(baseline.accuracy, 4)
+        print(json.dumps(data, indent=2, ensure_ascii=False), file=stdout)
     else:
-        print(_eval_text(report, rules_only=args.rules_only), file=stdout)
+        print(_eval_text(report, rules_only=args.rules_only, baseline=baseline), file=stdout)
     return EXIT_FAILURE if report.accuracy < args.fail_under else EXIT_OK
 
 
-def _eval_text(report: Any, *, rules_only: bool) -> str:
+def _eval_text(report: Any, *, rules_only: bool, baseline: Any = None) -> str:
     mode = "rules only" if rules_only else "with a free-text parser"
     lines = [
         f"Chat benchmark ({mode}): {report.passed}/{len(report.results)} read as expected "
         f"({report.accuracy:.1%})",
+    ]
+    if baseline is not None and baseline is not report:
+        lines[0] = lines[0].replace("Chat benchmark (", "Chat benchmark (with an intent model, ")
+        decided = report.decided_by_model
+        lines += [
+            f"  the same without the intent model: {baseline.passed}/{len(baseline.results)} "
+            f"({baseline.accuracy:.1%})",
+            f"  the model placed {len(decided)} message(s), {sum(r.passed for r in decided)} "
+            "of them as expected",
+        ]
+    lines += [
         "",
         f"  {'intent':<13}{'cases':>6}{'recall':>8}{'chosen':>8}{'precision':>10}",
     ]
@@ -114,7 +149,8 @@ def _eval_text(report: Any, *, rules_only: bool) -> str:
     if report.failed:
         lines += ["", "Read differently than expected:"]
         for r in report.failed:
-            lines.append(f"  [{r.state}] {r.text!r}: expected {r.expected}, got {r.got}")
+            by = " (model)" if r.by_model else ""
+            lines.append(f"  [{r.state}] {r.text!r}: expected {r.expected}, got {r.got}{by}")
     return "\n".join(lines)
 
 
