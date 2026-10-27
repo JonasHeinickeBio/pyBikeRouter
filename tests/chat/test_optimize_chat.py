@@ -32,6 +32,74 @@ def test_goals_are_read_in_the_order_they_were_said(text, metrics):
 
 
 @pytest.mark.parametrize(
+    ("text", "metrics"),
+    [
+        ("optimise for little climbing", ["ascent"]),
+        ("optimise for quiet roads and little climbing", ["traffic", "ascent"]),
+        ("optimize for fewer hills and less traffic", ["ascent", "traffic"]),
+        ("quiet and flat please", ["traffic", "ascent"]),
+        ("the flattest route with no busy roads", ["ascent", "traffic"]),
+        ("not too hilly and away from busy roads", ["ascent", "traffic"]),
+        ("find the route with the fewest busy roads", ["traffic"]),
+        ("wenig Verkehr und kaum Steigung", ["traffic", "ascent"]),
+        ("ruhig und flach", ["traffic", "ascent"]),
+    ],
+)
+def test_more_ways_of_saying_quiet_and_flat_are_read_as_goals(text, metrics):
+    found = goals.detect(text)
+    assert found is not None and found.metrics == metrics
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a bit flatter", "make it quieter", "flatter and shorter", "I got a flat tyre"],
+)
+def test_the_new_words_do_not_turn_every_wish_into_an_optimisation(text):
+    # a lone mild wish ("flatter") stays an ordinary change; "flat" alone names one goal only
+    assert goals.detect(text) is None
+
+
+def test_a_flat_tyre_is_not_a_flat_route():
+    assert goals.detect("make it quieter because I have a flat tyre") is None
+    assert goals.detect("quiet and flat, my flat tire is mended") is not None
+
+
+def test_the_fewest_busy_roads_names_the_quietest_of_the_routes_already_found():
+    from bike_routing_agent.chat.rules import pick_candidate
+
+    shown = [
+        {"rank": 1, "metrics": {"traffic_index": 0.30}},
+        {"rank": 2, "metrics": {"traffic_index": 0.10}},
+    ]
+    assert pick_candidate("show the route with the fewest busy roads", shown)["rank"] == 2
+
+
+async def test_what_else_the_goal_message_asks_for_is_kept_when_it_is_optimised():
+    service, planner = chat(FakePlanner(lambda r: ready_plan()))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    reply = await t.say("avoid ferries and fewer hills and less traffic")
+    request = planner.requests[-1]
+    assert [g["metric"] for g in request["optimize"]["goals"]] == ["ascent", "traffic"]
+    assert request["constraints"]["avoid_ferries"] is True  # not dropped by the optimisation
+    assert "ferr" in reply.reply.lower()
+
+
+async def test_a_goal_message_with_words_nobody_reads_still_optimises():
+    service, planner = chat(FakePlanner(lambda r: ready_plan()))
+    t = Talk(service)
+    await t.say("Braunschweig to Goslar")
+    await t.say("please be kind, quiet and flat")
+    assert [g["metric"] for g in planner.requests[-1]["optimize"]["goals"]] == ["traffic", "ascent"]
+
+
+async def test_a_loop_with_two_goals_is_planned_and_optimised_in_one_line():
+    line = parse_one_line("40 km loop from Goslar, quiet and flat")
+    assert line.loop and line.origin == "Goslar" and line.distance_km == 40.0
+    assert [g["metric"] for g in line.optimize["goals"]] == ["traffic", "ascent"]
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "quieter",

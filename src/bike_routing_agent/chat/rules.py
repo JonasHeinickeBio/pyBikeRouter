@@ -861,7 +861,11 @@ def pick_candidate(text: str, candidates: list[dict[str, Any]]) -> dict[str, Any
         return lambda c: ((c.get("metrics") or {}).get(name) or {}).get(inner)
 
     by_tags = (  # what the engine's road tags say (BRouter only)
-        (("quietest", "least traffic", "calmest"), metric("traffic_index"), min),
+        (
+            ("quietest", "least traffic", "calmest", "fewest busy roads", "least busy roads"),
+            metric("traffic_index"),
+            min,
+        ),
         (
             ("smoothest", "most paved", "most asphalt"),
             nested("engine_surface_shares", "paved"),

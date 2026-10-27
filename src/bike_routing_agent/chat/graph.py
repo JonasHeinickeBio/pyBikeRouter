@@ -370,10 +370,18 @@ def build_chat_graph(
                 "'less traffic but as much asphalt as possible'.",
                 "suggestions": ["Plan a route", "Help"],
             }
+        # What else the message asks for ("avoid ferries and less traffic and fewer hills") is
+        # applied to the request first; words the change rules do not read are left as they were.
+        notes = ""
+        if wanted.rest:
+            change = rules.refine(wanted.rest, previous, now=_local_now(state.get("timezone")))
+            if not change.unknown and not change.empty():
+                previous = rules.apply_refinement(previous, change)
+                notes = "Okay: " + ", ".join(change.notes) + ". "
         request = {**previous, "optimize": wanted.spec}
         return {
             "pending_request": request,
-            "change_note": describe.reading(request, optimizing=True),
+            "change_note": notes + describe.reading(request, optimizing=True),
         }
 
     # ------------------------------------------------------------------------- planning
