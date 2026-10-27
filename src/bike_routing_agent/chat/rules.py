@@ -213,6 +213,7 @@ _DISTANCE = re.compile(
 _HOUR_UNIT = r"(?:hours?|hrs?|h|stunden?|std)\b\.?"
 _DURATION = re.compile(
     rf"(?:(?P<q>{_MAX_WORDS}|about|around|approx(?:imately)?)\s+)?"
+    rf"(?:f[\u00fcu]r\s+)?"
     rf"(?:(?:(?P<lo>{_NUM})\s*(?:-|\u2013|\u2014|to|bis)\s*)?(?P<h>{_NUM})\s*{_HOUR_UNIT}"
     r"(?:\s*(?:and|und)?\s*(?P<m>\d{1,2})\s*min\w*)?"
     r"|(?P<min>\d{1,3})\s*(?:minutes?|mins?|minuten)\b"
@@ -306,7 +307,7 @@ def _bike_match(text: str) -> re.Match[str] | None:
     for pattern in (
         rf"\b(?:by|on|with|using|for|my|mit|auf|per)\s+"
         rf"(?:(?:my|a|an|the|dem|der|einem|meinem|meiner)\s+)?(?P<w>{_BARE_ALT}|{_BIKE_ALT})\b"
-        r"(?:\s+(?:bike|bicycle|tyres?|tires?|route|ride|tour))?",
+        r"(?:-bike|\s+(?:bike|bicycle|tyres?|tires?|route|ride|tour))?",
         rf"\b(?:a\s+|an\s+|the\s+)?(?P<w>{_BIKE_ALT})\s+(?:bike|bicycle|route|ride|tour|trip|loop)\b",
         r"\b(?P<w>mtb|e-?bike|gravel|gravel-?bike|rennrad|trekking-?rad|mountain-?bike)\b",
     ):

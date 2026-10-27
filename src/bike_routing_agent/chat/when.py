@@ -43,7 +43,7 @@ _CLOCK_AMPM = re.compile(
 )
 _CLOCK_24H = re.compile(
     r"\b(?:(?:at|around|about|from|starting|leaving|departing|start)\s+)+"
-    r"(?P<h>\d{1,2})(?!\d)(?::(?P<m>\d{2}))?(?!\s*(?:km|kilomet|m\b|min|hours?|hrs?|h\b|%|/))"
+    r"(?P<h>\d{1,2})(?!\d)(?::(?P<m>\d{2}))?(?!\s*(?:km|kilomet|m\b|min|hours?|hrs?|h\b|stunden?|std|%|/))"
     r"(?:\s*(?:o'?clock|h\b|uhr))?",
     re.I,
 )
