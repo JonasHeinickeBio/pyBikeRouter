@@ -30,6 +30,7 @@ from langgraph.types import interrupt
 
 from bike_routing_agent.chat import describe, rules
 from bike_routing_agent.chat import goals as goals_module
+from bike_routing_agent.chat.intent_model import IntentModel
 from bike_routing_agent.chat.models import (
     ChatState,
     PlanError,
@@ -81,6 +82,17 @@ def _has_ready_plan(state: ChatState) -> bool:
 
 def decide_intent(text: str, state: ChatState, *, text_enabled: bool) -> str:
     """Which way of getting (or working with) a route this message is."""
+    return rule_intent(text, state) or fallback_intent(text, text_enabled=text_enabled)
+
+
+def fallback_intent(text: str, *, text_enabled: bool) -> str:
+    """Where a message goes that no rule claimed and no model placed: free-text planning when a
+    model reads sentences, otherwise the step-by-step dialogue."""
+    return "plan_text" if text_enabled and len(text) >= 8 else "guided"
+
+
+def rule_intent(text: str, state: ChatState) -> str | None:
+    """The intent the rules give a message, or ``None`` when they give up on it."""
     has_plan = _has_ready_plan(state)
     followup = rules.classify(text, has_plan=has_plan)
     if followup in ("reset", "help"):
@@ -108,11 +120,7 @@ def decide_intent(text: str, state: ChatState, *, text_enabled: bool) -> str:
         return "refine"
     if RETRY.search(text) and state.get("failed_request"):
         return "refine"
-    if followup:
-        return followup
-    if text_enabled and len(text) >= 8:
-        return "plan_text"
-    return "guided"
+    return followup
 
 
 def _reads_as_followup(line: rules.OneLine, has_plan: bool) -> bool:
@@ -167,6 +175,7 @@ def build_chat_graph(
     planner: Planner,
     sights: Sights | None = None,
     text_enabled: bool = False,
+    intent_model: IntentModel | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> Any:
     """The compiled chat graph. ``checkpointer`` keeps a conversation per ``thread_id``."""
@@ -191,9 +200,13 @@ def build_chat_graph(
     async def ingest(state: ChatState) -> dict[str, Any]:
         text = (state.get("user_text") or "").strip()
         adopted = adopt_form(state)
-        intent = decide_intent(
-            text, cast(ChatState, {**state, **adopted}), text_enabled=text_enabled
-        )
+        seen = cast(ChatState, {**state, **adopted})
+        intent = rule_intent(text, seen)
+        if intent is None and intent_model is not None:
+            intent = await intent_model.classify(
+                text, has_plan=_has_ready_plan(seen), failed=bool(seen.get("failed_request"))
+            )
+        intent = intent or fallback_intent(text, text_enabled=text_enabled)
         left_dialogue: dict[str, Any] = {"asking": None, "draft": {}} if intent != "guided" else {}
         return {
             **adopted,

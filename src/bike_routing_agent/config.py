@@ -155,6 +155,10 @@ class Settings(BaseSettings):
     chat_max_sessions: int = 200
     chat_store_path: str | None = None
     chat_session_days: float = 30.0
+    # Opt-in: the configured language model also sorts the messages the chat's rules give up on
+    # ("what is there to see") into one of a fixed list of kinds. Needs llm_parser_enabled; the
+    # message is sent to that model, as free-text planning already does (docs/chat.md).
+    chat_intent_model: bool = False
     # Opt-in: a file (on this machine only) that gets one line per message the chat's rules could
     # not read, to grow the chat benchmark from real phrasings. Unset = nothing is recorded.
     chat_miss_log_path: Path | None = None

@@ -41,7 +41,9 @@ class Completion:
 
 
 class LLMBackend(Protocol):
-    def complete(self, system: str, messages: Messages) -> Completion: ...
+    def complete(
+        self, system: str, messages: Messages, schema: dict[str, Any] | None = None
+    ) -> Completion: ...
 
 
 def _is_timeout(exc: Exception) -> bool:
@@ -70,14 +72,18 @@ class AnthropicBackend:
             kwargs["api_key"] = api_key
         return anthropic.Anthropic(**kwargs)
 
-    def complete(self, system: str, messages: Messages) -> Completion:
+    def complete(
+        self, system: str, messages: Messages, schema: dict[str, Any] | None = None
+    ) -> Completion:
         try:
             response = self._client.messages.create(
                 model=self._model,
                 max_tokens=self._max_output_tokens,
                 system=system,
                 messages=messages,
-                output_config={"format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
+                output_config={
+                    "format": {"type": "json_schema", "schema": schema or OUTPUT_SCHEMA}
+                },
             )
         except Exception as exc:
             logger.warning("llm parser request failed: %s: %s", type(exc).__name__, exc)
@@ -171,10 +177,12 @@ class OpenAICompatBackend:
                     continue
                 raise
 
-    def complete(self, system: str, messages: Messages) -> Completion:
+    def complete(
+        self, system: str, messages: Messages, schema: dict[str, Any] | None = None
+    ) -> Completion:
         schema_note = (
             "\n\nReply with ONLY a JSON object (no prose, no code fences) matching this "
-            "JSON schema:\n" + json.dumps(OUTPUT_SCHEMA)
+            "JSON schema:\n" + json.dumps(schema or OUTPUT_SCHEMA)
         )
         body = {
             "model": self._model,

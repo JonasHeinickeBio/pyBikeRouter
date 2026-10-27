@@ -23,6 +23,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command
 
 from bike_routing_agent.chat.graph import build_chat_graph
+from bike_routing_agent.chat.intent_model import IntentModel
 from bike_routing_agent.chat.misslog import MissLog
 from bike_routing_agent.chat.models import (
     MAX_MESSAGE_CHARS,
@@ -63,6 +64,7 @@ class ChatService:
         *,
         sights: Sights | None = None,
         text_enabled: bool = False,
+        intent_model: IntentModel | None = None,
         checkpointer: BaseCheckpointSaver | None = None,
         max_sessions: int = 200,
         miss_log: MissLog | None = None,
@@ -72,6 +74,7 @@ class ChatService:
             planner=planner,
             sights=sights,
             text_enabled=text_enabled,
+            intent_model=intent_model,
             checkpointer=self._checkpointer,
         )
         self._max_sessions = max_sessions
