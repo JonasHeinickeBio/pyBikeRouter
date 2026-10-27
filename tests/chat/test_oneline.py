@@ -14,6 +14,7 @@ import pytest
 
 from bike_routing_agent.chat.graph import request_from_line
 from bike_routing_agent.chat.rules import parse_one_line
+from bike_routing_agent.chat.when import parse_departure
 from bike_routing_agent.models import RoutePlanAPIRequest
 
 # A Wednesday noon in Berlin: "tomorrow", "Saturday" and "at 8" have one right answer.
@@ -170,6 +171,11 @@ def test_a_loop_length_can_be_given_in_hours_and_the_assumption_is_said():
         ("loop from Braunschweig for 3\u20134 hours", 63.0),
         ("Rundfahrt ab Braunschweig 60-80 km", 70.0),
         ("60 to 80 km loop from Braunschweig", 70.0),
+        ("Schleife ab Braunschweig 3-4 Stunden", 63.0),
+        ("Rundtour ab Braunschweig 2 Stunden", 36.0),
+        ("loop from Braunschweig 2 Stunden 30 Minuten", 45.0),
+        ("loop from Braunschweig 1,5 Std", 27.0),
+        ("loop from Braunschweig eine halbe Stunde", 9.0),
     ],
 )
 def test_a_range_is_planned_at_its_middle_and_never_ends_up_in_the_place(text, km):
@@ -277,3 +283,35 @@ def test_a_sentence_is_never_taken_as_a_place():
     ):
         line = parse_one_line(text, now=NOW)
         assert not line.complete() or (line.origin, line.destination) == ("Goslar", "Hannover")
+
+
+@pytest.mark.parametrize(
+    ("text", "bike", "origin", "destination"),
+    [
+        ("Schleife ab Braunschweig 3-4 Stunden mit dem Gravelbike", "gravel", "Braunschweig", None),
+        ("Goslar nach Hannover mit dem Rennrad", "road", "Goslar", "Hannover"),
+        ("Rundtour ab Goslar 40 km auf dem Mountainbike", "mountain", "Goslar", None),
+        ("Goslar to Hannover with gravelbike", "gravel", "Goslar", "Hannover"),
+    ],
+)
+def test_a_german_bike_phrase_is_a_bike_and_not_part_of_the_place(text, bike, origin, destination):
+    line = parse_one_line(text, now=NOW)
+    assert (line.bike_type, line.origin, line.destination) == (bike, origin, destination)
+
+
+def test_a_german_duration_after_around_is_a_duration_and_not_a_clock_time():
+    when, rest = parse_departure("loop from Goslar around 2 Stunden", NOW)
+    assert when is None and "2 Stunden" in rest  # "around 2" is not a departure at 2 o'clock
+
+
+@pytest.mark.parametrize(
+    ("text", "bike", "km"),
+    [
+        ("Schleife ab Goslar für 2 Stunden", None, 36.0),  # "für" goes with the duration
+        ("Rundtour ab Goslar 40 km auf dem Mountain-Bike", "mountain", 40.0),
+        ("loop from Goslar 40 km on a gravel-bike", "gravel", 40.0),
+    ],
+)
+def test_für_and_a_hyphenated_bike_do_not_stay_behind_in_the_place(text, bike, km):
+    line = parse_one_line(text, now=NOW)
+    assert (line.origin, line.bike_type, line.distance_km) == ("Goslar", bike, km)

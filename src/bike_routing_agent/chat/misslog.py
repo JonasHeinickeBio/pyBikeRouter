@@ -10,7 +10,7 @@ is capped (the old half is kept once as ``<path>.1``) and ``bike-router chat mis
 deletes it.
 
 It exists to find out what people actually say, so that the chat benchmark
-(``benchmarks/chat-v1.json``) grows from real phrasings before any model is asked to read them.
+(``chat/data/chat-v1.json``) grows from real phrasings before any model is asked to read them.
 """
 
 from __future__ import annotations

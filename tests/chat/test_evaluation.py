@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -119,3 +120,11 @@ def test_a_case_that_is_not_an_object_or_lacks_its_text_is_refused_not_a_traceba
     for bad in (None, "text", 5, [], {"id": "a"}, {"text": "x"}, {"id": 1, "text": "x"}):
         with pytest.raises(ValueError, match="not an object|text and an id"):
             load_benchmark(write(tmp_path, [bad]))
+
+
+def test_the_benchmark_ships_inside_the_package_so_an_install_can_run_chat_eval():
+    import bike_routing_agent
+    from bike_routing_agent.chat.evaluation import DEFAULT_PATH
+
+    package = Path(bike_routing_agent.__file__).resolve().parent
+    assert package in DEFAULT_PATH.parents and DEFAULT_PATH.is_file()

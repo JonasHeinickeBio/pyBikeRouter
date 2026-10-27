@@ -142,7 +142,7 @@ bike-router chat start -m "from Braunschweig to Goslar" -m "make it shorter" -m 
 bike-router chat start -m "40 km loop from Goslar" --format json
 ```
 
-`chat eval` scores how the chat reads messages against `benchmarks/chat-v1.json` (free, offline; `--rules-only`,
+`chat eval` scores how the chat reads messages against `chat/data/chat-v1.json` (shipped with the package) (free, offline; `--rules-only`,
 `--fail-under`, `--format json`), and `chat misses` reports what the opt-in miss log recorded
 (`--export-cases FILE` writes the distinct misses as benchmark cases to label, `--clear` deletes the log):
 [chat.md](chat.md#what-it-could-not-read-and-how-well-it-reads).

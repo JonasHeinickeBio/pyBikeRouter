@@ -35,7 +35,7 @@ and what is left are the places:
 | Direction | `clockwise`, `counterclockwise`, `other direction` | `loop_direction` |
 | Engine | `using openrouteservice` | `routing_engines` |
 | Sights | `past 2 castles`, `2 sights`, `along the most famous sights` | `poi_stops` |
-| German basics | `von Goslar nach Hannover`, `Rundtour`, `über` | the same |
+| German basics | `von Goslar nach Hannover`, `Rundtour`, `Schleife`, `mit dem Rennrad`, `3-4 Stunden`, `2 Stunden 30 Minuten`, `über` | the same |
 
 The first answer starts with **how the line was read**, so a misreading is visible at once:
 *"Planning Goslar to Hannover via Hildesheim (road bike, at most 80 km, no ferries, leaving Sun 11 Oct,
@@ -107,14 +107,14 @@ without typing is only noticed once a plan is made. See `context` in [api.md](ap
 The chat reads messages with rules. Before anyone puts a language model behind them, there should be
 numbers for how well the rules do and a record of what people actually say.
 
-**A benchmark** -- `benchmarks/chat-v1.json`: 138 messages, each with the situation it arrives in (nothing
+**A benchmark** -- `src/bike_routing_agent/chat/data/chat-v1.json` (shipped with the package, so `chat eval` runs from an install and from the image too): 141 messages, each with the situation it arrives in (nothing
 planned, a route on screen, a question waiting, a failed request) and the intent a sensible person would
 call it (`plan`, `plan_text`, `guided`, `refine`, `alternatives`, `sights`, `explain`, `export`,
 `optimize`, `reset`, `help`). The expectations say what the chat *should* do, not what it happens to do.
 
 ```bash
-bike-router chat eval                    # with a free-text parser configured: 123 of 138 (89.1 %)
-bike-router chat eval --rules-only       # without one: 120 of 138 (87.0 %)
+bike-router chat eval                    # with a free-text parser configured: 126 of 141 (89.4 %)
+bike-router chat eval --rules-only       # without one: 123 of 141 (87.2 %)
 bike-router chat eval --format json --fail-under 0.85
 ```
 
@@ -150,7 +150,7 @@ LLM_PARSER_ENABLED=true LLM_PROVIDER=openai LLM_BASE_URL=http://127.0.0.1:11434/
 scores the benchmark again with the model behind the rules and prints the rules' own score next to it,
 how many messages the model placed and how many of those it got as expected, and marks its
 placements `(model)` in the list of differences. It makes one model call per message the rules give up
-on (about 23 of the 138, all made-up examples). Use it before switching `CHAT_INTENT_MODEL` on, and
+on (about 23 of the 141, all made-up examples). Use it before switching `CHAT_INTENT_MODEL` on, and
 again when you change the model: a small model can place a message worse than the plain fallback.
 
 **A miss log** -- off by default. Set `CHAT_MISS_LOG_PATH=./data/chat/misses.jsonl` and every message
