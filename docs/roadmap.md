@@ -91,7 +91,7 @@ decisions still open.
 - **Chat** -- done: a LangGraph conversation (`POST /v1/chat`, web panel, CLI) with several ways to get
   a route, changes, alternatives, sights, and the clarification dialogue (pause/resume with the
   checkpointer), and conversations that survive a restart (`CHAT_STORE_PATH`, SQLite) ([chat.md](chat.md)).
-  Done since: a chat benchmark (`bike-router chat eval`: the rules score 89 % on 140 messages) and an opt-in local
+  Done since: a chat benchmark (`bike-router chat eval`: the rules score 89 % on 141 messages) and an opt-in local
   miss log ([chat.md](chat.md#what-it-could-not-read-and-how-well-it-reads)). A model-based intent step for the
   messages the rules give up on is built (`CHAT_INTENT_MODEL`, off by default, `chat eval --intent-model`); open: its
   score against a real model, then whether to recommend switching it on.

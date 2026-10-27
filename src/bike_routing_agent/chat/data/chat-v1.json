@@ -847,6 +847,12 @@
       "text": "Rundtour von Braunschweig 3-4 Stunden",
       "state": "none",
       "expected": "plan"
+    },
+    {
+      "id": "start-plan-bike-de-01",
+      "text": "Goslar nach Hannover mit dem Rennrad",
+      "state": "none",
+      "expected": "plan"
     }
   ]
 }

@@ -48,6 +48,7 @@ BARE_BIKE_WORDS = {
     "ebike": "ebike",
 }
 _BIKE_ALT = "|".join(sorted((re.escape(w) for w in BIKE_WORDS), key=len, reverse=True))
+_BARE_ALT = "|".join(sorted((re.escape(w) for w in BARE_BIKE_WORDS), key=len, reverse=True))
 
 SIGHT_WORDS = (
     "sights|sight|castles|castle|attractions|attraction|viewpoints|viewpoint|museums|museum|"
@@ -303,7 +304,8 @@ def _plausible(place: str | None) -> str | None:
 def _bike_match(text: str) -> re.Match[str] | None:
     """A bike type said as a bike type: not "Mountain View" or "City Park" ("city" alone)."""
     for pattern in (
-        rf"\b(?:by|on|with|using|for|my)\s+(?:(?:my|a|an|the)\s+)?(?P<w>{_BIKE_ALT})\b"
+        rf"\b(?:by|on|with|using|for|my|mit|auf|per)\s+"
+        rf"(?:(?:my|a|an|the|dem|der|einem|meinem|meiner)\s+)?(?P<w>{_BARE_ALT}|{_BIKE_ALT})\b"
         r"(?:\s+(?:bike|bicycle|tyres?|tires?|route|ride|tour))?",
         rf"\b(?:a\s+|an\s+|the\s+)?(?P<w>{_BIKE_ALT})\s+(?:bike|bicycle|route|ride|tour|trip|loop)\b",
         r"\b(?P<w>mtb|e-?bike|gravel|gravel-?bike|rennrad|trekking-?rad|mountain-?bike)\b",

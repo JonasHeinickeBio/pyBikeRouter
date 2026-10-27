@@ -282,3 +282,17 @@ def test_a_sentence_is_never_taken_as_a_place():
     ):
         line = parse_one_line(text, now=NOW)
         assert not line.complete() or (line.origin, line.destination) == ("Goslar", "Hannover")
+
+
+@pytest.mark.parametrize(
+    ("text", "bike", "origin", "destination"),
+    [
+        ("Schleife ab Braunschweig 3-4 Stunden mit dem Gravelbike", "gravel", "Braunschweig", None),
+        ("Goslar nach Hannover mit dem Rennrad", "road", "Goslar", "Hannover"),
+        ("Rundtour ab Goslar 40 km auf dem Mountainbike", "mountain", "Goslar", None),
+        ("Goslar to Hannover with gravelbike", "gravel", "Goslar", "Hannover"),
+    ],
+)
+def test_a_german_bike_phrase_is_a_bike_and_not_part_of_the_place(text, bike, origin, destination):
+    line = parse_one_line(text, now=NOW)
+    assert (line.bike_type, line.origin, line.destination) == (bike, origin, destination)
