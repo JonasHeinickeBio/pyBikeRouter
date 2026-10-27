@@ -56,7 +56,8 @@ decisions still open.
   around the origin and route back to the start (`loop_direction` picks
   handedness; caller-supplied `via` is honored verbatim). Provider-native
   round trips were rejected: only ORS has one and it is standalone-only,
-  so way-points keep the routing engines symmetric.
+  so way-points keep the routing engines symmetric. The loop is sized against a real route (the road distance
+  lands within about 10 % of `target_distance_km`; [api.md](api.md#request)); open: the same for loops with sight stops.
 
 ## LLM integration
 
