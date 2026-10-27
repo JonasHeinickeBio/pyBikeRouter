@@ -763,6 +763,78 @@
       "text": "Bremen to Oldenburg",
       "state": "failed",
       "expected": "plan"
+    },
+    {
+      "id": "route-optimize-06",
+      "text": "optimise for little climbing",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-07",
+      "text": "quiet and flat please",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-08",
+      "text": "optimise for quiet roads and little climbing",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-09",
+      "text": "the flattest route with no busy roads",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-10",
+      "text": "optimize for fewer hills and less traffic",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-11",
+      "text": "wenig Verkehr und kaum Steigung",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "route-optimize-12",
+      "text": "not too hilly and away from busy roads",
+      "state": "route",
+      "expected": "optimize"
+    },
+    {
+      "id": "start-plan-goals-01",
+      "text": "40 km loop from Goslar, quiet and flat",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "start-plan-goals-02",
+      "text": "loop from Braunschweig for 3 hours, optimised for little climbing and less traffic",
+      "state": "none",
+      "expected": "plan"
+    },
+    {
+      "id": "route-refine-flatter-01",
+      "text": "a bit flatter",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-flatter-02",
+      "text": "make it quieter",
+      "state": "route",
+      "expected": "refine"
+    },
+    {
+      "id": "route-refine-flatter-03",
+      "text": "flatter and shorter",
+      "state": "route",
+      "expected": "refine"
     }
   ]
 }

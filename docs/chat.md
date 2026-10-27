@@ -107,14 +107,14 @@ without typing is only noticed once a plan is made. See `context` in [api.md](ap
 The chat reads messages with rules. Before anyone puts a language model behind them, there should be
 numbers for how well the rules do and a record of what people actually say.
 
-**A benchmark** -- `benchmarks/chat-v1.json`: 126 messages, each with the situation it arrives in (nothing
+**A benchmark** -- `benchmarks/chat-v1.json`: 138 messages, each with the situation it arrives in (nothing
 planned, a route on screen, a question waiting, a failed request) and the intent a sensible person would
 call it (`plan`, `plan_text`, `guided`, `refine`, `alternatives`, `sights`, `explain`, `export`,
 `optimize`, `reset`, `help`). The expectations say what the chat *should* do, not what it happens to do.
 
 ```bash
-bike-router chat eval                    # with a free-text parser configured: 110 of 126 (87.3 %)
-bike-router chat eval --rules-only       # without one: 107 of 126 (84.9 %)
+bike-router chat eval                    # with a free-text parser configured: 123 of 138 (89.1 %)
+bike-router chat eval --rules-only       # without one: 120 of 138 (87.0 %)
 bike-router chat eval --format json --fail-under 0.85
 ```
 
@@ -150,7 +150,7 @@ LLM_PARSER_ENABLED=true LLM_PROVIDER=openai LLM_BASE_URL=http://127.0.0.1:11434/
 scores the benchmark again with the model behind the rules and prints the rules' own score next to it,
 how many messages the model placed and how many of those it got as expected, and marks its
 placements `(model)` in the list of differences. It makes one model call per message the rules give up
-on (about 23 of the 126, all made-up examples). Use it before switching `CHAT_INTENT_MODEL` on, and
+on (about 23 of the 138, all made-up examples). Use it before switching `CHAT_INTENT_MODEL` on, and
 again when you change the model: a small model can place a message worse than the plain fallback.
 
 **A miss log** -- off by default. Set `CHAT_MISS_LOG_PATH=./data/chat/misses.jsonl` and every message
@@ -182,7 +182,11 @@ goal had instead and what it cost, and the next best routes; `alternatives` list
 come in the order said, with weights 1.0, 0.7, 0.5, 0.4. One mild wish ("quieter", "paved only") stays
 an ordinary change; two goals, "optimise", or a superlative ("the quietest, smoothest route") make it
 an optimisation (sights: "as many sights as possible", "with the most sights along the way";
-"past the most famous sights" stays a request for stops, [pois.md](pois.md)) -- except a single superlative that names one of the routes already found ("the
+"past the most famous sights" stays a request for stops, [pois.md](pois.md)). Quiet and flat have many
+wordings: *less / little / no traffic*, *no busy roads*, *away from busy roads*, *quiet*, *calm*; *flat*,
+*little / less / fewer climbing / hills*, *not too hilly / steep*, *avoid hills*; and in German *wenig /
+kein Verkehr*, *ruhig*, *kaum / wenig Steigung*, *flach*. A lone "flat" or "a bit flatter" is still an
+ordinary change; "quiet and flat" (two goals) is an optimisation -- except a single superlative that names one of the routes already found ("the
 fastest", "the quietest"), which just picks it. It takes 30-60 s, because many routes are computed.
 
 ## How it works

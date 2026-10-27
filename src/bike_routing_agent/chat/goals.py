@@ -25,7 +25,9 @@ _GOALS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
             r"(?:traffic|cars|car traffic)\b"
             r"|\btraffic[\s-]free\b|\bcar[\s-]free\b|\bquiet(?:est|er)?(?:\s+(?:roads?|streets?|"
             r"routes?|ways?|paths?))?\b|\bcalm(?:er|est)?\b"
-            r"|\bavoid(?:ing)?\s+(?:the\s+)?(?:traffic|cars|busy roads|main roads)\b",
+            r"|\bavoid(?:ing)?\s+(?:the\s+)?(?:traffic|cars|busy roads|main roads)\b"
+            r"|\b(?:no|without|fewest?|away from)\s+(?:the\s+)?busy\s+(?:roads?|streets?)\b"
+            r"|\b(?:kein|wenig|ohne)\s+(?:auto)?verkehr\b|\bruhig\w*\b",
         ),
         (
             "paved",
@@ -52,14 +54,19 @@ _GOALS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         (
             "ascent",
             r"\bflattest\b|\bleast (?:climbing|hilly|elevation)\b|\bas flat as possible\b"
-            r"|\bfewest hills\b",
+            r"|\bfewest hills\b|\bflat\b|\bhill[\s-]?free\b"
+            r"|\b(?:less|little|low|fewer|minimal|no)\s+(?:climbing|climbs?|hills?|hilly|elevation"
+            r"|ascent|steep(?:ness)?)\b"
+            r"|\bnot\s+(?:too\s+)?(?:hilly|steep)\b"
+            r"|\bavoid(?:ing)?\s+(?:the\s+)?(?:hills?|climbs?|steep\w*)\b"
+            r"|\b(?:wenig|kaum|ohne)\s+(?:steigung(?:en)?|anstiege?|berge?)\b|\bflach\b",
         ),
     )
 )
 _EXPLICIT = re.compile(r"\boptimi[sz](?:e|ed|ing|ation)\b|\bbest (?:route|way|trade-?off)\b", re.I)
 _SUPERLATIVE = re.compile(
     r"\bas\s+\w+(?:\s+\w+)?\s+as\s+possible\b|\b(?:quietest|smoothest|shortest|fastest|quickest|"
-    r"flattest|most direct|most paved|least)\b|\bmaximum\b|\bmax\b",
+    r"flattest|most direct|most paved|least|fewest)\b|\bmaximum\b|\bmax\b",
     re.I,
 )
 _WEIGHTS = (1.0, 0.7, 0.5, 0.4)

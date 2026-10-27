@@ -32,6 +32,40 @@ def test_goals_are_read_in_the_order_they_were_said(text, metrics):
 
 
 @pytest.mark.parametrize(
+    ("text", "metrics"),
+    [
+        ("optimise for little climbing", ["ascent"]),
+        ("optimise for quiet roads and little climbing", ["traffic", "ascent"]),
+        ("optimize for fewer hills and less traffic", ["ascent", "traffic"]),
+        ("quiet and flat please", ["traffic", "ascent"]),
+        ("the flattest route with no busy roads", ["ascent", "traffic"]),
+        ("not too hilly and away from busy roads", ["ascent", "traffic"]),
+        ("find the route with the fewest busy roads", ["traffic"]),
+        ("wenig Verkehr und kaum Steigung", ["traffic", "ascent"]),
+        ("ruhig und flach", ["traffic", "ascent"]),
+    ],
+)
+def test_more_ways_of_saying_quiet_and_flat_are_read_as_goals(text, metrics):
+    found = goals.detect(text)
+    assert found is not None and found.metrics == metrics
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["a bit flatter", "make it quieter", "flatter and shorter", "I got a flat tyre"],
+)
+def test_the_new_words_do_not_turn_every_wish_into_an_optimisation(text):
+    # a lone mild wish ("flatter") stays an ordinary change; "flat" alone names one goal only
+    assert goals.detect(text) is None
+
+
+async def test_a_loop_with_two_goals_is_planned_and_optimised_in_one_line():
+    line = parse_one_line("40 km loop from Goslar, quiet and flat")
+    assert line.loop and line.origin == "Goslar" and line.distance_km == 40.0
+    assert [g["metric"] for g in line.optimize["goals"]] == ["traffic", "ascent"]
+
+
+@pytest.mark.parametrize(
     "text",
     [
         "quieter",
