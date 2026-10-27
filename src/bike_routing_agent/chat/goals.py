@@ -54,7 +54,8 @@ _GOALS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         (
             "ascent",
             r"\bflattest\b|\bleast (?:climbing|hilly|elevation)\b|\bas flat as possible\b"
-            r"|\bfewest hills\b|\bflat\b|\bhill[\s-]?free\b"
+            r"|\bfewest hills\b|\bhill[\s-]?free\b"
+            r"|\bflat\b(?!\s+(?:tyres?|tires?|tubes?|batter\w*))"
             r"|\b(?:less|little|low|fewer|minimal|no)\s+(?:climbing|climbs?|hills?|hilly|elevation"
             r"|ascent|steep(?:ness)?)\b"
             r"|\bnot\s+(?:too\s+)?(?:hilly|steep)\b"
