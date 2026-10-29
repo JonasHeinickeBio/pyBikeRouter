@@ -78,15 +78,36 @@
 
   /* --------------------------------- the points --------------------------------- */
 
+  // A decimal number as XML writes it. Number() alone reads "" and " " as 0 and "0x10" as 16.
+  const DECIMAL = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
+  const decimal = (text) => (text !== undefined && DECIMAL.test(text.trim()) ? Number(text) : NaN);
+
+  // xsd:dateTime as GPX writes it (an offset is optional there, and "Z" is what devices write).
+  const ISO_TIME = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$/;
+
+  /**
+   * Milliseconds for an ISO 8601 date-time, or NaN for any other text. Date.parse alone reads "5" as a
+   * date and rolls 2026-02-30 over into March. A time without an offset is read as UTC, so two such
+   * points still give their true difference (and never the viewer's time zone or a DST change).
+   */
+  function parseTime(text) {
+    const m = ISO_TIME.exec(text.trim());
+    if (!m) return NaN;
+    const [year, month, day, hour, minute, second] = m.slice(1, 7).map(Number);
+    const offset = m[7];
+    if (month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return NaN;
+    if (hour > 23 || minute > 59 || second > 59) return NaN;
+    if (offset && offset !== "Z" && (Number(offset.slice(1, 3)) > 23 || Number(offset.slice(4, 6)) > 59)) return NaN;
+    return Date.parse(offset ? text.trim() : `${text.trim()}Z`);
+  }
+
   /** [lon, lat, ele|null, time(ms)|null], or null for a point that is not on Earth. */
   function readPoint(node) {
-    const lat = Number(node.attrs.lat);
-    const lon = Number(node.attrs.lon);
-    if (node.attrs.lat === undefined || node.attrs.lon === undefined) return null;
+    const lat = decimal(node.attrs.lat);
+    const lon = decimal(node.attrs.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
-    const ele = textOf(node, "ele");
-    const elevation = ele === "" ? NaN : Number(ele);
-    const time = Date.parse(textOf(node, "time"));
+    const elevation = decimal(textOf(node, "ele"));
+    const time = parseTime(textOf(node, "time"));
     return [lon, lat, Number.isFinite(elevation) ? elevation : null, Number.isFinite(time) ? time : null];
   }
 

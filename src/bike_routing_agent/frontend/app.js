@@ -181,6 +181,7 @@ const state = {
   planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
   planPending: null, // generation of the form/text request in flight, if any
   renderedGeneration: 0, // generation of the plan on the map
+  gpxImportRequest: 0, // the latest GPX file chosen or dropped
   deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
   pickKeys: new Set(), // downloads already reported to the pick log (opt-in, PICK_LOG_PATH)
@@ -1239,6 +1240,7 @@ function drawImportMarks(response) {
 
 /** Show the track of a GPX file like a planned route. The file is read here and goes nowhere. */
 async function importGpx(file) {
+  const request = ++state.gpxImportRequest; // reading is async: only the latest file may be shown
   const refused = BikeGpxImport.refusal(file);
   if (refused) {
     setStatus("error", escapeHtml(refused));
@@ -1248,9 +1250,11 @@ async function importGpx(file) {
   try {
     response = BikeGpxImport.toResponse(BikeGpxImport.parse(await file.text()), file.name);
   } catch (err) {
+    if (request !== state.gpxImportRequest) return;
     setStatus("error", escapeHtml(BikeGpxImport.errorText(err)));
     return;
   }
+  if (request !== state.gpxImportRequest) return;
   if (state.aborted) state.aborted.abort(); // a plan still being made must not replace the file
   state.planGeneration += 1;
   state.renderedGeneration = state.planGeneration;

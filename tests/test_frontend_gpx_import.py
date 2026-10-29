@@ -210,6 +210,13 @@ def test_points_without_a_usable_position_are_left_out_and_counted():
     assert any("1 point without a usable position was left out" in w for w in got["warnings"])
 
 
+@pytest.mark.parametrize("bad", ['lat="" lon=""', 'lat=" " lon="10"', 'lat="0x10" lon="10"'])
+def test_a_blank_or_non_decimal_position_is_not_the_point_at_zero_zero(bad):
+    got = parse(gpx(trk(pt(52, 10), f"<trkpt {bad}/>", pt(52.1, 10))))
+    assert len(got["points"]) == 2 and got["distance_m"] < 12000  # no leg to Null Island
+    assert any("1 point without a usable position was left out" in w for w in got["warnings"])
+
+
 def test_waypoints_are_kept_with_their_names():
     xml = gpx(
         trk(pt(52, 10), pt(52.1, 10))
@@ -263,6 +270,27 @@ def test_the_time_is_what_the_file_recorded_and_absent_without_timestamps():
         gpx(trk(pt(52, 10, time="2026-10-31T10:00:00Z"), pt(52.1, 10, time="2026-10-31T09:00:00Z")))
     )
     assert backwards["duration_s"] is None  # a clock that went backwards is no duration
+
+
+def duration(first: str, last: str):
+    return parse(gpx(trk(pt(52, 10, time=first), pt(52.1, 10, time=last))))["duration_s"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["5", "yesterday", "2026-02-30T10:00:00Z", "2026-13-01T10:00:00Z", "2026-10-31T25:00:00Z"],
+)
+def test_a_time_that_is_not_a_real_iso_date_time_is_no_time(bad):
+    assert duration(bad, "2026-10-31T10:00:00Z") is None
+    assert duration("2026-10-31T09:00:00Z", bad) is None
+
+
+def test_times_are_compared_as_instants_whatever_their_offset_or_fraction():
+    assert duration("2026-10-31T11:00:00+02:00", "2026-10-31T10:30:00Z") == 5400
+    assert duration("2026-10-31T09:00:00.250Z", "2026-10-31T09:00:30.250Z") == 30
+    # no offset at all: read as UTC for both, so the difference is true and no time zone leaks in
+    assert duration("2026-10-31T09:00:00", "2026-10-31T10:30:00") == 5400
+    assert duration("2026-02-28T23:00:00Z", "2026-03-01T01:00:00Z") == 7200  # a real calendar day
 
 
 def test_a_track_that_ends_where_it_began_is_a_loop():
@@ -358,6 +386,19 @@ def test_the_file_is_read_in_the_browser_and_never_sent_anywhere():
     assert "fetch(" not in body and "FormData" not in body
     assert "state.lastResponse = null" in body  # the chat is not handed a route it never planned
     assert "state.formRouteUnsent = false" in body
+
+
+def test_a_file_read_late_cannot_replace_a_file_chosen_after_it():
+    app = read("app.js")
+    start = app.index("async function importGpx(")
+    body = app[start : app.index("function wireImport(", start)]
+    assert body.index("++state.gpxImportRequest") < body.index("await file.text()")
+    # the success path and the error path both drop a stale read, before they touch the page
+    assert body.count("if (request !== state.gpxImportRequest) return;") == 2
+    failed = body[body.index("catch (err)") :]
+    assert failed.index("request !== state.gpxImportRequest") < failed.index("setStatus(")
+    assert body.rindex("request !== state.gpxImportRequest") < body.index("renderResponse(")
+    assert "gpxImportRequest: 0" in app
 
 
 def test_an_imported_track_cannot_be_reshaped_by_dragging():

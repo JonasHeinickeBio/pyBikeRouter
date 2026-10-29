@@ -163,7 +163,8 @@ distance, climb, elevation profile and, with *Points of interest* ticked, the si
   rise or fall once it reaches 3 m, so GPS noise on the flat is not climbing. That differs from an
   engine's figure for the same line (one 73 km planned loop: 470 m from BRouter, 553 m measured from its
   own file). The time is the elapsed time in the file, stops included, and is left out without
-  timestamps. If some points lack elevation, the elevation is left out altogether rather than drawn with
+  timestamps (only ISO 8601 date-times count; one without an offset is read as UTC, and a position that
+  is blank or not a decimal number is left out, not read as 0). If some points lack elevation, the elevation is left out altogether rather than drawn with
   holes. A track of more than 20 000 points is thinned on the map and measured in full.
 
 ## Service status
