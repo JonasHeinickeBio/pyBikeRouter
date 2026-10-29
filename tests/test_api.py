@@ -67,6 +67,8 @@ async def test_frontend_static_assets_are_served(client):
         ("/index.html", 'id="copy-link-btn"'),
         ("/index.html", 'src="hours.js"'),
         ("/waypoints.js", "BikeWaypoints"),
+        ("/gpx-import.js", "BikeGpxImport"),
+        ("/index.html", 'id="import-btn"'),
         ("/status.js", "BikeStatus"),
         ("/profile.js", "BikeProfile"),
         ("/index.html", 'id="profile-card"'),

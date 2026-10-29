@@ -146,6 +146,27 @@ example plain `http` beyond localhost, the link is shown in a box to copy by han
 - Not carried: the sights-on-the-way setting, the chosen route among the alternatives, and the
   optimiser's settings. A relative departure ("tomorrow morning") becomes the actual time it meant.
 
+## Import a GPX file
+
+**Import GPX** (next to *Copy link*), or a `.gpx` file dropped on the map, shows the track of a file
+you already have -- a ride from a head unit or another planner, or a route this planner exported --
+like a planned route: the line on the map (with its start, finish and the file's waypoints), the
+distance, climb, elevation profile and, with *Points of interest* ticked, the sights along it.
+
+- **Read in the browser, sent nowhere.** The file is parsed on the page (`frontend/gpx-import.js`);
+  nothing is uploaded, stored or handed to the chat. A file over 25 MB, or one that is not a GPX track,
+  is refused with a sentence and the route already on screen stays.
+- **Nothing is routed.** The track is drawn as it is in the file, so there is no score, no surface or
+  traffic information and no alternatives, and dragging the line does not reshape it. A route (`<rte>`)
+  is read when the file has no track; several segments are joined in order, with the gap drawn straight.
+- **The numbers are measured from the points.** The distance is the sum of the legs; the climb counts a
+  rise or fall once it reaches 3 m, so GPS noise on the flat is not climbing. That differs from an
+  engine's figure for the same line (one 73 km planned loop: 470 m from BRouter, 553 m measured from its
+  own file). The time is the elapsed time in the file, stops included, and is left out without
+  timestamps (only ISO 8601 date-times count; one without an offset is read as UTC, and a position that
+  is blank or not a decimal number is left out, not read as 0). If some points lack elevation, the elevation is left out altogether rather than drawn with
+  holes. A track of more than 20 000 points is thinned on the map and measured in full.
+
 ## Service status
 
 A dot next to the title shows whether the services behind the planner are up -- green: all, amber: some

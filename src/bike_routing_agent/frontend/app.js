@@ -25,6 +25,8 @@ const els = {
   planBtn: $("plan-btn"),
   resetBtn: $("reset-btn"),
   copyLinkBtn: $("copy-link-btn"),
+  importBtn: $("import-btn"),
+  importInput: $("import-input"),
   status: $("status"),
   clarificationPanel: $("clarification-panel"),
   clarificationList: $("clarification-list"),
@@ -164,6 +166,7 @@ const state = {
   weatherMarkers: L.layerGroup(), // forecast points along the active candidate
   poiLayer: L.layerGroup(), // points of interest (along the active route, or in the map view)
   poiStopLayer: L.layerGroup(), // the famous sights the plan was routed past
+  importLayer: L.layerGroup(), // the start, finish and waypoints of an imported GPX track
   poiCategories: [], // [{key, label, kind}] from the server
   poiPrefs: { enabled: true, keys: [] },
   poiTimezone: null, // IANA zone the server named for the active route's sights (opening hours)
@@ -178,6 +181,7 @@ const state = {
   planGeneration: 0, // bumped by every form plan and every drawn chat plan; a stale response is dropped
   planPending: null, // generation of the form/text request in flight, if any
   renderedGeneration: 0, // generation of the plan on the map
+  gpxImportRequest: 0, // the latest GPX file chosen or dropped
   deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
   pickKeys: new Set(), // downloads already reported to the pick log (opt-in, PICK_LOG_PATH)
@@ -214,6 +218,7 @@ function initMap() {
   state.weatherMarkers.addTo(state.map);
   state.poiLayer.addTo(state.map);
   state.poiStopLayer.addTo(state.map);
+  state.importLayer.addTo(state.map);
   state.map.on("click", onMapClick);
   state.map.getContainer().addEventListener("contextmenu", onLongPress);
   // A click that only closes another popup (a sight, a weather marker) must not open the menu.
@@ -280,6 +285,7 @@ function currentPlaces() {
 /** The route on the map ([lon, lat] pairs), or null. */
 function activeRouteLine() {
   const entry = state.candidateLayers[state.activeIndex];
+  if (entry && entry.candidate.provider === "gpx") return null; // dragging cannot reshape a file's track
   const coords = entry && entry.candidate && entry.candidate.geometry_geojson
     ? entry.candidate.geometry_geojson.coordinates
     : null;
@@ -469,7 +475,7 @@ function onLongPress(ev) {
 /** Make a route line show the drag handle while it is the active one; returns the layer. */
 function attachReshape(layer, index) {
   layer.on("mousemove", (ev) => {
-    if (index !== state.activeIndex || state.pickingTarget) return;
+    if (index !== state.activeIndex || state.pickingTarget || !activeRouteLine()) return;
     showReshapeHandle(ev.latlng);
   });
   layer.on("mouseout", scheduleReshapeHide);
@@ -1018,6 +1024,7 @@ function clearResults() {
   state.weatherMarkers.clearLayers();
   state.poiLayer.clearLayers();
   state.poiStopLayer.clearLayers();
+  state.importLayer.clearLayers();
   state.poiRequest++;
   state.poiTimezone = null;
   els.coverageCard.hidden = true;
@@ -1212,6 +1219,77 @@ async function copyText(text) {
   }
 }
 
+/* -------------------------------- GPX import -------------------------------- */
+
+/** The start, the finish and the file's waypoints, on top of the imported track. */
+function drawImportMarks(response) {
+  state.importLayer.clearLayers();
+  const line = response.route.geometry_geojson.coordinates;
+  const mark = (lon, lat, label, fill, radius) =>
+    L.circleMarker([lat, lon], { radius, color: "#ffffff", weight: 2, fillColor: fill, fillOpacity: 1 })
+      .bindTooltip(escapeHtml(label))
+      .addTo(state.importLayer);
+  const first = line[0];
+  const last = line[line.length - 1];
+  mark(first[0], first[1], response.imported.loop ? "Start and finish" : "Start", "#0e7a4a", 7);
+  if (!response.imported.loop) mark(last[0], last[1], "Finish", "#b91c1c", 7);
+  for (const w of response.imported.waypoints) {
+    mark(w.lon, w.lat, [w.name, w.description].filter(Boolean).join(" \u2014 ") || "Waypoint", "#475569", 4);
+  }
+}
+
+/** Show the track of a GPX file like a planned route. The file is read here and goes nowhere. */
+async function importGpx(file) {
+  const request = ++state.gpxImportRequest; // reading is async: only the latest file may be shown
+  const refused = BikeGpxImport.refusal(file);
+  if (refused) {
+    setStatus("error", escapeHtml(refused));
+    return;
+  }
+  let response;
+  try {
+    response = BikeGpxImport.toResponse(BikeGpxImport.parse(await file.text()), file.name);
+  } catch (err) {
+    if (request !== state.gpxImportRequest) return;
+    setStatus("error", escapeHtml(BikeGpxImport.errorText(err)));
+    return;
+  }
+  if (request !== state.gpxImportRequest) return;
+  if (state.aborted) state.aborted.abort(); // a plan still being made must not replace the file
+  state.planGeneration += 1;
+  state.renderedGeneration = state.planGeneration;
+  state.deferredChat = null;
+  state.lastResponse = null; // the planner and the chat know nothing of this route
+  renderResponse(response, null);
+  state.formRouteUnsent = false; // so the chat is not handed a route it never planned
+  drawImportMarks(response);
+  setStatus("ok", `Imported ${escapeHtml(response.route.provider_profile)} &mdash; ${escapeHtml(fmtKm(response.route.metrics.distance_m))}. It is drawn as it is in the file.`);
+}
+
+function wireImport() {
+  els.importBtn.addEventListener("click", () => els.importInput.click());
+  els.importInput.addEventListener("change", () => {
+    const file = els.importInput.files && els.importInput.files[0];
+    els.importInput.value = ""; // choosing the same file again must import it again
+    if (file) importGpx(file);
+  });
+  const holdsFile = (ev) => ev.dataTransfer && Array.from(ev.dataTransfer.types || []).includes("Files");
+  const map = state.map.getContainer();
+  map.addEventListener("dragover", (ev) => {
+    if (!holdsFile(ev)) return;
+    ev.preventDefault();
+    map.classList.add("file-over");
+  });
+  map.addEventListener("dragleave", () => map.classList.remove("file-over"));
+  map.addEventListener("drop", (ev) => {
+    if (!holdsFile(ev)) return;
+    ev.preventDefault();
+    map.classList.remove("file-over");
+    const file = ev.dataTransfer.files && ev.dataTransfer.files[0];
+    if (file) importGpx(file);
+  });
+}
+
 function renderErrors(errors) {
   if (!errors || errors.length === 0) {
     els.errorsPanel.hidden = true;
@@ -1293,7 +1371,7 @@ function renderRoute(data) {
   redrawPlaceMarkers();
 
   els.resultsPanel.hidden = false;
-  els.reshapeHint.hidden = !("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  els.reshapeHint.hidden = !activeRouteLine() || !("ontouchstart" in window || navigator.maxTouchPoints > 0);
   // One scroll target: when a routing engine lacked map data the card that asks the user what
   // to do is revealed instead (renderCoverage), not the result.
   if (!BikeCoverage.find(data.errors)) revealOnPhone(els.resultsPanel);
@@ -2008,6 +2086,7 @@ function wireEvents() {
   });
   els.resetBtn.addEventListener("click", resetAll);
   els.copyLinkBtn.addEventListener("click", copyPlanLink);
+  wireImport();
   els.cuesList.addEventListener("click", (ev) => {
     const button = ev.target.closest("button[data-cue]");
     if (button) showCue(Number(button.dataset.cue));
@@ -2034,6 +2113,7 @@ function wireEvents() {
 
 function resetAll() {
   state.locationRequest++; // drop any location lookup still in flight
+  state.gpxImportRequest++; // and any GPX file still being read
   els.locateOrigin.disabled = false;
   stopPicking();
   els.origin.value = "";
