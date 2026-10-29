@@ -399,6 +399,8 @@ def test_a_file_read_late_cannot_replace_a_file_chosen_after_it():
     assert failed.index("request !== state.gpxImportRequest") < failed.index("setStatus(")
     assert body.rindex("request !== state.gpxImportRequest") < body.index("renderResponse(")
     assert "gpxImportRequest: 0" in app
+    # Reset while a file is still being read must not bring the route back afterwards
+    assert "state.gpxImportRequest++" in app[app.index("function resetAll()") :][:400]
 
 
 def test_an_imported_track_cannot_be_reshaped_by_dragging():

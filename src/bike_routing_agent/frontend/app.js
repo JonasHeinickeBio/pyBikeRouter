@@ -2113,6 +2113,7 @@ function wireEvents() {
 
 function resetAll() {
   state.locationRequest++; // drop any location lookup still in flight
+  state.gpxImportRequest++; // and any GPX file still being read
   els.locateOrigin.disabled = false;
   stopPicking();
   els.origin.value = "";
