@@ -328,6 +328,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #map-mode-banner a { color: #9fd7ff; }
 
 #map.picking { cursor: crosshair; }
+#map.file-over { outline: 3px dashed #0e7a4a; outline-offset: -3px; }
 
 /* The point picked by a click on the map, and its menu. */
 .point-pin {

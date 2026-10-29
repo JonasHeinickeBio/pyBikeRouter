@@ -241,6 +241,8 @@
         <button id="plan-btn" class="primary" type="button">Plan route</button>
         <button id="reset-btn" class="ghost" type="button">Reset</button>
         <button id="copy-link-btn" class="ghost" type="button" title="Copy a link that opens this trip in the form">Copy link</button>
+        <button id="import-btn" class="ghost" type="button" title="Show a track from a GPX file on the map (read in this browser, not uploaded). You can also drop the file on the map.">Import GPX</button>
+        <input id="import-input" type="file" accept=".gpx,.xml,application/gpx+xml,text/xml,application/xml" hidden>
       </div>
       <div class="actions" data-tab="optimize">
         <button id="optimize-btn" class="primary" type="button">Optimize route</button>
@@ -376,6 +378,7 @@
   <script src="optimize.js"></script>
   <script src="alternatives.js"></script>
   <script src="export.js"></script>
+  <script src="gpx-import.js"></script>
   <script src="hours.js"></script>
   <script src="link.js"></script>
   <script src="pois.js"></script>
