@@ -27,7 +27,7 @@
 
 ## What each bike type uses today, against the best profile
 
-The mapped profile is scored as the service runs it (stock profiles from the container image, `@image`); rank is its place among the 11 cycling profiles of upstream master and ours.
+The mapped profile is scored as the service runs it (stock profiles from the container image, `@image`); rank is its place among the 11 ranked profiles.
 
 | bike type | mapped profile | its score | rank | best | best score | gap | best is #1 in weight draws |
 |---|---|---:|---:|---|---:|---:|---:|

@@ -3,9 +3,12 @@
 
 Two steps, so the (slow) routing and the (instant) scoring can be re-run apart:
 
-    python scripts/profile_experiment.py prepare --upstream DIR --image DIR --ours DIR --out DIR
+    python scripts/profile_experiment.py fetch   --out DIR       # third-party profiles, pinned
+    python scripts/profile_experiment.py prepare --upstream DIR --image DIR --ours DIR \\
+        --community DIR --out DIR
     python scripts/profile_experiment.py run   --out benchmarks/profile-experiment-v1/raw.json
     python scripts/profile_experiment.py score --raw benchmarks/profile-experiment-v1/raw.json
+    python scripts/profile_experiment.py score --raw ... --groups cycling,ours,community
 
 BRouter only returns the OSM tags a profile itself reads, so a profile that ignores
 ``cycleway:left`` would look as if it routed past cycle tracks it never saw. ``prepare``
@@ -24,9 +27,11 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import random
 import re
+import socket
 import statistics
 import urllib.error
 import urllib.parse
@@ -64,6 +69,17 @@ OTHER = [
     "moped", "rail", "river", "hiking-mountain",
 ]  # fmt: skip
 OURS = ["touring-v1", "commuter-v1", "gravel-v1", "gravel-v2"]  # docker/brouter/profiles
+# Third-party bicycle profiles from GitHub, pinned by commit and sha256 (no licence, so not
+# stored here): label, repo, sha, path.
+MANIFEST = (
+    Path(__file__).resolve().parents[1] / "benchmarks/profile-experiment-v1/community-sources.json"
+)
+
+
+def community() -> list[dict[str, str]]:
+    return json.loads(MANIFEST.read_text())["profiles"] if MANIFEST.exists() else []
+
+
 # Stock profiles whose text differs between the image and upstream master (checked by md5).
 DRIFTED = [
     "fastbike", "fastbike-verylowtraffic", "gravel", "mtb", "trekking", "shortest",
@@ -167,7 +183,13 @@ def route_metrics(base_url: str, profile: str, origin: tuple, dest: tuple) -> di
 def targets(url: str) -> dict[str, dict[str, str]]:
     """label -> how to ask the experiment BRouter, for every profile of the experiment."""
     found: dict[str, dict[str, str]] = {}
-    for group, names in (("cycling", CYCLING), ("other", OTHER), ("ours", OURS)):
+    names_by_group = (
+        ("cycling", CYCLING),
+        ("other", OTHER),
+        ("ours", OURS),
+        ("community", [row["label"] for row in community()]),
+    )
+    for group, names in names_by_group:
         for name in names:
             found[name] = {"group": group, "url": url, "profile": f"custom_t_{name}"}
     for name in DRIFTED:  # the same stock profile as the container image still ships it
@@ -192,13 +214,48 @@ def prepare(options: argparse.Namespace) -> None:
     jobs = [(options.upstream / f"{n}.brf", f"t_{n}") for n in CYCLING + OTHER]
     jobs += [(options.ours / f"{n}.brf", f"t_{n}") for n in OURS]
     jobs += [(options.image / f"{n}.brf", f"t_{n}_image") for n in DRIFTED]
+    if options.community:
+        jobs += [
+            (options.community / f"{row['label']}.brf", f"t_{row['label']}") for row in community()
+        ]
     for source, name in jobs:
-        text = source.read_text()
+        text = source.read_text(errors="replace")
         tagged = with_all_tags(text)
         if "processUnusedTags = true" not in tagged:
-            raise SystemExit(f"{source}: no global context to put processUnusedTags into")
+            print(f"skipped {source.name}: no global context to put processUnusedTags into")
+            continue
         (options.out / f"{name}.brf").write_text(tagged)
-    print(f"wrote {len(jobs)} profiles to {options.out}")
+    print(f"wrote {len(list(options.out.glob('*.brf')))} profiles to {options.out}")
+
+
+def fetch(options: argparse.Namespace) -> None:
+    """Download the third-party profiles at their pinned commits and check the hashes."""
+    options.out.mkdir(parents=True, exist_ok=True)
+    bad = 0
+    # raw.githubusercontent.com over IPv6 is slow or stalls on some networks: use IPv4 here
+    real_getaddrinfo = socket.getaddrinfo
+    socket.getaddrinfo = (
+        lambda host, *rest, **kw: real_getaddrinfo(  # type: ignore[assignment]
+            host, rest[0] if rest else None, socket.AF_INET, *rest[2:], **kw
+        )
+    )
+    for row in community():
+        url = f"https://raw.githubusercontent.com/{row['repo']}/{row['sha']}/{urllib.parse.quote(row['path'])}"
+        data = b""
+        for _attempt in range(3):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as response:
+                    data = response.read()
+                break
+            except (urllib.error.URLError, TimeoutError):
+                continue
+        if hashlib.sha256(data).hexdigest() != row["sha256"]:
+            bad += 1
+            print(f"HASH MISMATCH {row['label']} ({url})")
+            continue
+        (options.out / f"{row['label']}.brf").write_bytes(data)
+    socket.getaddrinfo = real_getaddrinfo
+    print(f"fetched {len(community()) - bad} of {len(community())} profiles to {options.out}")
 
 
 def same_routes(options: argparse.Namespace) -> None:
@@ -331,10 +388,13 @@ def sensitivity(scored: dict[str, Any], pool: list[str]) -> dict[str, dict[str, 
     }
 
 
-def render(raw: dict[str, Any]) -> str:  # noqa: C901 - one flat report, kept in one place
-    scored = score_all(raw)
-    wanted, table = raw["targets"], scored["table"]
-    pool = [lab for lab, t in wanted.items() if t["group"] in ("cycling", "ours")]
+def render(raw: dict[str, Any], groups: set[str]) -> str:  # noqa: C901 - one flat report
+    scored = score_all(raw)  # references always come from the cycling + ours profiles
+    table = scored["table"]
+    wanted = {
+        lab: t for lab, t in raw["targets"].items() if t["group"] in groups | {"other", "image"}
+    }
+    pool = [lab for lab, t in wanted.items() if t["group"] in groups]
     mapped = {bt: BROUTER_PROFILE_MAP[bt].removeprefix("custom_") for bt in PERSONAS}
     sens = sensitivity(scored, pool)
     out: list[str] = []
@@ -367,8 +427,7 @@ def render(raw: dict[str, Any]) -> str:  # noqa: C901 - one flat report, kept in
     out.append("\n## What each bike type uses today, against the best profile\n")
     out.append(
         "The mapped profile is scored as the service runs it (stock profiles from the container "
-        "image, `@image`); rank is its place among the "
-        f"{len(pool)} cycling profiles of upstream master and ours.\n"
+        f"image, `@image`); rank is its place among the {len(pool)} ranked profiles.\n"
     )
     out.append(
         "| bike type | mapped profile | its score | rank | best | best score | gap | best is #1 in weight draws |"
@@ -532,20 +591,30 @@ def main() -> None:
     prep_p = sub.add_parser("prepare", help="write the all-tags copy of every profile")
     for name in ("upstream", "image", "ours", "out"):
         prep_p.add_argument(f"--{name}", type=Path, required=True)
+    prep_p.add_argument("--community", type=Path, help="directory written by 'fetch'")
+    fetch_p = sub.add_parser("fetch", help="download the pinned third-party profiles")
+    fetch_p.add_argument("--out", type=Path, required=True)
     same_p = sub.add_parser("same-routes", help="compare the routes of two raw files")
     same_p.add_argument("--a", type=Path, required=True)
     same_p.add_argument("--b", type=Path, required=True)
     score_p = sub.add_parser("score", help="score a raw result file and print markdown")
     score_p.add_argument("--raw", type=Path, required=True)
+    score_p.add_argument(
+        "--groups",
+        default="cycling,ours",
+        help="profile groups to rank (cycling, ours, community); the default is the first report",
+    )
     options = parser.parse_args()
     if options.command == "run":
         run(options)
     elif options.command == "prepare":
         prepare(options)
+    elif options.command == "fetch":
+        fetch(options)
     elif options.command == "same-routes":
         same_routes(options)
     else:
-        print(render(json.loads(options.raw.read_text())))
+        print(render(json.loads(options.raw.read_text()), set(options.groups.split(","))))
 
 
 if __name__ == "__main__":

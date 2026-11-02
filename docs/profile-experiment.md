@@ -2,10 +2,12 @@
 
 `docs/profile-evaluation.md` asked whether the profiles behind our eight bike types
 behave. This experiment widens it: **every profile in BRouter's upstream
-`misc/profiles2` on GitHub plus our four custom ones, on ten new routes, scored with a
-rubric that was written down before the first route was run.** Re-run it with
+`misc/profiles2` on GitHub plus our four custom ones (part 1), then 70 community profiles from
+18 GitHub repositories (part 2), on ten new routes, scored with a rubric that was written
+down before the first route was run.** Re-run it with
 `scripts/profile_experiment.py`; raw data is `benchmarks/profile-experiment-v1/raw.json`,
-every per-route table is in `benchmarks/profile-experiment-v1/report.md`.
+every per-route table is in `benchmarks/profile-experiment-v1/report.md` (part 1) and
+`report-extended.md` (part 2, with the community profiles).
 
 ## What was tested
 
@@ -260,9 +262,149 @@ The mapped profile is scored as the service runs it (stock profiles from the con
    blind spot (it does not set the switch, so it is only reliable for profiles that read every tag it
    counts).
 
+## Part 2: 70 community profiles
+
+The upstream set is not all that is out there. GitHub holds many more BRouter bicycle
+profiles; 70 were added, from 18 repositories (the best known is Poutnik's collection,
+29 bicycle profiles; the rest are gravel, road, MTB, trekking and velomobile sets from single
+authors). Chosen by searching GitHub for BRouter profile repositories and taking every
+bicycle profile in them; dropped before the run: exact duplicates in a fork, two empty stubs, and
+profiles for other modes (car, hiking, walking, helper templates). Not covered: profiles that
+only exist on a hosted server or inside an app.
+
+**Licences:** almost none of these repositories has one, so their text is **not** in this
+repository. `benchmarks/profile-experiment-v1/community-sources.json` pins each file by
+repository, commit, path and sha256; `profile_experiment.py fetch` downloads and verifies them.
+They are measured exactly like the others (copy with `processUnusedTags = true`), the rubric and
+the references are unchanged (the references stay the shortest/fastest/flattest of the first 11
+cycling profiles, so part 1 does not move), and the ranking now has 81 profiles.
+`report-extended.md` has every table including per route.
+
+### Which profiles run
+
+65 of 70 load. Five fail on all ten routes with a parse error because they need lookup values
+that the `lookups.dat` of our segments does not have: the four `fabulator` profiles (`gravel`,
+`mtb`, `race`, `road`: `crossing`) and `zossebart-bike-child-transporter` (`sump_buster`).
+Running them needs segments built with another `lookups.dat`. All 29 of Poutnik's profiles
+load although the repository was last updated in 2021. Behaviourally the 81 ranked profiles are
+75 different ones: stock `gravel` = `gravel-v1`, `poutnik-Trekking-FCR-dry` =
+`cxberlin-trekking-radwege`, and the five that fail.
+
+### Best score per repository
+
+| repository | profiles | load | best | its mean | median of those that load |
+|---|---:|---:|---|---:|---:|
+| hutec/brouter-profiles | 1 | 1 | allroad | 81 | 81 |
+| poutnikl/Brouter-profiles | 29 | 29 | MTB-wet | 79 | 73 |
+| dkvasnicka/brouter-profiles | 1 | 1 | gravel-trekking-longdistance | 78 | 78 |
+| quaelnix/brouter-profiles | 1 | 1 | gravel | 78 | 78 |
+| here-and-now/brouter_profiles | 3 | 3 | trekking-gravel | 77 | 74 |
+| carg0cult/brouter-profiles | 7 | 7 | gravel-rv-scenic | 76 | 73 |
+| cxberlin/brouter-profiles | 6 | 6 | trekking | 74 | 70 |
+| fabulator/brouter | 5 | 1 | trip | 74 | 74 |
+| utack/utack_brouter_profile | 1 | 1 | streetbike-touring | 74 | 74 |
+| Zonarius/brouter | 2 | 2 | brouter | 72 | 70 |
+| phpmacher/brouter-profiles | 1 | 1 | trekking-smallroads-phpmacher | 72 | 72 |
+| Mia-Rae/mia-brouter-profiles | 4 | 4 | mtb-trekking-mia | 71 | 70 |
+| packquickly/brouter_profiles | 4 | 4 | ultra-hardpack | 67 | 63 |
+| Jockel-H/brouter-profiles | 1 | 1 | velomobile-touristic | 65 | 65 |
+| Guillaume-Fgt/Brouter_Profiles | 1 | 1 | gravel | 64 | 64 |
+| ThomasTraber/brouter_profiles_and_testing | 1 | 1 | velomobil-tt | 56 | 56 |
+| erveinx/brouter-profiles | 1 | 1 | racing-bike | 56 | 56 |
+| zossebart/brouter-misc | 1 | 0 | - | - | - |
+
+### Ranking with all 81
+
+| profile | group | ok | road | ebike | commuter | city | touring | gravel | mountain | recumbent | mean | worst route |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| hutec-allroad | community | 10/10 | 85 | 84 | 85 | 84 | 87 | 67 | 70 | 87 | **81** | 71 |
+| gravel-v2 | ours | 10/10 | 85 | 82 | 84 | 83 | 87 | 67 | 70 | 87 | **81** | 69 |
+| poutnik-MTB-wet | community | 10/10 | 74 | 77 | 75 | 84 | 88 | 72 | 79 | 80 | **79** | 68 |
+| dkvasnicka-gravel-trekking-longdistance | community | 10/10 | 84 | 82 | 82 | 83 | 88 | 58 | 59 | 88 | **78** | 67 |
+| quaelnix-gravel | community | 10/10 | 81 | 79 | 81 | 81 | 83 | 66 | 71 | 83 | **78** | 67 |
+| gravel | cycling | 10/10 | 81 | 79 | 81 | 81 | 83 | 66 | 71 | 83 | **78** | 67 |
+| gravel-v1 | ours | 10/10 | 81 | 79 | 81 | 81 | 83 | 66 | 71 | 83 | **78** | 67 |
+| poutnik-MTB-light-wet | community | 10/10 | 77 | 77 | 76 | 84 | 90 | 65 | 70 | 84 | **78** | 68 |
+| poutnik-Trekking-MTB-strong-wet | community | 10/10 | 77 | 77 | 76 | 84 | 90 | 65 | 70 | 84 | **78** | 68 |
+| poutnik-MTB-light | community | 10/10 | 76 | 76 | 75 | 82 | 89 | 64 | 69 | 83 | **77** | 68 |
+| hereandnow-trekking-gravel | community | 10/10 | 79 | 76 | 78 | 78 | 82 | 66 | 72 | 82 | **77** | 63 |
+| poutnik-Trekking-MTB-strong | community | 10/10 | 76 | 75 | 74 | 82 | 89 | 65 | 70 | 83 | **77** | 68 |
+| carg0cult-gravel-rv-scenic | community | 10/10 | 74 | 75 | 76 | 77 | 78 | 76 | 79 | 75 | **76** | 62 |
+| poutnik-Trekking-MTB-medium | community | 10/10 | 76 | 75 | 74 | 81 | 89 | 62 | 66 | 83 | **76** | 67 |
+| poutnik-Trekking-tracks | community | 10/10 | 68 | 74 | 72 | 81 | 84 | 73 | 80 | 75 | **76** | 62 |
+| commuter-v1 | ours | 10/10 | 75 | 75 | 74 | 81 | 89 | 62 | 66 | 83 | **76** | 64 |
+
+(The full table, every profile and the non-cycling reference rows, is in `report-extended.md`.)
+
+| bike type | mapped profile | its score | rank | best | best score | gap | best is #1 in weight draws |
+|---|---|---:|---:|---|---:|---:|---:|
+| road | fastbike@image | 65.2 | 59 | hutec-allroad | 85.3 | +20.1 | 48% |
+| ebike | fastbike@image | 63.2 | 66 | hutec-allroad | 83.6 | +20.5 | 94% |
+| commuter | commuter-v1 | 73.5 | 24 | hutec-allroad | 84.8 | +11.3 | 90% |
+| city | trekking@image | 81.8 | 8 | hutec-allroad | 84.4 | +2.6 | 36% |
+| touring | touring-v1 | 88.1 | 10 | poutnik-MTB-light-wet | 89.9 | +1.7 | 86% |
+| gravel | gravel-v2 | 66.5 | 13 | carg0cult-gravel-rv-scenic | 75.7 | +9.1 | 64% |
+| mountain | mtb@image | 80.0 | 2 | poutnik-Trekking-tracks | 80.0 | +0.0 | 28% |
+| recumbent | vm-forum-liegerad-schnell@image | 76.6 | 47 | dkvasnicka-gravel-trekking-longdistance | 87.7 | +11.0 | 59% |
+
+| persona | 1st | 2nd | 3rd |
+|---|---|---|---|
+| road | hutec-allroad 85 (99% top-3) | gravel-v2 85 (88% top-3) | dkvasnicka-gravel-trekking-longdistance 84 (98% top-3) |
+| ebike | hutec-allroad 84 (100% top-3) | gravel-v2 82 (94% top-3) | dkvasnicka-gravel-trekking-longdistance 82 (88% top-3) |
+| commuter | hutec-allroad 85 (100% top-3) | gravel-v2 84 (98% top-3) | dkvasnicka-gravel-trekking-longdistance 82 (67% top-3) |
+| city | hutec-allroad 84 (75% top-3) | poutnik-MTB-wet 84 (75% top-3) | poutnik-MTB-light-wet 84 (47% top-3) |
+| touring | poutnik-MTB-light-wet 90 (93% top-3) | poutnik-Trekking-MTB-strong-wet 90 (91% top-3) | poutnik-MTB-light 89 (52% top-3) |
+| gravel | carg0cult-gravel-rv-scenic 76 (90% top-3) | poutnik-Trekking-hilly-paths 75 (78% top-3) | mtb 73 (47% top-3) |
+| mountain | poutnik-Trekking-tracks 80 (72% top-3) | mtb 80 (66% top-3) | poutnik-MTB 80 (59% top-3) |
+| recumbent | dkvasnicka-gravel-trekking-longdistance 88 (99% top-3) | gravel-v2 87 (93% top-3) | hutec-allroad 87 (82% top-3) |
+
+### Findings
+
+9. **One community profile ties `gravel-v2` for best overall:** `hutec-allroad` (81.0 against
+   80.5; header: "Allroad cycling profile for gravel bikes on mixed terrain", version 2026-05-07). At
+   the same safety (5 % main-road exposure, `gravel-v2` 1 %) it detours less (+13 % against +18 %), and
+   its worst route scores 71 against 69. It is first for the road, ebike, commuter and city
+   personas, but only just: the margin over `gravel-v2` is 0.4 to 2 points, and `city` is a three-way
+   tie with two Poutnik MTB profiles (#1 in only 36 % of the weight draws).
+10. **Poutnik's family is mostly a plateau.** 23 of the 29 profiles score 72-79 (median 73) against 74
+    for stock `trekking`; the rest are special-purpose (`Fastbike-lowtraffic-tertiaries` 64 is the
+    lowest). The `-dry` / `-wet` / `-Fast` / `-Tandem` / `-ICR` / `-LCR` / `-FCR` variants end up
+    within 1-3 points of each other on these ten routes: what they change (surface condition,
+    cycle-route preference) is mostly not visible in these metrics. The ones that stand out are the
+    `MTB` profiles for touring and city: `MTB-wet` (79 overall) and `MTB-light-wet` (78) score 88 and
+    90 on touring against 88 for `touring-v1`, being quiet (1 % and 5 % main-road exposure) and, for
+    `MTB-light-wet`, smooth (77 % paved; `MTB-wet` 63 %). The margin over `touring-v1` is 0 to 2
+    points, inside the weight sensitivity.
+11. **For gravel, the mapped `gravel-v2` is 13th of 81, 9 points behind the best.**
+    `carg0cult-gravel-rv-scenic` (76) beats `mtb` (73) and `gravel-v2` (67): 62 % track and path
+    (`gravel-v2` 48 %), 27 % compacted and 22 % loose (21 % and 2 %), but only 36 % paved and with
+    3 % forbidden. Whether that is a better gravel route or just a rougher one depends on the rider;
+    it is #1 in 64 % of the weight draws, top three in 90 %. `poutnik-Trekking-hilly-paths` (75) gets
+    there with 70 % track and path and 38 % loose surface (7 % forbidden), and `packquickly-ultra-backcountry` has the
+    most gravel fit (G 71) at +58 % distance.
+12. **For mountain nothing beats `mtb`:** `poutnik-Trekking-tracks` ties at 80, no profile is first in
+    more than 28 % of the weight draws.
+13. **Most community road profiles do not beat `fastbike`, but three fast ones do.**
+    `cxberlin-rennrad` (65.6 on the road persona against 65.2 for the image's `fastbike`),
+    `erveinx-racing-bike` (59), `packquickly-ultra-tarmac` (62) and `cxberlin-rennrad-alternativ`
+    (60) do not. `zonarius-brouter` (a `fastbike` variant, 81) does: 14 % main-road exposure against
+    44 %, 86 % paved, at +28 % distance against +12 % (its own time estimate is still 80 min against
+    96, a speed-model effect). `hereandnow-road` (72, 41 % exposure, +28 %) and
+    `poutnik-Fastbike-lowtraffic-tertiaries` (68, 34 % exposure, +19 %) gain less. So a fast profile
+    that avoids main roads exists; it buys that with distance. The velomobil profile
+    `jockel-velomobile-touristic` behaves like the stock `vm-forum` ones (very fast model, 41 on S).
+14. **Mapped ranks among all 81:** road 59th, ebike 66th, recumbent 47th, commuter 24th, gravel 13th,
+    touring 10th, city 8th, mountain 2nd. The ones that matter most are unchanged from part 1: `road`
+    and `ebike` give up about 20 points to `hutec-allroad` and `gravel-v2`, for main-road exposure. The
+    profiles that remove that exposure are mostly gravel/allroad ones; `zonarius-brouter` is the
+    one fast profile that does it with a road character.
+
 ## Limits
 
 - **Ten routes**, nine in Germany and one in England; one run each (BRouter is deterministic).
+- **Community profiles are third-party files of unknown quality**, written for other
+  `lookups.dat` versions and other riders; a profile that scores badly here may be right for its author.
+  Search was GitHub only and by repository name; profiles inside apps or hosted servers are missing.
 - **No ground truth**: nobody rode them. The scores are proxies built from OSM tags, with weights I chose;
   the sensitivity draws vary the weights by up to 50 %, not the components' definitions.
 - **S counts every main road without a mapped cycle lane as exposure**, however quiet; **T compares each
@@ -277,8 +419,11 @@ The mapped profile is scored as the service runs it (stock profiles from the con
 
 ```bash
 # profiles: upstream (gh api repos/abrensch/brouter/contents/misc/profiles2), the image's own
-# (docker cp <brouter container>:/profiles2/<name>.brf) and docker/brouter/profiles
-python scripts/profile_experiment.py prepare --upstream UP --image IMG --ours docker/brouter/profiles --out T
+# (docker cp <brouter container>:/profiles2/<name>.brf), docker/brouter/profiles and the pinned
+# community profiles (checks every sha256)
+python scripts/profile_experiment.py fetch --out COMMUNITY
+python scripts/profile_experiment.py prepare --upstream UP --image IMG --ours docker/brouter/profiles \
+  --community COMMUNITY --out T
 # a second BRouter on the same segments with T as its custom profile directory (relative paths, as
 # server.sh uses them: an absolute --customprofiles path is not found by this engine)
 docker run -d --network host -v $PWD/docker/brouter/segments:/segments4:ro -v T:/customprofiles:ro \
@@ -287,4 +432,6 @@ docker run -d --network host -v $PWD/docker/brouter/segments:/segments4:ro -v T:
   ../segments4 ../profiles2 ../customprofiles 17778 1 127.0.0.1
 python scripts/profile_experiment.py run   --out benchmarks/profile-experiment-v1/raw.json
 python scripts/profile_experiment.py score --raw benchmarks/profile-experiment-v1/raw.json
+python scripts/profile_experiment.py score --raw benchmarks/profile-experiment-v1/raw.json \
+  --groups cycling,ours,community
 ```
