@@ -58,6 +58,12 @@ A `plan_route` answer looks like (shortened):
  "files": {"gpx": "http://127.0.0.1:8765/v1/routes/....gpx", "geojson": "..."}, "notes": []}
 ```
 
+When `sight_stops` was asked for, the answer also has **`sight_stops_status`** (`ok`, `none_found`,
+`unavailable`, `dropped` or `unsupported`), and any status but `ok` adds a note
+(`sight_stops_unavailable`, ...) saying why the route has no stops. An empty `sight_stops` list on its own
+does not tell "there are no sights" from "the sight lookup was down" (the public Overpass server often is):
+`unavailable` is the second, and says nothing about the sights.
+
 Every tool result is both the text content (JSON) and `structuredContent`; a failure is a result with
 `isError: true` and a message the agent can act on (an invalid argument names the problem, an unreachable API
 says so, the API's own refusal is passed on). Only an unknown tool or a malformed request is a protocol error.
