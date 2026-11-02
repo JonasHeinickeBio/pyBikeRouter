@@ -62,7 +62,9 @@ When `sight_stops` was asked for, the answer also has **`sight_stops_status`** (
 `unavailable`, `dropped` or `unsupported`), and any status but `ok` adds a note
 (`sight_stops_unavailable`, ...) saying why the route has no stops. An empty `sight_stops` list on its own
 does not tell "there are no sights" from "the sight lookup was down" (the public Overpass server often is):
-`unavailable` is the second, and says nothing about the sights.
+`unavailable` is the second (or the lookup is switched off with `POI_ENABLED=false`), and says nothing
+about the sights. `none_found` means no stop was selected, which includes a trip with no room left among
+its via points; `dropped` means routing through the stops failed and the route was planned without them.
 
 Every tool result is both the text content (JSON) and `structuredContent`; a failure is a result with
 `isError: true` and a message the agent can act on (an invalid argument names the problem, an unreachable API

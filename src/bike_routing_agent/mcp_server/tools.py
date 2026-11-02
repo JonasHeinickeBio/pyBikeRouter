@@ -276,10 +276,13 @@ def candidate_summary(candidate: dict[str, Any]) -> dict[str, Any]:
 
 # Why sight stops were asked for and none were placed ("ok" needs no sentence).
 SIGHT_STOPS_WHY = {
-    "none_found": "no well-known sights were found along this trip",
-    "unavailable": "the sight lookup (OpenStreetMap/Wikidata) was not available right now, so "
-    "this says nothing about whether there are sights; try again later",
-    "dropped": "the routing engines could not reach the sights by bike",
+    "none_found": "no sight stops were selected (none found along the trip, or no room left "
+    "for them among the via points)",
+    "unavailable": "the sight lookup (OpenStreetMap/Wikidata) is switched off or was not "
+    "available, so this says nothing about whether there are sights; if it is only "
+    "temporarily down, try again later",
+    "dropped": "routing through the selected sight stops failed, so the route was planned "
+    "without them",
     "unsupported": "this loop cannot be drawn with sight stops (it needs a size)",
 }
 

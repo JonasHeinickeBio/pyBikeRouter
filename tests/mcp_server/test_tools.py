@@ -210,9 +210,9 @@ def test_stops_that_were_placed_say_ok_and_add_no_note(tools, api):
 @pytest.mark.parametrize(
     ("status", "words"),
     [
-        ("none_found", "no well-known sights were found"),
-        ("unavailable", "says nothing about whether there are sights"),
-        ("dropped", "could not reach the sights by bike"),
+        ("none_found", "no sight stops were selected"),
+        ("unavailable", "switched off or was not available"),
+        ("dropped", "routing through the selected sight stops failed"),
         ("unsupported", "needs a size"),
     ],
 )
