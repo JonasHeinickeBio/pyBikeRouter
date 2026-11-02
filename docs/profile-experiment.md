@@ -79,14 +79,14 @@ bike type is one weighted sum:
 | recumbent | P .35, S .30, C .20, T .15 |
 
 Robustness: 2000 random draws with every weight scaled by U(0.5, 1.5) say how often the winner stays
-first. Three views do not depend on the weights at all: the component means, the routes won, and the
-post-hoc removals of S and T further down.
+first. Only the component means are free of the weights; "routes won" uses the weighted scores, and the
+post-hoc removals of S and T renormalise the remaining weights.
 
 ## Results
 
 ### Mean score per persona (0-100, failed route = 0)
 
-| profile | group | ok | road | ebike | commuter | city | touring | gravel | mountain | recumbent | mean | worst route |
+| profile | group | ok | road | ebike | commuter | city | touring | gravel | mountain | recumbent | mean | worst route score |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | gravel-v2 | ours | 10/10 | 85 | 82 | 84 | 83 | 87 | 67 | 70 | 87 | **81** | 69 |
 | gravel | cycling | 10/10 | 81 | 79 | 81 | 81 | 83 | 66 | 71 | 83 | **78** | 67 |
@@ -199,7 +199,7 @@ The mapped profile is scored as the service runs it (stock profiles from the con
 
 ### Stock profiles: container image vs upstream master
 
-| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose geometry differs |
+| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose length differs (>5 m) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | fastbike | 60.9 | 60.8 | -0.1 | 24.65 | 23.67 | 44 | 54 | 9/10 |
 | fastbike-verylowtraffic | 58.8 | 59.8 | +1.0 | 23.90 | 24.06 | 54 | 52 | 3/10 |
@@ -248,8 +248,9 @@ The mapped profile is scored as the service runs it (stock profiles from the con
    54 %): the name is not earned, as the earlier evaluation found.
 6. **The image's stock profiles are out of date, mostly harmlessly.** Of the 18 stock files in the
    image, 10 differ from upstream master and 2 (`car-vario-nocost`, `skating`) are missing. For the
-   routes it makes little difference: `gravel`, `mtb` and both `vm-forum` profiles give identical
-   routes; `trekking` changes on 6 of 10 routes, `shortest` on 4, `fastbike-verylowtraffic` on 3.
+   routes it makes little difference: `gravel`, `mtb` and both `vm-forum` profiles give routes of
+   identical length on all ten (length is what was compared, not geometry, so this can undercount);
+   `trekking` changes length on 6 of 10 routes, `shortest` on 4, `fastbike-verylowtraffic` on 3.
    `fastbike` is the exception: 9 of 10 routes change, 4 % shorter and **10 points more exposure to
    main roads** (44 % -> 54 %). Upgrading the image would move `road` and `ebike` toward more traffic.
 7. **Non-cycling profiles behave as designed.** The car and moped profiles put 71 % and 85 % of the
@@ -426,12 +427,12 @@ python scripts/profile_experiment.py prepare --upstream UP --image IMG --ours do
   --community COMMUNITY --out T
 # a second BRouter on the same segments with T as its custom profile directory (relative paths, as
 # server.sh uses them: an absolute --customprofiles path is not found by this engine)
-docker run -d --network host -v $PWD/docker/brouter/segments:/segments4:ro -v T:/customprofiles:ro \
+docker run -d --network host -v $PWD/docker/brouter/segments:/segments4:ro -v "$(realpath T)":/customprofiles:ro \
   -v $PWD/docker/brouter/lookups.dat:/profiles2/lookups.dat:ro -w /bin --entrypoint java \
   ghcr.io/abrensch/brouter -Xmx128M -cp ../brouter.jar btools.server.RouteServer \
   ../segments4 ../profiles2 ../customprofiles 17778 1 127.0.0.1
-python scripts/profile_experiment.py run   --out benchmarks/profile-experiment-v1/raw.json
-python scripts/profile_experiment.py score --raw benchmarks/profile-experiment-v1/raw.json
-python scripts/profile_experiment.py score --raw benchmarks/profile-experiment-v1/raw.json \
-  --groups cycling,ours,community
+# use a fresh output file: `run` skips what a file already holds, and raw.json holds all of it
+python scripts/profile_experiment.py run   --out my-raw.json
+python scripts/profile_experiment.py score --raw my-raw.json
+python scripts/profile_experiment.py score --raw my-raw.json --groups cycling,ours,community
 ```

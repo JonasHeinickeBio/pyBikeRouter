@@ -1,6 +1,6 @@
 ## Mean score per persona (0-100, failed route = 0)
 
-| profile | group | ok | road | ebike | commuter | city | touring | gravel | mountain | recumbent | mean | worst route |
+| profile | group | ok | road | ebike | commuter | city | touring | gravel | mountain | recumbent | mean | worst route score |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | gravel-v2 | ours | 10/10 | 85 | 82 | 84 | 83 | 87 | 67 | 70 | 87 | **81** | 69 |
 | gravel | cycling | 10/10 | 81 | 79 | 81 | 81 | 83 | 66 | 71 | 83 | **78** | 67 |
@@ -139,7 +139,7 @@ Not part of the rubric fixed before the run. S is the traffic proxy; T compares 
 
 ## Stock profiles: container image vs upstream master
 
-| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose geometry differs |
+| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose length differs (>5 m) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | fastbike | 60.9 | 60.8 | -0.1 | 24.65 | 23.67 | 44 | 54 | 9/10 |
 | fastbike-verylowtraffic | 58.8 | 59.8 | +1.0 | 23.90 | 24.06 | 54 | 52 | 3/10 |

@@ -286,8 +286,8 @@ def run(options: argparse.Namespace) -> None:
     for route, (origin, dest) in ROUTES.items():
         done = results.setdefault(route, {})
         for label, target in wanted.items():
-            if label in done:
-                continue
+            if label in done and "error" not in done[label]:
+                continue  # recorded errors are retried: the server may have recovered
             done[label] = route_metrics(target["url"], target["profile"], origin, dest)
             shown = done[label].get("error") or f"{done[label]['km']} km, {done[label]['min']} min"
             print(f"{route:24}{label:34}{shown}", flush=True)
@@ -404,7 +404,7 @@ def render(raw: dict[str, Any], groups: set[str]) -> str:  # noqa: C901 - one fl
         return statistics.fmean(rows) if rows else float("nan")
 
     out.append("## Mean score per persona (0-100, failed route = 0)\n")
-    out.append("| profile | group | ok | " + " | ".join(PERSONAS) + " | mean | worst route |")
+    out.append("| profile | group | ok | " + " | ".join(PERSONAS) + " | mean | worst route score |")
     out.append("|---|---|---:|" + "---:|" * (len(PERSONAS) + 2))
     order = sorted(
         (lab for lab in wanted if wanted[lab]["group"] != "image"),
@@ -526,7 +526,7 @@ def render(raw: dict[str, Any], groups: set[str]) -> str:  # noqa: C901 - one fl
 
     out.append("\n## Stock profiles: container image vs upstream master\n")
     out.append(
-        "| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose geometry differs |"
+        "| profile | mean score image | mean score master | change | km image | km master | traffic % image | master | routes whose length differs (>5 m) |"
     )
     out.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     for name in DRIFTED:
