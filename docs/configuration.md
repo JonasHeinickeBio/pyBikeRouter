@@ -118,6 +118,11 @@ bike categories. It is deliberately a config table, not hard-coded in the
 adapter, so operators can adjust it. For a `bike_type` -> profile map per
 engine, run `bike-router providers list`.
 
+A route that an engine plans with a profile not tuned for what was asked says so in its `warnings`
+(shown on the web page and in the CLI): a `gravel` request on ORS ("ORS has no gravel profile: planned with
+`cycling-regular` ... the surface mix is not known"), and `gravel` or `mountain` on Valhalla, which plans
+every type with its standard `bicycle` costing. BRouter has its own gravel and mountain profiles (below).
+
 Against a self-hosted BRouter (`ROUTING_PROVIDER=brouter`, see
 [providers.md](providers.md)) the same types map to stock or versioned
 profiles with genuinely different cost models:

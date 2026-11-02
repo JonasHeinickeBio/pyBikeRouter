@@ -135,6 +135,13 @@ class ValhallaAdapter:
                 "surface preferences are not applied per request by Valhalla bicycle "
                 f"costing ({surfaces} were not applied)"
             )
+        if constraints.bike_type.value in ("gravel", "mountain"):
+            # Every bike type is planned with the standard bicycle costing (VALHALLA_PROFILE_MAP).
+            warnings.append(
+                f"Valhalla has no {constraints.bike_type.value} costing: planned with its "
+                "standard bicycle costing, not tuned for that kind of riding "
+                "(the BRouter engine has a profile for it)"
+            )
         if constraints.bike_type.value == "ebike":
             warnings.append(
                 "Valhalla has no e-assist costing: ebike rides use the standard "

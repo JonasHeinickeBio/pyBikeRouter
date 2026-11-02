@@ -137,6 +137,25 @@ async def test_route_keeps_via_order(valhalla_route_response: dict) -> None:
 
 
 @respx.mock
+@pytest.mark.parametrize(
+    ("bike_type", "warned"),
+    [("gravel", True), ("mountain", True), ("road", False), ("city", False), ("touring", False)],
+)
+async def test_gravel_and_mountain_say_the_standard_costing_is_not_tuned_for_them(
+    valhalla_route_response: dict, bike_type: str, warned: bool
+) -> None:
+    respx.post(ROUTE_URL).mock(return_value=httpx.Response(200, json=valhalla_route_response))
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(make_request(bike_type=bike_type))
+
+    notes = [w for w in candidate.warnings if "standard bicycle costing" in w]
+    assert bool(notes) is warned
+    if warned:
+        assert f"no {bike_type} costing" in notes[0] and "BRouter" in notes[0]
+
+
+@respx.mock
 async def test_relaxed_constraints_omit_avoidances(valhalla_route_response: dict) -> None:
     call = respx.post(ROUTE_URL).mock(
         return_value=httpx.Response(200, json=valhalla_route_response)

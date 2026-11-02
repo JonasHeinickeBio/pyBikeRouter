@@ -100,6 +100,32 @@ async def test_route_drops_highways_avoid_feature_and_warns(ors_directions_respo
 
 
 @respx.mock
+@pytest.mark.parametrize(
+    ("bike_type", "warned"),
+    [("gravel", True), ("road", False), ("mountain", False), ("city", False), ("ebike", False)],
+)
+async def test_only_gravel_says_the_profile_is_not_tuned_for_it(
+    ors_directions_response, bike_type, warned
+):
+    """ORS has no gravel profile: a gravel request is planned with cycling-regular and says so.
+    Types with their own ORS profile (road, mountain, ebike) or a fitting one (city) stay quiet."""
+    respx.post(url__regex=rf"{BASE_URL}/v2/directions/cycling-[a-z]+/geojson").mock(
+        return_value=httpx.Response(200, json=ors_directions_response)
+    )
+    adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)
+    request = make_request().model_copy(
+        update={"constraints": RouteConstraints(bike_type=bike_type)}
+    )
+
+    candidate = await adapter.route(request)
+
+    notes = [w for w in candidate.warnings if "no gravel profile" in w]
+    assert bool(notes) is warned
+    if warned:
+        assert "cycling-regular" in notes[0] and "BRouter" in notes[0]
+
+
+@respx.mock
 async def test_health_reports_ok_on_200():
     respx.get(f"{BASE_URL}/v2/health").mock(return_value=httpx.Response(200))
     adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)
