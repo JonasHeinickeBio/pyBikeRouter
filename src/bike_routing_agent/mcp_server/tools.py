@@ -99,7 +99,11 @@ TOOLS: list[dict[str, Any]] = [
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 10,
-                    "description": "route past this many of the best-known sights",
+                    "description": (
+                        "route past this many of the best-known sights; the answer's "
+                        "sight_stops_status says why none were placed (none found, or the "
+                        "lookup was down)"
+                    ),
                 },
             },
             "required": ["origin"],
@@ -270,6 +274,19 @@ def candidate_summary(candidate: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+# Why sight stops were asked for and none were placed ("ok" needs no sentence).
+SIGHT_STOPS_WHY = {
+    "none_found": "no sight stops were selected (none found along the trip, or no room left "
+    "for them among the via points)",
+    "unavailable": "the sight lookup (OpenStreetMap/Wikidata) is switched off or was not "
+    "available, so this says nothing about whether there are sights; if it is only "
+    "temporarily down, try again later",
+    "dropped": "routing through the selected sight stops failed, so the route was planned "
+    "without them",
+    "unsupported": "this loop cannot be drawn with sight stops (it needs a size)",
+}
+
+
 def _messages(items: list[Any] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for item in items or []:
@@ -410,6 +427,17 @@ class BikeRouterTools:
             self._plans.popitem(last=False)
         candidates = plan.get("candidates") or [plan.get("route")]
         summaries = [candidate_summary(c) for c in candidates if c]
+        stops_status = plan.get("poi_stops_status")
+        if stops_status is not None:
+            # Asked for stops: an empty list alone cannot tell "none found" from "lookup down".
+            out["sight_stops_status"] = stops_status
+            if stops_status in SIGHT_STOPS_WHY:
+                out["notes"].append(
+                    {
+                        "code": f"sight_stops_{stops_status}",
+                        "message": f"Planned without sight stops: {SIGHT_STOPS_WHY[stops_status]}.",
+                    }
+                )
         out.update(
             {
                 "plan_ref": ref,

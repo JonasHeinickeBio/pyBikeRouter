@@ -194,6 +194,39 @@ def test_a_ready_plan_is_summarised_as_facts_without_geometry(tools):
     assert "geometry" not in text and "coordinates" not in text and "raw_provider" not in text
 
 
+def test_a_plan_without_a_sight_request_has_no_sight_status(tools):
+    data = planned(tools)
+    assert "sight_stops_status" not in data
+    assert [n["code"] for n in data["notes"]] == ["weather_unavailable"]
+
+
+def test_stops_that_were_placed_say_ok_and_add_no_note(tools, api):
+    api.answers["/v1/route/plan"] = ready_plan(poi_stops_status="ok")
+    data = planned(tools, sight_stops=1)
+    assert data["sight_stops_status"] == "ok" and len(data["sight_stops"]) == 1
+    assert [n["code"] for n in data["notes"]] == ["weather_unavailable"]
+
+
+@pytest.mark.parametrize(
+    ("status", "words"),
+    [
+        ("none_found", "no sight stops were selected"),
+        ("unavailable", "switched off or was not available"),
+        ("dropped", "routing through the selected sight stops failed"),
+        ("unsupported", "needs a size"),
+    ],
+)
+def test_no_stops_says_why_so_a_lookup_that_was_down_is_not_read_as_no_sights(
+    tools, api, status, words
+):
+    api.answers["/v1/route/plan"] = ready_plan(poi_stops=[], poi_stops_status=status)
+    data = planned(tools, sight_stops=3)
+    assert data["sight_stops"] == [] and data["sight_stops_status"] == status
+    note = data["notes"][-1]
+    assert note["code"] == f"sight_stops_{status}"
+    assert note["message"].startswith("Planned without sight stops:") and words in note["message"]
+
+
 def test_an_ambiguous_place_lists_candidates_to_answer_with(tools, api):
     api.answers["/v1/route/plan"] = AMBIGUOUS
     data, error = call(tools, "plan_route", origin="Celle", destination="Hannover")
