@@ -68,6 +68,14 @@ class OpenRouteServiceAdapter:
         avoid_features = [f for f in requested_avoid_features if f in _CYCLING_AVOID_FEATURES]
         unsupported = [f for f in requested_avoid_features if f not in _CYCLING_AVOID_FEATURES]
         warnings = []
+        if request.constraints.bike_type.value == "gravel":
+            # ORS ships no gravel profile (ORS_PROFILE_MAP): say what the ride is planned with,
+            # so a "gravel" label is not read as a gravel route.
+            warnings.append(
+                f"ORS has no gravel profile: planned with {ORS_PROFILE_MAP['gravel']}, an "
+                "all-round profile not tuned for gravel, so the surface mix is not known "
+                "(the BRouter engine has a gravel profile)"
+            )
         if unsupported:
             warnings.append(
                 f"requested avoid_features {unsupported} are not supported by ORS cycling "
