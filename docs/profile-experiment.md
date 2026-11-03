@@ -362,8 +362,9 @@ load although the repository was last updated in 2021. Behaviourally the 81 rank
 ### Findings
 
 9. **One community profile ties `gravel-v2` for best overall:** `hutec-allroad` (81.0 against
-   80.5; header: "Allroad cycling profile for gravel bikes on mixed terrain", version 2026-05-07). At
-   the same safety (5 % main-road exposure, `gravel-v2` 1 %) it detours less (+13 % against +18 %), and
+   80.5; header: "Allroad cycling profile for gravel bikes on mixed terrain", version 2026-05-07). With
+   nearly the same safety (safety component 94 against 97; 5 % main-road exposure against 1 %) it
+   detours less (+13 % against +18 %), and
    its worst route scores 71 against 69. It is first for the road, ebike, commuter and city
    personas, but only just: the margin over `gravel-v2` is 0.4 to 2 points, and `city` is a three-way
    tie with two Poutnik MTB profiles (#1 in only 36 % of the weight draws).
@@ -386,9 +387,9 @@ load although the repository was last updated in 2021. Behaviourally the 81 rank
 12. **For mountain nothing beats `mtb`:** `poutnik-Trekking-tracks` ties at 80, no profile is first in
     more than 28 % of the weight draws.
 13. **Most community road profiles do not beat `fastbike`, but three fast ones do.**
-    `cxberlin-rennrad` (65.6 on the road persona against 65.2 for the image's `fastbike`),
-    `erveinx-racing-bike` (59), `packquickly-ultra-tarmac` (62) and `cxberlin-rennrad-alternativ`
-    (60) do not. `zonarius-brouter` (a `fastbike` variant, 81) does: 14 % main-road exposure against
+    `cxberlin-rennrad` (65.6 on the road persona against 65.2 for the image's `fastbike`) only
+    ties it, and `erveinx-racing-bike` (59), `packquickly-ultra-tarmac` (62) and
+    `cxberlin-rennrad-alternativ` (60) do worse. `zonarius-brouter` (a `fastbike` variant, 81) does: 14 % main-road exposure against
     44 %, 86 % paved, at +28 % distance against +12 % (its own time estimate is still 80 min against
     96, a speed-model effect). `hereandnow-road` (72, 41 % exposure, +28 %) and
     `poutnik-Fastbike-lowtraffic-tertiaries` (68, 34 % exposure, +19 %) gain less. So a fast profile
@@ -432,7 +433,7 @@ docker run -d --network host -v $PWD/docker/brouter/segments:/segments4:ro -v "$
   ghcr.io/abrensch/brouter -Xmx128M -cp ../brouter.jar btools.server.RouteServer \
   ../segments4 ../profiles2 ../customprofiles 17778 1 127.0.0.1
 # use a fresh output file: `run` skips what a file already holds, and raw.json holds all of it
-python scripts/profile_experiment.py run   --out my-raw.json
+python scripts/profile_experiment.py run   --out my-raw.json --community   # --community: the 70 pinned ones
 python scripts/profile_experiment.py score --raw my-raw.json
 python scripts/profile_experiment.py score --raw my-raw.json --groups cycling,ours,community
 ```

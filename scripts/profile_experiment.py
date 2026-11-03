@@ -121,13 +121,21 @@ def _tags(raw: str) -> dict[str, str]:
     return dict(kv.split("=", 1) for kv in raw.split() if "=" in kv)
 
 
-def route_metrics(base_url: str, profile: str, origin: tuple, dest: tuple) -> dict[str, Any]:
+def route_metrics(
+    base_url: str,
+    profile: str,
+    origin: tuple,
+    dest: tuple,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Route once; ``overrides`` are profile variables set for this request (``profile:name=v``)."""
     query = urllib.parse.urlencode(
         {
             "lonlats": f"{origin[0]},{origin[1]}|{dest[0]},{dest[1]}",
             "profile": profile,
             "alternativeidx": 0,
             "format": "geojson",
+            **{f"profile:{name}": str(value) for name, value in (overrides or {}).items()},
         }
     )
     try:
@@ -180,14 +188,14 @@ def route_metrics(base_url: str, profile: str, origin: tuple, dest: tuple) -> di
 
 
 # ---- run -------------------------------------------------------------------------------
-def targets(url: str) -> dict[str, dict[str, str]]:
+def targets(url: str, with_community: bool = False) -> dict[str, dict[str, str]]:
     """label -> how to ask the experiment BRouter, for every profile of the experiment."""
     found: dict[str, dict[str, str]] = {}
     names_by_group = (
         ("cycling", CYCLING),
         ("other", OTHER),
         ("ours", OURS),
-        ("community", [row["label"] for row in community()]),
+        ("community", [row["label"] for row in community()] if with_community else []),
     )
     for group, names in names_by_group:
         for name in names:
@@ -215,9 +223,11 @@ def prepare(options: argparse.Namespace) -> None:
     jobs += [(options.ours / f"{n}.brf", f"t_{n}") for n in OURS]
     jobs += [(options.image / f"{n}.brf", f"t_{n}_image") for n in DRIFTED]
     if options.community:
-        jobs += [
-            (options.community / f"{row['label']}.brf", f"t_{row['label']}") for row in community()
-        ]
+        for row in community():
+            source = options.community / f"{row['label']}.brf"
+            if hashlib.sha256(source.read_bytes()).hexdigest() != row["sha256"]:
+                raise SystemExit(f"{source}: does not match the pinned sha256 (run fetch again)")
+            jobs.append((source, f"t_{row['label']}"))
     for source, name in jobs:
         text = source.read_text(errors="replace")
         tagged = with_all_tags(text)
@@ -256,6 +266,8 @@ def fetch(options: argparse.Namespace) -> None:
         (options.out / f"{row['label']}.brf").write_bytes(data)
     socket.getaddrinfo = real_getaddrinfo
     print(f"fetched {len(community()) - bad} of {len(community())} profiles to {options.out}")
+    if bad:
+        raise SystemExit(1)
 
 
 def same_routes(options: argparse.Namespace) -> None:
@@ -277,8 +289,8 @@ def same_routes(options: argparse.Namespace) -> None:
 
 def run(options: argparse.Namespace) -> None:
     raw: dict[str, Any] = json.loads(options.out.read_text()) if options.out.exists() else {}
-    wanted = targets(options.url)
-    raw["targets"] = wanted
+    wanted = targets(options.url, options.community)
+    raw["targets"] = {**raw.get("targets", {}), **wanted}  # keep what earlier runs recorded
     raw.setdefault(
         "routes", {name: {"origin": o, "destination": d} for name, (o, d) in ROUTES.items()}
     )
@@ -588,6 +600,9 @@ def main() -> None:
     run_p = sub.add_parser("run", help="route everything, resumable")
     run_p.add_argument("--out", type=Path, required=True)
     run_p.add_argument("--url", default="http://127.0.0.1:17778")
+    run_p.add_argument(
+        "--community", action="store_true", help="also route the 70 community profiles (see fetch)"
+    )
     prep_p = sub.add_parser("prepare", help="write the all-tags copy of every profile")
     for name in ("upstream", "image", "ours", "out"):
         prep_p.add_argument(f"--{name}", type=Path, required=True)
