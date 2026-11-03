@@ -124,3 +124,9 @@ def test_the_generated_classes_forbid_unknown_names_and_check_ranges():
     assert models.GravelV2(prefer_unpaved_paths=True).model_dump(exclude_none=True) == {
         "prefer_unpaved_paths": True
     }
+
+
+def test_strict_validation_refuses_a_boolean_for_a_number_like_the_request_does():
+    with pytest.raises(ValueError, match="uphillcost needs a number"):
+        params.validate("custom_touring-v1", {"uphillcost": True})
+    assert params.resolve("custom_touring-v1", {"uphillcost": True}).values == {}

@@ -861,3 +861,16 @@ def test_a_profile_without_settings_refuses_them_but_another_engine_is_not_check
         "--bike-type", "mountain", "--engine", "ors", "--profile-param", "uphillcost=1"
     )
     assert code == 0 and graph.invoked_with is not None
+
+
+def test_profile_settings_do_not_go_with_text_planning():
+    code, _, err = cli(
+        "route", "plan", "--text", "a quiet ride", "--profile-param", "consider_noise=on"
+    )
+    assert code == 2 and "not --text" in err
+
+
+def test_an_unknown_bike_type_is_reported_by_the_request_not_by_a_crash():
+    code, _, err, graph = plan("--bike-type", "tank", "--profile-param", "consider_noise=on")
+    assert code == 2 and graph.invoked_with is None
+    assert "bike_type" in err

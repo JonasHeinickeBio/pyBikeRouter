@@ -144,6 +144,10 @@ def validate(profile: str, requested: Mapping[str, bool | float]) -> dict[str, b
     model = PROFILE_MODELS.get(profile)
     if model is None:
         raise ValueError(f"{profile} has no per-request settings")
+    for name, value in requested.items():
+        spec = PROFILE_SPECS[profile].get(name)
+        if spec is not None and spec.kind == "number" and isinstance(value, bool):
+            raise ValueError(f"{name} needs a number, not true/false")  # pydantic would take 1.0
     return model.model_validate(dict(requested)).model_dump(exclude_none=True)
 
 

@@ -60,7 +60,7 @@ would be sent.
 | --- | --- |
 | `--max-alternatives N` | keep at most N distinct alternatives (1-5) |
 | `--engine ors\|brouter\|valhalla` | route with this engine for this plan only (repeatable) |
-| `--profile-param NAME=VALUE` | a setting of the BRouter profile for this ride, e.g. `uphillcost=120`, `consider_noise=true` (repeatable; true/false/on/off or a number). Typos and out-of-range values come back in the route's warnings ([providers.md](providers.md#profile-settings-per-request-profile_params)) |
+| `--profile-param NAME=VALUE` | a setting of the BRouter profile for this ride, e.g. `uphillcost=120`, `consider_noise=true` (repeatable; true/false/on/off or a number). Typos and out-of-range values stop the command before routing, with a hint (exit 2; [providers.md](providers.md#profile-settings-per-request-profile_params)) |
 | `--profile-params-file FILE` | the same settings as a JSON object (`-` reads standard input), e.g. `echo '{"uphillcost": 90}' \| bike-router route plan ... --profile-params-file -`; `--profile-param` words win. Both are checked against the bike type's profile **before** routing: a typo stops the command with a hint |
 | `--poi-stops N` `--poi-categories` `--poi-corridor-km` `--poi-min-fame` | route past the N best-known sights ([pois.md](pois.md#routing-past-the-most-famous-sights)) |
 | `--format json\|text` | machine readable (default) or a readable summary: the route, every alternative with its pros and cons, weather, stops, warnings, files |

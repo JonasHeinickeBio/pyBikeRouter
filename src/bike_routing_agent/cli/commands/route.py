@@ -93,9 +93,8 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         metavar="NAME=VALUE",
         help=(
             "set a setting of the BRouter profile for this ride, e.g. uphillcost=120 or "
-            "consider_noise=true (repeatable; 'bike-router providers list' shows the profile, "
-            "docs/providers.md the settings). Unknown names and out-of-range values are "
-            "reported in the route's warnings"
+            "consider_noise=true (repeatable; 'bike-router profile settings' lists them). "
+            "Unknown names and out-of-range values are refused before routing (exit 2)"
         ),
     )
     plan.add_argument(
@@ -353,7 +352,11 @@ def _profile_params_error(args: argparse.Namespace, params: dict[str, bool | flo
     fails here with a hint instead of coming back as a warning after the whole plan."""
     if not params or (args.engine and "brouter" not in args.engine):
         return None  # nothing to check, or an engine that does not use them
-    profile = BROUTER_PROFILE_MAP[args.bike_type]
+    if args.text is not None:
+        return "--profile-param / --profile-params-file need the structured options, not --text"
+    profile = BROUTER_PROFILE_MAP.get(args.bike_type)
+    if profile is None:
+        return None  # an unknown bike type is reported by the request's own checks
     try:
         brouter_params.validate(profile, params)
     except ValidationError as exc:
