@@ -351,6 +351,8 @@ def score_all(raw: dict[str, Any]) -> dict[str, Any]:
     refs = references(results, ranked)
     table: dict[str, dict[str, Any]] = {}
     for label in wanted:
+        if not all(label in row for row in results.values()):
+            continue  # not (fully) routed, e.g. an interrupted run: nothing to score
         per_route = {}
         for route, row in results.items():
             m = row[label]
@@ -404,7 +406,9 @@ def render(raw: dict[str, Any], groups: set[str]) -> str:  # noqa: C901 - one fl
     scored = score_all(raw)  # references always come from the cycling + ours profiles
     table = scored["table"]
     wanted = {
-        lab: t for lab, t in raw["targets"].items() if t["group"] in groups | {"other", "image"}
+        lab: t
+        for lab, t in raw["targets"].items()
+        if t["group"] in groups | {"other", "image"} and lab in table
     }
     pool = [lab for lab, t in wanted.items() if t["group"] in groups]
     mapped = {bt: BROUTER_PROFILE_MAP[bt].removeprefix("custom_") for bt in PERSONAS}
