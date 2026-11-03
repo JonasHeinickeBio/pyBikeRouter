@@ -1,0 +1,566 @@
+{
+ "note": "Third-party BRouter profiles measured by scripts/profile_experiment.py. Almost none carry a licence, so their text is NOT in this repository: 'fetch' downloads each file at the pinned commit and checks the sha256. Profiles are not endorsed or modified except for processUnusedTags (see docs/profile-experiment.md).",
+ "fetched": "2026-11-02",
+ "profiles": [
+  {
+   "label": "poutnik-Fastbike-lowtraffic-tertiaries",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Fastbike-lowtraffic-tertiaries.brf",
+   "license": "none",
+   "sha256": "3582f78cefdca17ca2fc7359316a6fbf836ffcc91dacb743efe6534e2dee4170"
+  },
+  {
+   "label": "poutnik-MTB-light-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/MTB-light-wet.brf",
+   "license": "none",
+   "sha256": "7086db1eb3e283e44d6937bf440eaa137d49d94835ae45932e7038a810e729f7"
+  },
+  {
+   "label": "poutnik-MTB-light",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/MTB-light.brf",
+   "license": "none",
+   "sha256": "8dfe1b0e6e96c590e86682bdf7fbb8f55e52ea3162e0da2602fcc008d732c284"
+  },
+  {
+   "label": "poutnik-MTB-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/MTB-wet.brf",
+   "license": "none",
+   "sha256": "d18a58da52411db55e0aed4cc81580a369b06c814d42c2e3ecf3dc2af9f6834a"
+  },
+  {
+   "label": "poutnik-MTB",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/MTB.brf",
+   "license": "none",
+   "sha256": "49ce63a5ac002ed3e33586914ef029985cb3817934af305fb060cceaa1756366"
+  },
+  {
+   "label": "poutnik-Trekking-FCR-dry",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-FCR-dry.brf",
+   "license": "none",
+   "sha256": "9901be4e212feb8e385ee15ce54b3a0fcb2d6b10e5d0ba257619e2ff0d45a2cd"
+  },
+  {
+   "label": "poutnik-Trekking-FCR-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-FCR-wet.brf",
+   "license": "none",
+   "sha256": "fe925a8e6dc1a26a209ac45a646ed58f4304b529c357511b2197d366d8977bbf"
+  },
+  {
+   "label": "poutnik-Trekking-Fast-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-Fast-wet.brf",
+   "license": "none",
+   "sha256": "3d57b1d87b3845296e165b832a611c4b5edf2ae7c1cd2ca5b870b3aa3481712f"
+  },
+  {
+   "label": "poutnik-Trekking-Fast",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-Fast.brf",
+   "license": "none",
+   "sha256": "6ddf9bda776c33992d2bbe3679283091bd477543ee3ee7659baa108319684abf"
+  },
+  {
+   "label": "poutnik-Trekking-ICR-dry",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-ICR-dry.brf",
+   "license": "none",
+   "sha256": "df3087dbb061d21d78788f601e34bfa675feb0e8674cc3874c786405db40df31"
+  },
+  {
+   "label": "poutnik-Trekking-ICR-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-ICR-wet.brf",
+   "license": "none",
+   "sha256": "3e32e87adc2c628e8cfaa62ede1e41c6c4079f073513d0d16bb76b44454559bf"
+  },
+  {
+   "label": "poutnik-Trekking-LCR-dry",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-LCR-dry.brf",
+   "license": "none",
+   "sha256": "23c785897e847bc3c030640b19d47accbd4f6b0a5dbf1b6b5b41f6085091b3a4"
+  },
+  {
+   "label": "poutnik-Trekking-LCR-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-LCR-wet.brf",
+   "license": "none",
+   "sha256": "d6a33e15c2714d188fbf082c56a23d5fb2b9f339ab813267afac20a42a0d1af2"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-light-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-light-wet.brf",
+   "license": "none",
+   "sha256": "1641e777b5e54b9e9d1d5503c24a6d8460f76c9fb1d0cd2303403796d5d45e16"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-light",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-light.brf",
+   "license": "none",
+   "sha256": "fd6df5da23b272421a0a44dfdbb541e4556ac9101568b28f3174d788263f41bb"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-medium-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-medium-wet.brf",
+   "license": "none",
+   "sha256": "252c8eb724ce40a0017848afa1c7bddadf455c3b394c308a4600d890a7bd26d0"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-medium",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-medium.brf",
+   "license": "none",
+   "sha256": "4590d1f05dfca97ceabe7808b74f1a6fcf94acc8a6f30007aa1be5678a0b82cb"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-strong-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-strong-wet.brf",
+   "license": "none",
+   "sha256": "3deebc5bc3ac06736663122c9139f53d749f844427a1fe4decf06eec7080c41a"
+  },
+  {
+   "label": "poutnik-Trekking-MTB-strong",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-MTB-strong.brf",
+   "license": "none",
+   "sha256": "72e062ce3b5e51642aecec8b54cf02ded204eaa8c4ab1a786c9ff1997ea37228"
+  },
+  {
+   "label": "poutnik-Trekking-No-Flat",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-No-Flat.brf",
+   "license": "none",
+   "sha256": "640f84071233527532a103a4db0625c3c519603aee80db26feb547d3da7a1082"
+  },
+  {
+   "label": "poutnik-Trekking-SmallRoads-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-SmallRoads-wet.brf",
+   "license": "none",
+   "sha256": "331803f23d2b7521a18f917e383e131c460f816101ecebe231207ae24d083b6e"
+  },
+  {
+   "label": "poutnik-Trekking-SmallRoads",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-SmallRoads.brf",
+   "license": "none",
+   "sha256": "ac8af21bf377c23c450f204ef0f7b89b6b399ee68cc3fcad452f5acbba97dd7a"
+  },
+  {
+   "label": "poutnik-Trekking-Tandem-dry",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-Tandem-dry.brf",
+   "license": "none",
+   "sha256": "a79673492296c951916ae2e133cafe7781d00b1d4b10ebaf6b776bd06e01d78c"
+  },
+  {
+   "label": "poutnik-Trekking-Tertiaries",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-Tertiaries.brf",
+   "license": "none",
+   "sha256": "5a4e9348176515a9ae72b83fabb129a246644cc72e155c147f90f17a7723056b"
+  },
+  {
+   "label": "poutnik-Trekking-dry",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-dry.brf",
+   "license": "none",
+   "sha256": "6b4dbb7eb65e71dacb7d9aabf9e6fedc745336e1573d2d09f9322e2ea9b79e70"
+  },
+  {
+   "label": "poutnik-Trekking-hilly-paths",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-hilly-paths.brf",
+   "license": "none",
+   "sha256": "bd1a0bd4183e432733e148bf8e237f1bc36afac1c5a9d82224d3248653d5e01f"
+  },
+  {
+   "label": "poutnik-Trekking-tracks",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-tracks.brf",
+   "license": "none",
+   "sha256": "afc189794281998a098cd6fd16975aba6d96f2abdad1596f3012dbe299d43e22"
+  },
+  {
+   "label": "poutnik-Trekking-valley",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-valley.brf",
+   "license": "none",
+   "sha256": "177670f60ce010bab0e625496234f26a9c67201ecc88d7517915da6fc4922f2b"
+  },
+  {
+   "label": "poutnik-Trekking-wet",
+   "repo": "poutnikl/Brouter-profiles",
+   "sha": "f35236788abfdd02062525e3b01ef504803fa4cd",
+   "path": "BikeProfiles/Trekking-wet.brf",
+   "license": "none",
+   "sha256": "3a175a1cc72e7363d775a08ada0a5308ac75f0c6b2f2de6c58e741ba81a08337"
+  },
+  {
+   "label": "utack-streetbike-touring",
+   "repo": "utack/utack_brouter_profile",
+   "sha": "a68a9032862b6f7e0f0071e375e79a56f7102217",
+   "path": "streetbike_touring.brf",
+   "license": "none",
+   "sha256": "b7dfb5cfa1a4729b4144da8d469fe82a67e25fb0cf5d75ef6aa7f2349e315aeb"
+  },
+  {
+   "label": "mia-lit-up-trekking-mia",
+   "repo": "Mia-Rae/mia-brouter-profiles",
+   "sha": "54d99ddb9782cac51bb596932eb2c2f6f4516ba7",
+   "path": "lit-up-trekking-mia.brf",
+   "license": "none",
+   "sha256": "ec219cbf9eb065d2869e0704fcaca17c29512a7f05d0fdffa1be78b6a6e2b4e5"
+  },
+  {
+   "label": "mia-mtb-adventure-mia",
+   "repo": "Mia-Rae/mia-brouter-profiles",
+   "sha": "54d99ddb9782cac51bb596932eb2c2f6f4516ba7",
+   "path": "mtb-adventure-mia.brf",
+   "license": "none",
+   "sha256": "5aa018b01ebd7b3c4d4cf9377d89ca5b83fdafc0e723a43a08142a3a1f0107de"
+  },
+  {
+   "label": "mia-mtb-trekking-mia",
+   "repo": "Mia-Rae/mia-brouter-profiles",
+   "sha": "54d99ddb9782cac51bb596932eb2c2f6f4516ba7",
+   "path": "mtb-trekking-mia.brf",
+   "license": "none",
+   "sha256": "91db40f9c8781f49b34c93a2a95746afd14b67a557232363459fe1b4dbdb8f28"
+  },
+  {
+   "label": "mia-trekking-mia",
+   "repo": "Mia-Rae/mia-brouter-profiles",
+   "sha": "54d99ddb9782cac51bb596932eb2c2f6f4516ba7",
+   "path": "trekking-mia.brf",
+   "license": "none",
+   "sha256": "7b41733f6d3ac1538e59859a9ee692ff39f4d764f0689ba99842fb5aa10f9e3e"
+  },
+  {
+   "label": "cxberlin-gravel",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "gravel.brf",
+   "license": "none",
+   "sha256": "296c9ab7451c509934ab50fd1acdf31c59fb0ddee4b254c7451339651b7471b4"
+  },
+  {
+   "label": "cxberlin-mtb-xc",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "mtb-xc.brf",
+   "license": "none",
+   "sha256": "23c4894bc6eb309174b88fa02b7d112f1df6cebd3cd37d26928f5f20526360e6"
+  },
+  {
+   "label": "cxberlin-rennrad-alternativ",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "rennrad-alternativ.brf",
+   "license": "none",
+   "sha256": "85efd88e440323efdd9a871b5319d3dafb959a1e596abfc396abcfb17f97c5ae"
+  },
+  {
+   "label": "cxberlin-rennrad",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "rennrad.brf",
+   "license": "none",
+   "sha256": "4f062536d6a023607ff73bf8dd52e5a5cd91c95588a5e67bdb4af54232c050e4"
+  },
+  {
+   "label": "cxberlin-trekking-radwege",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "trekking-radwege.brf",
+   "license": "none",
+   "sha256": "b9fd158b7c32a89105d8fdb68bb0e139adf9b23679c2b48973f0eb1ba8619305"
+  },
+  {
+   "label": "cxberlin-trekking",
+   "repo": "cxberlin/brouter-profiles",
+   "sha": "85c8a2e2bcabb6ec7728b0facf05865256cec9c0",
+   "path": "trekking.brf",
+   "license": "none",
+   "sha256": "322233f71ddd3fca958afc539ee217e3302f0786d6f74f05d6cea7e34beaf0a9"
+  },
+  {
+   "label": "jockel-velomobile-touristic",
+   "repo": "Jockel-H/brouter-profiles",
+   "sha": "8e155143d6ff8f940003c067a8273b890f1ed1f0",
+   "path": "velomobile.touristic.brf",
+   "license": "LGPL-2.1",
+   "sha256": "332bf13e4192bdb4a407509be7362a71f5b69c64f4807fcf120ca15f1e75108d"
+  },
+  {
+   "label": "fabulator-gravel",
+   "repo": "fabulator/brouter",
+   "sha": "45945d3999c32241f4136779cb1a64ae16d9a65d",
+   "path": "gravel.brf",
+   "license": "none",
+   "sha256": "ce2db1482cf20cdd3eb34eecc9d069421fb69c46ae52671f30f819f7b5826b45"
+  },
+  {
+   "label": "fabulator-mtb",
+   "repo": "fabulator/brouter",
+   "sha": "45945d3999c32241f4136779cb1a64ae16d9a65d",
+   "path": "mtb.brf",
+   "license": "none",
+   "sha256": "7354ab993f0d179e6ef7f4cf240704ad627671d36210c0105a023bf9f8924501"
+  },
+  {
+   "label": "fabulator-race",
+   "repo": "fabulator/brouter",
+   "sha": "45945d3999c32241f4136779cb1a64ae16d9a65d",
+   "path": "race.brf",
+   "license": "none",
+   "sha256": "5b738fdc0af1fdaacfc14fb462bab243c5fbdb498adbbf7119533aeab8ec33d0"
+  },
+  {
+   "label": "fabulator-road",
+   "repo": "fabulator/brouter",
+   "sha": "45945d3999c32241f4136779cb1a64ae16d9a65d",
+   "path": "road.brf",
+   "license": "none",
+   "sha256": "3f0dcd2628f76348a73cf6151a8c46bb5e740c8ec783972b87c5895e47a8cffa"
+  },
+  {
+   "label": "fabulator-trip",
+   "repo": "fabulator/brouter",
+   "sha": "45945d3999c32241f4136779cb1a64ae16d9a65d",
+   "path": "trip.brf",
+   "license": "none",
+   "sha256": "fd950605689b0b72de4e507d0cd529c0310a07d598580afb0465e1bc05cbcfdc"
+  },
+  {
+   "label": "quaelnix-gravel",
+   "repo": "quaelnix/brouter-profiles",
+   "sha": "ea8fa918f2f1afd6ce4c9bb4a5b1d94adea64878",
+   "path": "gravel.brf",
+   "license": "none",
+   "sha256": "b7a5b388b7d78a76d4004134ab881bf50727db5f44edc4ea607ebe0d5e8aaa7b"
+  },
+  {
+   "label": "guillaume-gravel",
+   "repo": "Guillaume-Fgt/Brouter_Profiles",
+   "sha": "f9c5ba2715b225cea1189f0e9588e487bb1fe463",
+   "path": "gravel.brf",
+   "license": "none",
+   "sha256": "cfbaba6d1b3ea4eb3dcb00336167d2b9f3f44336ad47c4b61bcf79651208dd12"
+  },
+  {
+   "label": "hereandnow-gravel",
+   "repo": "here-and-now/brouter_profiles",
+   "sha": "a07b9f7de432964054d103de760bed1d29163687",
+   "path": "gravel.brf",
+   "license": "none",
+   "sha256": "d314cc58b2fe5505ca0111e58d57e1d40ea71c9a193ccb622083235524d128f4"
+  },
+  {
+   "label": "hereandnow-road",
+   "repo": "here-and-now/brouter_profiles",
+   "sha": "a07b9f7de432964054d103de760bed1d29163687",
+   "path": "road.brf",
+   "license": "none",
+   "sha256": "4d2faf6d2981e7a899c439b639dda874be2936fe983eb8b8368693ca692da693"
+  },
+  {
+   "label": "hereandnow-trekking-gravel",
+   "repo": "here-and-now/brouter_profiles",
+   "sha": "a07b9f7de432964054d103de760bed1d29163687",
+   "path": "trekking_gravel.brf",
+   "license": "none",
+   "sha256": "8fcc66cfad4fa8b00607108eaaddfa567957336a870822f8e9e1935b2e071dab"
+  },
+  {
+   "label": "carg0cult-allroad-rv-scenic",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "allroad-rv-scenic.brf",
+   "license": "none",
+   "sha256": "4aef67b02a40217b0963f9e2cc394fb322eb2e02e04bb74568617126f8a36000"
+  },
+  {
+   "label": "carg0cult-allroad-rv",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "allroad-rv.brf",
+   "license": "none",
+   "sha256": "e10d34176bc22e1c9de34de05c94e49dad3970388b6349e39ee44a2bb5481dcd"
+  },
+  {
+   "label": "carg0cult-gravel-rv-scenic",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "gravel-rv-scenic.brf",
+   "license": "none",
+   "sha256": "33d2fd1be141b10caea50ab0a9bcf53eef32fd2fdc23b4011114361bb8b3c8f0"
+  },
+  {
+   "label": "carg0cult-gravel-rv",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "gravel-rv.brf",
+   "license": "none",
+   "sha256": "a0777f054f75b5a78c1878a1046d884bab54c10a8650af1e35f80af14911a642"
+  },
+  {
+   "label": "carg0cult-mtb-rv",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "mtb-rv.brf",
+   "license": "none",
+   "sha256": "0443dda00d727be305e3a231ee830e7074da09fe4afbd50c85b07c0cbbc9887c"
+  },
+  {
+   "label": "carg0cult-recumbent-bike-fast-rv-scenic",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "recumbent-bike-fast-rv-scenic.brf",
+   "license": "none",
+   "sha256": "9f1b31b6ccd4a6ce33261b84006cba11cc3b9c926bdb8cb99c075b4bba272f77"
+  },
+  {
+   "label": "carg0cult-recumbent-bike-fast-rv",
+   "repo": "carg0cult/brouter-profiles",
+   "sha": "0b497e92f6bce5435bb1e5a482e30e08831f31d4",
+   "path": "recumbent-bike-fast-rv.brf",
+   "license": "none",
+   "sha256": "5d3fb6f1399f8aa3ffed30888ee78304f0cedbef7696dabdbb943004a80549e6"
+  },
+  {
+   "label": "packquickly-ultra-backcountry",
+   "repo": "packquickly/brouter_profiles",
+   "sha": "36f99da0208d3f7628c74f05fba75c2de5290bc8",
+   "path": "ultra_backcountry.brf",
+   "license": "none",
+   "sha256": "8e93494b2f00d6ee35b0ee28b248f5a4d8277c2f4d8a2ee7f244c13d4017cda3"
+  },
+  {
+   "label": "packquickly-ultra-cycleway",
+   "repo": "packquickly/brouter_profiles",
+   "sha": "36f99da0208d3f7628c74f05fba75c2de5290bc8",
+   "path": "ultra_cycleway.brf",
+   "license": "none",
+   "sha256": "38b061d2b1bfdc9e800fe40bce1e7197f1eb8ce36f691b269e66699941ff2c0c"
+  },
+  {
+   "label": "packquickly-ultra-hardpack",
+   "repo": "packquickly/brouter_profiles",
+   "sha": "36f99da0208d3f7628c74f05fba75c2de5290bc8",
+   "path": "ultra_hardpack.brf",
+   "license": "none",
+   "sha256": "0e26e57622d862f2e2532358e5ad123e16cc0c44971698bc668068142044a58a"
+  },
+  {
+   "label": "packquickly-ultra-tarmac",
+   "repo": "packquickly/brouter_profiles",
+   "sha": "36f99da0208d3f7628c74f05fba75c2de5290bc8",
+   "path": "ultra_tarmac.brf",
+   "license": "none",
+   "sha256": "4bb31409736f69a2402e0d303be1b073fd60678f532e31af1d67f524aaada52c"
+  },
+  {
+   "label": "hutec-allroad",
+   "repo": "hutec/brouter-profiles",
+   "sha": "5eb702d6ddef68bafa5b7807dc011819a82d63c7",
+   "path": "allroad.brf",
+   "license": "none",
+   "sha256": "bff69c041c427bce522664b90d088ae49b5e0561ba4097dc1cc89ce59bc34a27"
+  },
+  {
+   "label": "zossebart-bike-child-transporter",
+   "repo": "zossebart/brouter-misc",
+   "sha": "c4042331c288e2059ed671ce174609ceff6ba7ef",
+   "path": "bike-child-transporter.brf",
+   "license": "none",
+   "sha256": "9d38a6d6e0c32ec0cdb93f9f577f567e579e3655e86d3af78eec3ff6f3d9270d"
+  },
+  {
+   "label": "dkvasnicka-gravel-trekking-longdistance",
+   "repo": "dkvasnicka/brouter-profiles",
+   "sha": "499df188c02af7b257ea982da5c28889696337e2",
+   "path": "gravel-trekking-longdistance.brf",
+   "license": "none",
+   "sha256": "6aa391f5805be272c0fe2841a2efc409dda6175178720b9d116e2dd67514a2b8"
+  },
+  {
+   "label": "phpmacher-trekking-smallroads-phpmacher",
+   "repo": "phpmacher/brouter-profiles",
+   "sha": "2ff17ccf6eb1908b5e8c19c54e26292e6013ced3",
+   "path": "trekking-smallroads-phpmacher.brf",
+   "license": "none",
+   "sha256": "f14df041189c00d65ba1796118053f3be3e6e8a43f87c0265ced93257ecb6985"
+  },
+  {
+   "label": "zonarius-brouter",
+   "repo": "Zonarius/brouter",
+   "sha": "bccb69954b470158119d107847d0a952748ec10e",
+   "path": "brouter.brf",
+   "license": "none",
+   "sha256": "8ccd202f9cf4d8ad1a490bbea9b15266fdfc52529a07e799a239ee5dc188ee80"
+  },
+  {
+   "label": "zonarius-brouter2",
+   "repo": "Zonarius/brouter",
+   "sha": "bccb69954b470158119d107847d0a952748ec10e",
+   "path": "brouter2.brf",
+   "license": "none",
+   "sha256": "97a8fa2553032ec056a65a6b2a0b1b6d5e9612c07a60d29174166b8c15e60e8c"
+  },
+  {
+   "label": "erveinx-racing-bike",
+   "repo": "erveinx/brouter-profiles",
+   "sha": "6060006dc13253a0d548c87cefcf9c4fdd2c003f",
+   "path": "racing bike.brf",
+   "license": "MIT",
+   "sha256": "87ac8cd927629fb38e91e666c24fb0eb3a9755cfe649c7de60bc3f2eb3ff30a0"
+  },
+  {
+   "label": "traber-velomobil-tt",
+   "repo": "ThomasTraber/brouter_profiles_and_testing",
+   "sha": "f148be9f8c24ba5edb64db2893622d18164c6261",
+   "path": "velomobil-tt.brf",
+   "license": "GPL-2.0",
+   "sha256": "546e31a37f425a0c20296254725abab8befefe1543af5e1b350120dcdce380d0"
+  }
+ ]
+}
