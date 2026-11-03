@@ -342,7 +342,33 @@ gets the settings its own profile has and a warning for the rest.
 \* `fastbike` and `fastbike-verylowtraffic` have the trekking family's settings except the
 cycle-route ones. `mtb` and the `vm-forum` profiles have none this service sets. Turn
 instructions, debugging, via-point correction and `allow_motorways` are deliberately not
-offered. A test keeps the lists in step with the `# %name% |` markers of our profile files.
+offered.
+
+**Where the list comes from.** The parameter space is one [LinkML](https://linkml.io) schema,
+[`profile_settings.linkml.yaml`](../src/bike_routing_agent/providers/profile_settings.linkml.yaml):
+every setting's type, range and meaning, grouped into reusable mixins (rider physics, climbing, the
+trekking and gravel preferences) and combined per profile. The pydantic models in
+`profile_settings_model.py` are *generated* from it (`scripts/gen_profile_settings.sh`, LinkML run
+through `uvx` and pinned, so it is not a dependency: the models need only pydantic), and
+`brouter_params.py` reads ranges, kinds and meanings from those models, so the table above, the
+clamping, `bike-router profile`, `GET /v1/profiles/settings` and the MCP tool cannot disagree with
+the schema. To add or change a setting, edit the schema, run the script and commit both; a test
+(and the CI job *profile settings schema*) fails when the generated file is stale, and another keeps
+the schema in step with the `# %name% |` markers of our profile files.
+
+**Finding out and trying settings** (all read the schema):
+
+```bash
+bike-router profile settings --bike-type touring          # names, ranges, what they do
+bike-router profile check --bike-type touring --profile-param uphilcost=120   # dry run + hint
+bike-router profile schema --bike-type touring            # JSON Schema, for editors and UIs
+curl 'http://127.0.0.1:8765/v1/profiles/settings?bike_type=touring&schema=true'
+```
+
+On the command line settings are checked **strictly before routing** against the profile the bike
+type is planned with: `bike-router route plan --bike-type touring --profile-param uphilcost=120`
+stops with `'uphilcost' is not a setting of custom_touring-v1 (did you mean 'uphillcost'?)`. The API
+is lenient (it warns and routes), because a request may be meant for several engines.
 
 What they do, measured on `custom_touring-v1` on three routes (real BRouter, one setting at
 a time; km / metres climbed):

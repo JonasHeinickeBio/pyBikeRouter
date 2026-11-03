@@ -56,10 +56,7 @@ def test_a_typo_gets_a_did_you_mean():
 
 def test_a_name_that_is_nothing_like_a_setting_lists_the_settings():
     (warning,) = resolve("custom_gravel-v2", {"zzz": 1}).warnings
-    assert (
-        "'zzz' is not a setting of custom_gravel-v2 (settings: consider_traffic_estimate,"
-        in warning
-    )
+    assert "'zzz' is not a setting of custom_gravel-v2 (settings: " in warning
     assert "prefer_unpaved_paths" in warning and warning.endswith("not applied")
 
 

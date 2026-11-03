@@ -141,6 +141,21 @@ jobs:
       - name: Lint the workflows themselves
         run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7 -color
 
+  # The profile-settings parameter space is a LinkML schema; the pydantic models are generated
+  # from it and committed. Fail when the two have drifted apart.
+  profile-schema:
+    name: profile settings schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install uv
+        run: pipx install uv
+      - name: Generate the models from the LinkML schema
+        run: scripts/gen_profile_settings.sh
+      - name: The committed models are what the schema generates
+        run: git diff --exit-code -- src/bike_routing_agent/providers/profile_settings_model.py
+
   docker:
     name: docker build + smoke test
     runs-on: ubuntu-latest
@@ -183,7 +198,7 @@ jobs:
   ci-passed:
     name: CI passed
     if: always()
-    needs: [lint, typecheck, test, postgis, frontend, scripts, docker]
+    needs: [lint, typecheck, test, postgis, frontend, scripts, profile-schema, docker]
     runs-on: ubuntu-latest
     steps:
       - name: Check every job succeeded

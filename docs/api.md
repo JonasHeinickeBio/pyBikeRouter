@@ -417,6 +417,26 @@ bool, "chat": bool, "pick_log": bool, "optimizer": bool, "engines": ["brouter", 
 web form to show or hide controls; `engines` are the names a plan request may give in
 `routing_engines` (the configured engines plus optional ones the server can use).
 
+## GET /v1/profiles/settings
+
+The settings `constraints.profile_params` may carry, per BRouter profile, read from the LinkML
+schema ([providers.md](providers.md#profile-settings-per-request-profile_params)). Query:
+`bike_type` (that bike type's profile) or `profile` (a BRouter profile name), not both; neither =
+every profile that has settings; `schema=true` adds each profile's JSON Schema (unknown names
+forbidden, ranges as `minimum`/`maximum`). Response:
+
+```json
+{"profiles": [{"profile": "custom_touring-v1", "bike_types": ["touring"],
+  "settings": [{"name": "uphillcost", "type": "number", "group": "climbing", "affects": "route",
+                "meaning": "cost per metre climbed per km; ...", "minimum": 0, "maximum": 200},
+               {"name": "consider_noise", "type": "boolean", "group": "preferences",
+                "affects": "route", "meaning": "prefer quiet surroundings"}]}]}
+```
+
+`affects` is `time` for the rider's physics (mass, power, speed, drag): they change the time
+estimate, not the route. A profile without settings (`mtb`) comes back with `"settings": []`.
+`422` for both `bike_type` and `profile` or an unknown bike type, `404` for an unknown profile.
+
 ## POST /v1/chat
 
 One turn of the chat ([chat.md](chat.md)). Body: `{"message": "...", "session_id": "<from the last reply>",

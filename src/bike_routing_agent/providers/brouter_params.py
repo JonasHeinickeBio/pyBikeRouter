@@ -7,11 +7,14 @@ computes itself is HTTP 500 too. So a request never sends a name straight throug
 looked up here, per profile, clamped to a range that is safe to route with, and anything that
 could not be applied comes back as a warning instead.
 
-Only routing preferences and the rider's physics are listed. Turn-instruction, debugging and
-via-point settings are left out on purpose, and so is ``allow_motorways`` of ``fastbike``.
-The sets below were read from the ``# %name% | ...`` markers of the profiles
-(docker/brouter/profiles for ours, the BRouter image for the stock ones); a test keeps ours
-in step with the files. Effects measured in docs/profile-experiment.md.
+The parameter space itself is defined once, in ``profile_settings.linkml.yaml`` (LinkML), and
+the pydantic models in ``profile_settings_model.py`` are generated from it
+(``scripts/gen_profile_settings.sh``). Everything below is read from those models: which
+settings a profile has, whether one is on/off or a number, its range and its meaning. Only
+the mapping from BRouter profile name to model class is written by hand. Only routing
+preferences and the rider's physics are in the schema; turn instructions, debugging,
+via-point correction and ``allow_motorways`` are left out on purpose. Effects measured in
+docs/providers.md and docs/profile-experiment.md.
 """
 
 from __future__ import annotations
@@ -20,88 +23,26 @@ import difflib
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
+from annotated_types import Ge, Le
+from pydantic import BaseModel, ValidationError
 
-@dataclass(frozen=True)
-class Setting:
-    kind: Literal["flag", "number"]
-    low: float = 0.0
-    high: float = 1.0
-    meaning: str = ""
+from bike_routing_agent.providers import profile_settings_model as models
 
-
-def _flag(meaning: str) -> Setting:
-    return Setting("flag", 0, 1, meaning)
-
-
-def _number(low: float, high: float, meaning: str) -> Setting:
-    return Setting("number", low, high, meaning)
-
-
-SETTINGS: dict[str, Setting] = {
-    # what the route avoids or prefers
-    "consider_traffic": _flag("avoid roads with estimated heavy traffic"),
-    "consider_traffic_estimate": _flag("avoid roads with estimated heavy traffic"),
-    "consider_noise": _flag("prefer quiet surroundings"),
-    "avoid_noise": _flag("prefer quiet surroundings"),
-    "consider_town": _flag("bypass towns"),
-    "avoid_towns": _flag("bypass towns"),
-    "consider_forest": _flag("prefer forests and parks"),
-    "prefer_forests": _flag("prefer forests and parks"),
-    "consider_river": _flag("prefer rivers and lakes"),
-    "prefer_rivers": _flag("prefer rivers and lakes"),
-    "avoid_unsafe": _flag("avoid standard highways"),
-    "prefer_cycle_routes": _flag("prefer signed cycle routes"),
-    "stick_to_cycleroutes": _flag("follow signed cycle routes closely"),
-    "ignore_cycleroutes": _flag("ignore signed cycle routes"),
-    "use_proposed_cycleroutes": _flag("treat proposed cycle routes like existing ones"),
-    "allow_steps": _flag("allow steps"),
-    "allow_ferries": _flag("allow ferries"),
-    "prefer_unpaved_paths": _flag("prefer unpaved paths"),
-    "assume_wet_conditions": _flag("assume wet ground"),
-    "avoid_steep_inclines": _flag("avoid steep inclines"),
-    "consider_elevation": _flag("count climbing as a cost"),
-    "unpavedPenalty": _number(1, 10, "extra cost factor on unpaved ways (1 = none)"),
-    # how much climbing costs; very high values only add detours when a climb cannot be avoided
-    "uphillcost": _number(0, 200, "cost per metre climbed per km"),
-    "downhillcost": _number(0, 200, "cost per metre descended per km"),
-    "uphillcutoff": _number(0, 10, "gradient (%) below which climbing is free"),
-    "downhillcutoff": _number(0, 10, "gradient (%) below which descending is free"),
-    # the rider: these change the time estimate, not the route
-    "totalMass": _number(20, 300, "bike + rider in kg"),
-    "maxSpeed": _number(5, 80, "top speed in km/h"),
-    "bikerPower": _number(20, 1000, "average power in W"),
-    "S_C_x": _number(0.05, 1.5, "drag area (m^2, with half the air density)"),
-    "C_r": _number(0.001, 0.05, "rolling resistance coefficient"),
+# BRouter profile -> the model of its settings. Profiles not listed (mtb, the vm-forum
+# recumbent and velomobil profiles) have none that this service sets.
+PROFILE_MODELS: dict[str, type[BaseModel]] = {
+    "custom_touring-v1": models.TouringV1,
+    "custom_commuter-v1": models.CommuterV1,
+    "custom_gravel-v1": models.GravelV1,
+    "custom_gravel-v2": models.GravelV2,
+    "trekking": models.Trekking,
+    "fastbike": models.Fastbike,
+    "fastbike-verylowtraffic": models.FastbikeVerylowtraffic,
 }
 
-_PHYSICS = ("totalMass", "maxSpeed", "bikerPower", "S_C_x", "C_r")
-_CLIMBING = ("uphillcost", "downhillcost", "uphillcutoff", "downhillcutoff", "consider_elevation")
-_TREKKING = (
-    "consider_traffic", "consider_noise", "consider_town", "consider_forest", "consider_river",
-    "allow_steps", "allow_ferries", *_CLIMBING, *_PHYSICS,
-)  # fmt: skip
-_CYCLE_ROUTES = ("avoid_unsafe", "stick_to_cycleroutes", "ignore_cycleroutes")
-_GRAVEL = (
-    "consider_traffic_estimate", "avoid_noise", "avoid_towns", "prefer_forests", "prefer_rivers",
-    "prefer_cycle_routes", "use_proposed_cycleroutes", "prefer_unpaved_paths",
-    "assume_wet_conditions", "avoid_steep_inclines", "consider_elevation", *_PHYSICS,
-)  # fmt: skip
-
-# BRouter profile -> the settings a request may change. Profiles not listed (mtb, the
-# vm-forum recumbent and velomobil profiles) have none that this service sets.
-PROFILE_SETTINGS: dict[str, tuple[str, ...]] = {
-    "custom_touring-v1": (*_TREKKING, *_CYCLE_ROUTES, "use_proposed_cycleroutes", "unpavedPenalty"),
-    "custom_commuter-v1": (*_TREKKING, *_CYCLE_ROUTES),
-    "custom_gravel-v1": _GRAVEL,
-    "custom_gravel-v2": _GRAVEL,
-    "trekking": (*_TREKKING, *_CYCLE_ROUTES),
-    "fastbike": _TREKKING,
-    "fastbike-verylowtraffic": _TREKKING,
-}
-
-# Markers that exist in the profile files but are not offered: not routing preferences.
+# Markers that exist in the profile files but are not in the schema: not routing preferences.
 NOT_OFFERED = frozenset(
     {
         "add_beeline", "allow_motorways", "considerTurnRestrictions", "correctMisplacedViaPoints",
@@ -110,6 +51,114 @@ NOT_OFFERED = frozenset(
     }
 )  # fmt: skip
 
+# Which schema class declares a setting -> what to call the group in a listing.
+_GROUPS = {
+    "RiderPhysics": "rider",
+    "ClimbingCosts": "climbing",
+    "CycleRoutePreferences": "cycle routes",
+}
+
+
+@dataclass(frozen=True)
+class Setting:
+    name: str
+    kind: Literal["flag", "number"]
+    low: float = 0.0
+    high: float = 1.0
+    meaning: str = ""
+    group: str = "preferences"
+
+    @property
+    def affects(self) -> Literal["route", "time"]:
+        """Whether the setting changes the route or only the time estimate."""
+        return "time" if self.group == "rider" else "route"
+
+    @property
+    def range_text(self) -> str:
+        return "on/off" if self.kind == "flag" else f"{_plain(self.low)}..{_plain(self.high)}"
+
+    def as_dict(self) -> dict[str, Any]:
+        found: dict[str, Any] = {
+            "name": self.name,
+            "type": "boolean" if self.kind == "flag" else "number",
+            "group": self.group,
+            "affects": self.affects,
+            "meaning": self.meaning,
+        }
+        if self.kind == "number":
+            found["minimum"], found["maximum"] = _plain(self.low), _plain(self.high)
+        return found
+
+
+def _plain(value: float) -> int | float:
+    return int(value) if float(value).is_integer() else round(float(value), 6)
+
+
+def _setting(name: str, field: Any) -> Setting:
+    if field.annotation in (bool, bool | None):
+        kind: Literal["flag", "number"] = "flag"
+    else:
+        kind = "number"
+    low: Any = next((m.ge for m in field.metadata if isinstance(m, Ge)), 0.0)
+    high: Any = next((m.le for m in field.metadata if isinstance(m, Le)), 1.0)
+    declared = ((field.json_schema_extra or {}).get("linkml_meta") or {}).get("domain_of") or []
+    group = next((_GROUPS[d] for d in declared if d in _GROUPS), "preferences")
+    return Setting(name, kind, float(low), float(high), field.description or "", group)
+
+
+def _build() -> dict[str, dict[str, Setting]]:
+    return {
+        profile: {name: _setting(name, field) for name, field in model.model_fields.items()}
+        for profile, model in PROFILE_MODELS.items()
+    }
+
+
+# profile -> setting name -> Setting, all read from the generated models
+PROFILE_SPECS: dict[str, dict[str, Setting]] = _build()
+PROFILE_SETTINGS: dict[str, tuple[str, ...]] = {p: tuple(s) for p, s in PROFILE_SPECS.items()}
+# every setting once; a name has the same type and range wherever it appears
+SETTINGS: dict[str, Setting] = {
+    name: setting for specs in PROFILE_SPECS.values() for name, setting in specs.items()
+}
+
+
+def settings_for(profile: str) -> list[Setting]:
+    """The settings ``profile`` has, in the schema's order (empty for a profile without any)."""
+    return list(PROFILE_SPECS.get(profile, {}).values())
+
+
+def describe(profile: str) -> dict[str, Any]:
+    """The parameter space of ``profile`` as plain data (API, CLI, MCP)."""
+    model = PROFILE_MODELS.get(profile)
+    return {
+        "profile": profile,
+        "settings": [s.as_dict() for s in settings_for(profile)],
+        "json_schema": model.model_json_schema() if model is not None else None,
+    }
+
+
+def validate(profile: str, requested: Mapping[str, bool | float]) -> dict[str, bool | float]:
+    """``requested`` checked strictly against the profile's model (an unknown name or an
+    out-of-range value raises ``ValidationError``); returns the checked settings. For input that
+    should fail early, like a command line; a request is handled leniently by :func:`resolve`."""
+    model = PROFILE_MODELS.get(profile)
+    if model is None:
+        raise ValueError(f"{profile} has no per-request settings")
+    return model.model_validate(dict(requested)).model_dump(exclude_none=True)
+
+
+def problems(error: ValidationError, profile: str) -> list[str]:
+    """A strict validation error as short sentences, with a did-you-mean for unknown names."""
+    offered = PROFILE_SETTINGS.get(profile, ())
+    found = []
+    for item in error.errors():
+        name = str(item["loc"][0]) if item["loc"] else "?"
+        if item["type"] == "extra_forbidden":
+            found.append(_not_a_setting(profile, offered, name).removesuffix("; not applied"))
+        else:
+            found.append(f"{name}: {item['msg']}")
+    return found
+
 
 @dataclass(frozen=True)
 class Resolved:
@@ -117,10 +166,6 @@ class Resolved:
 
     values: dict[str, int | float]
     warnings: list[str]
-
-
-def _plain(value: float) -> int | float:
-    return int(value) if float(value).is_integer() else round(float(value), 6)
 
 
 def _not_a_setting(profile: str, offered: tuple[str, ...], name: str) -> str:
@@ -138,21 +183,19 @@ def resolve(profile: str, requested: Mapping[str, bool | float]) -> Resolved:
     """Settings for ``profile`` from a request's ``profile_params``, with warnings for the rest."""
     values: dict[str, int | float] = {}
     warnings: list[str] = []
-    offered = PROFILE_SETTINGS.get(profile)
+    specs = PROFILE_SPECS.get(profile)
     for name, value in requested.items():
-        if offered is None:
+        if specs is None:
             warnings.append(
                 f"profile_params '{name}' was not applied: {profile} has no per-request settings"
             )
             continue
-        if name not in offered:
-            warnings.append(_not_a_setting(profile, offered, name))
+        setting = specs.get(name)
+        if setting is None:
+            warnings.append(_not_a_setting(profile, PROFILE_SETTINGS[profile], name))
             continue
-        setting = SETTINGS[name]
         if setting.kind == "flag":
-            if isinstance(value, bool):
-                values[name] = int(value)
-            elif value in (0, 1):
+            if isinstance(value, bool) or value in (0, 1):
                 values[name] = int(value)
             else:
                 warnings.append(

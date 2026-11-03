@@ -21,6 +21,7 @@ GROUP_MODULES: tuple[str, ...] = (
     "docker",
     "config",
     "providers",
+    "profile",
     "retention",
     "db",
     "completion",

@@ -14,9 +14,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: ^src/bike_routing_agent/frontend/vendor/
+        exclude: ^src/bike_routing_agent/(frontend/vendor/|providers/profile_settings_model\.py)
       - id: end-of-file-fixer
-        exclude: ^src/bike_routing_agent/frontend/vendor/
+        exclude: ^src/bike_routing_agent/(frontend/vendor/|providers/profile_settings_model\.py)
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
@@ -31,6 +31,7 @@ repos:
         language: system
         types_or: [python]
         require_serial: true
+        exclude: ^src/bike_routing_agent/providers/profile_settings_model\.py$
 
       - id: mypy
         name: mypy (src)
