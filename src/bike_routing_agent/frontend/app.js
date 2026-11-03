@@ -13,6 +13,10 @@ const els = {
   addVia: $("add-via"),
   swap: $("swap"),
   bikeType: $("bike-type"),
+  tune: $("tune"),
+  tuneFields: $("tune-fields"),
+  tuneCount: $("tune-count"),
+  tuneReset: $("tune-reset"),
   targetDistance: $("target-distance"),
   maxDistance: $("max-distance"),
   maxAscent: $("max-ascent"),
@@ -182,6 +186,7 @@ const state = {
   planPending: null, // generation of the form/text request in flight, if any
   renderedGeneration: 0, // generation of the plan on the map
   gpxImportRequest: 0, // the latest GPX file chosen or dropped
+  rider: { settings: [], values: {}, request: 0 }, // fine-tuning: the profile's settings and what was typed
   deferredChat: null, // a chat plan that arrived while a newer form request was running
   capsPromise: null,
   pickKeys: new Set(), // downloads already reported to the pick log (opt-in, PICK_LOG_PATH)
@@ -669,7 +674,94 @@ function buildConstraints() {
     avoid_ferries: els.avoidFerries.checked,
     return_to_origin: els.returnOrigin.checked,
   };
+  const tuned = BikeRiderSettings.readParams(state.rider.settings, state.rider.values);
+  if (Object.keys(tuned).length > 0) constraints.profile_params = tuned;
   return constraints;
+}
+
+/* ------------------------------ fine-tune for the rider ---------------------------- */
+
+function renderRiderSettings() {
+  const { settings } = state.rider;
+  els.tuneFields.replaceChildren();
+  els.tune.hidden = settings.length === 0;
+  for (const group of BikeRiderSettings.groups(settings)) {
+    const box = document.createElement("fieldset");
+    box.className = "tune-group";
+    const legend = document.createElement("legend");
+    legend.textContent = group.label;
+    box.append(legend);
+    for (const s of group.items) {
+      const row = document.createElement("div");
+      row.className = "tune-field";
+      const label = document.createElement("label");
+      label.textContent = s.name;
+      label.htmlFor = `tune-${s.name}`;
+      let input;
+      if (s.type === "boolean") {
+        input = document.createElement("select");
+        for (const [value, text] of [["", "default"], ["on", "on"], ["off", "off"]]) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = text;
+          input.append(option);
+        }
+      } else {
+        input = document.createElement("input");
+        input.type = "number";
+        input.inputMode = "decimal";
+        input.min = String(s.minimum);
+        input.max = String(s.maximum);
+        input.step = "any";
+        input.placeholder = "default";
+      }
+      input.id = `tune-${s.name}`;
+      input.value = state.rider.values[s.name] ?? "";
+      const typed = () => {
+        state.rider.values[s.name] = input.value;
+        updateRiderCount();
+      };
+      input.addEventListener("input", typed);
+      input.addEventListener("change", typed); // a select: some engines only fire change
+      const hint = document.createElement("p");
+      hint.className = "hint";
+      hint.textContent = BikeRiderSettings.hint(s);
+      row.append(label, input, hint);
+      box.append(row);
+    }
+    els.tuneFields.append(box);
+  }
+  updateRiderCount();
+}
+
+function updateRiderCount() {
+  const tuned = BikeRiderSettings.readParams(state.rider.settings, state.rider.values);
+  els.tuneCount.textContent = BikeRiderSettings.summary(tuned);
+}
+
+/** Ask the API which settings the chosen bike type's profile takes, and show them. */
+async function loadRiderSettings() {
+  const request = ++state.rider.request;
+  let settings = [];
+  try {
+    const resp = await fetch(`${API_BASE}/v1/profiles/settings?bike_type=${encodeURIComponent(els.bikeType.value)}`);
+    if (resp.ok) settings = ((await resp.json()).profiles || [])[0]?.settings || [];
+  } catch (_) {
+    settings = []; // no API (or an old one): the section stays hidden and nothing is sent
+  }
+  if (request !== state.rider.request) return; // the bike type changed again meanwhile
+  state.rider.settings = settings;
+  state.rider.values = BikeRiderSettings.keep(state.rider.values, settings);
+  renderRiderSettings();
+}
+
+function initRiderSettings() {
+  els.bikeType.addEventListener("change", loadRiderSettings);
+  els.tuneReset.addEventListener("click", () => {
+    state.rider.values = {};
+    renderRiderSettings();
+  });
+  loadRiderSettings();
 }
 
 /* ------------------------------ departure time ---------------------------- */
@@ -2120,6 +2212,8 @@ function resetAll() {
   els.destination.value = "";
   els.viaList.innerHTML = "";
   els.bikeType.value = "gravel";
+  state.rider.values = {}; // the typed fine-tuning goes with the rest of the form
+  loadRiderSettings();
   for (const id of ["target-distance", "max-distance", "max-ascent", "max-alternatives", "prefer-surfaces", "avoid-surfaces"]) {
     $(id).value = "";
   }
@@ -3067,6 +3161,7 @@ document.addEventListener("DOMContentLoaded", () => {
   trackFormEdits();
   initMemory(); // before the link: a link overrides it, but the controls must exist either way
   loadSharedPlan(); // before the chat restores its route: a link's trip is the newest
+  initRiderSettings(); // after memory and link: they may have chosen the bike type
   // A link pasted into the address bar of a page that is already open is only a fragment change.
   window.addEventListener("hashchange", loadSharedPlan);
   initChat();

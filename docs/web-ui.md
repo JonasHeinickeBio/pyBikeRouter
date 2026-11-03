@@ -238,3 +238,19 @@ Notes:
 - A click that only closes another popup (a sight, a weather marker) does not open the menu.
 - Panning across the date line reports longitudes beyond 180; they are wrapped into -180..180.
 - While a field is waiting for a map click (**Pick on map**), the click goes to that field, as before.
+
+## Fine-tune for the rider
+
+Under the form's checkboxes, *Fine-tune for the rider* lists the settings of the routing profile the
+chosen bike type is planned with, so a ride can be fitted to one person without knowing setting names:
+what to avoid or prefer (traffic, noise, towns, forests, steps, ferries ...), how much climbing costs, and
+the rider's mass, power and top speed (these change only the time estimate, which the group heading
+says). The list is read from `GET /v1/profiles/settings` ([api.md](api.md#get-v1profilessettings)) when
+the page loads and whenever the bike type changes; a profile without settings (`mtb`) hides the section.
+
+A field left empty (`default`) sends nothing and the profile keeps its own value; only what was typed goes
+into the plan request's `constraints.profile_params` ([providers.md](providers.md#profile-settings-per-request-profile_params)).
+Values typed for settings the new bike type's profile lacks are dropped when the bike type changes, *Reset to
+defaults* clears them, and so does *Reset* of the whole form. The summary shows how many are set. Not yet
+remembered with "remember my choices" and not part of a shared link. Mind `uphillcost`: a high value only adds
+detours where a climb cannot be avoided.
