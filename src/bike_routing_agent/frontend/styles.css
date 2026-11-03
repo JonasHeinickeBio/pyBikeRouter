@@ -148,6 +148,15 @@ input.set-by-coord { border-left: 4px solid var(--accent); }
 .check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.88rem; }
 .check input { accent-color: var(--accent); }
 
+.tune { margin-top: 0.7rem; border-top: 1px solid var(--line); padding-top: 0.5rem; }
+.tune summary { cursor: pointer; font-size: 0.88rem; }
+.tune-group { margin: 0.6rem 0 0; padding: 0; border: 0; }
+.tune-group legend { font-size: 0.8rem; font-weight: 600; color: var(--muted); padding: 0; margin-bottom: 0.25rem; }
+.tune-field { display: grid; grid-template-columns: 1fr 7.5rem; gap: 0.1rem 0.6rem; align-items: center; margin-bottom: 0.35rem; }
+.tune-field label { font-size: 0.85rem; }
+.tune-field .hint { grid-column: 1 / -1; margin: 0; }
+.link-btn { background: none; border: 0; padding: 0; margin-top: 0.4rem; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.82rem; text-decoration: underline; }
+
 .row, .actions { display: flex; gap: 0.5rem; }
 .actions { margin-top: 0.2rem; }
 
