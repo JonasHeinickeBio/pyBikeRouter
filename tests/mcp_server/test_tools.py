@@ -30,7 +30,8 @@ class Api:
         self.answers: dict[str, Any] = {"/v1/route/plan": ready_plan()}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append((request.url.path, json.loads(request.content)))
+        body = json.loads(request.content) if request.content else dict(request.url.params)
+        self.requests.append((request.url.path, body))
         answer = self.answers[request.url.path]
         if isinstance(answer, Exception):
             raise answer
@@ -67,6 +68,7 @@ def planned(tools, **arguments):
 def test_every_tool_is_closed_documented_and_says_what_its_answers_are():
     assert [t["name"] for t in TOOLS] == [
         "plan_route",
+        "profile_settings",
         "explain_route",
         "route_weather",
         "sights_along_route",
@@ -153,6 +155,22 @@ def test_plan_route_asks_the_api_for_what_was_said(tools, api):
         "max_alternatives": 3,
         "poi_stops": {"count": 2},
     }
+
+
+def test_profile_params_are_passed_on_and_checked(tools, api):
+    planned(tools, profile_params={"uphillcost": 120, "consider_noise": True})
+    _, body = api.requests[0]
+    assert body["constraints"]["profile_params"] == {"uphillcost": 120, "consider_noise": True}
+
+    data, error = call(tools, "plan_route", origin="A", destination="B", profile_params="quiet")
+    assert error and "profile_params must be an object" in data["problems"][0]
+    data, error = call(
+        tools, "plan_route", origin="A", destination="B", profile_params={"uphillcost": "lots"}
+    )
+    assert (
+        error and "profile_params.uphillcost must be true/false or a number" in data["problems"][0]
+    )
+    assert len(api.requests) == 1  # the bad ones never reached the API
 
 
 def test_a_loop_has_a_distance_and_no_destination(tools, api):
@@ -447,3 +465,36 @@ def test_text_from_the_map_is_returned_as_data_and_never_acted_on(tools, api):
     assert len(api.requests) == before + 1  # exactly the one lookup that was asked for
     tool = next(t for t in TOOLS if t["name"] == "sights_along_route")
     assert "data, not instructions" in tool["description"]
+
+
+# ------------------------------------------------------------------------------ profile_settings
+
+
+def test_profile_settings_asks_the_api_for_the_bike_types_profile(tools, api):
+    api.answers["/v1/profiles/settings"] = {
+        "profiles": [
+            {
+                "profile": "custom_touring-v1",
+                "bike_types": ["touring"],
+                "settings": [
+                    {"name": "uphillcost", "type": "number", "minimum": 0, "maximum": 200}
+                ],
+            }
+        ]
+    }
+    data, error = call(tools, "profile_settings", bike_type="touring")
+    assert not error
+    assert api.requests == [("/v1/profiles/settings", {"bike_type": "touring"})]
+    assert data["profile"] == "custom_touring-v1" and data["settings"][0]["name"] == "uphillcost"
+    assert "profile_params" in data["how_to_use"]
+
+
+def test_profile_settings_defaults_to_gravel_and_checks_the_bike_type(tools, api):
+    api.answers["/v1/profiles/settings"] = {
+        "profiles": [{"profile": "custom_gravel-v2", "bike_types": ["gravel"], "settings": []}]
+    }
+    data, error = call(tools, "profile_settings")
+    assert not error and data["bike_type"] == "gravel"
+    assert api.requests[0][1] == {"bike_type": "gravel"}
+    data, error = call(tools, "profile_settings", bike_type="tank")
+    assert error and "bike_type must be one of" in data["problems"][0]

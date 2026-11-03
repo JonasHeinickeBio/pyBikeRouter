@@ -55,6 +55,7 @@ defaults:
 | `prefer_surfaces` / `avoid_surfaces` | `[]` | surface categories (`paved`, `masonry`, `compacted`, `loose`, `natural_soft`), `unpaved` (all the unpaved ones) or OSM `surface` values; the two lists may not resolve to the same category. Unrecognised words are accepted but unscored, and the `explanation` names them. Scored from the OSM enrichment when it ran, else from the engine's own surface shares (BRouter), when every candidate has them (see [scoring](scoring-and-exports.md#surface-preferences-issue-23)) |
 | `avoid_high_traffic_roads` | `true` | BRouter applies it per request by setting the profile's traffic switch (`profile:consider_traffic=1`/`0`, `consider_traffic_estimate` for gravel; see [providers.md](providers.md#brouter-per-request-settings)); the setting used is recorded in `provenance.profile_overrides`. ORS and Valhalla cannot apply it (declared in `warnings`). It also enters the score when every candidate carries a traffic estimate (BRouter): [scoring-and-exports.md](scoring-and-exports.md#traffic-issue-23) |
 | `avoid_ferries` | `true` | |
+| `profile_params` | `{}` | settings of the BRouter profile for this request, e.g. `{"uphillcost": 120, "consider_noise": true}`: booleans or numbers, at most 24, names of letters, digits and `_`. Which settings each profile has, their ranges and what they do: [providers.md](providers.md#profile-settings-per-request-profile_params). A name the profile lacks or a value out of range is not sent as given and is reported in `warnings`; what was sent is in `provenance.profile_overrides`. ORS and Valhalla cannot apply them (declared in `warnings`). |
 | `return_to_origin` | `false` | loop request: `destination` must be omitted and `target_distance_km` is required. The loop is **sized against a real route**: the first route is measured and the circuit redrawn by the ratio (up to 3 extra requests, 3-5 s), so the road distance lands within about 10 % of the target (measured on BRouter near Braunschweig: 40 km → 42.7, 70 km → 70.8; without it 50.5 and 89.5); an engine that cannot reach a waypoint gets the circuit turned around the start. The explanation's "reaching about N km out" is the size of the circuit after sizing. Sight stops draw the circuit themselves and are not resized yet. |
 | `loop_direction` | `"clockwise"` | one of `clockwise`, `counterclockwise`; only meaningful with `return_to_origin`. |
 
@@ -415,6 +416,26 @@ and a `llm_parser_*` error code.
 bool, "chat": bool, "pick_log": bool, "optimizer": bool, "engines": ["brouter", "ors"]}` -- which optional features this instance has, used by the
 web form to show or hide controls; `engines` are the names a plan request may give in
 `routing_engines` (the configured engines plus optional ones the server can use).
+
+## GET /v1/profiles/settings
+
+The settings `constraints.profile_params` may carry, per BRouter profile, read from the LinkML
+schema ([providers.md](providers.md#profile-settings-per-request-profile_params)). Query:
+`bike_type` (that bike type's profile) or `profile` (a BRouter profile name), not both; neither =
+every profile that has settings; `schema=true` adds each profile's JSON Schema (unknown names
+forbidden, ranges as `minimum`/`maximum`). Response:
+
+```json
+{"profiles": [{"profile": "custom_touring-v1", "bike_types": ["touring"],
+  "settings": [{"name": "uphillcost", "type": "number", "group": "climbing", "affects": "route",
+                "meaning": "cost per metre climbed per km; ...", "minimum": 0, "maximum": 200},
+               {"name": "consider_noise", "type": "boolean", "group": "preferences",
+                "affects": "route", "meaning": "prefer quiet surroundings"}]}]}
+```
+
+`affects` is `time` for the rider's physics (mass, power, speed, drag): they change the time
+estimate, not the route. A profile without settings (`mtb`) comes back with `"settings": []`.
+`422` for both `bike_type` and `profile` or an unknown bike type, `404` for an unknown profile.
 
 ## POST /v1/chat
 

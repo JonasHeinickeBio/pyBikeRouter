@@ -34,7 +34,13 @@ from bike_routing_agent.chat.models import (
 )
 from bike_routing_agent.chat.service import ChatService, TurnSuperseded
 from bike_routing_agent.chat.store import SqliteChatSaver
-from bike_routing_agent.config import PUBLIC_ORS_BASE_URLS, Settings, settings
+from bike_routing_agent.config import (
+    BROUTER_ALTERNATIVE_PROFILES,
+    BROUTER_PROFILE_MAP,
+    PUBLIC_ORS_BASE_URLS,
+    Settings,
+    settings,
+)
 from bike_routing_agent.enrichment.base import SurfaceEnricher
 from bike_routing_agent.enrichment.overpass import OverpassEnricher
 from bike_routing_agent.errors import ProviderError
@@ -70,6 +76,7 @@ from bike_routing_agent.poi.service import PoiService
 from bike_routing_agent.poi.wikimedia import WikimediaResolver
 from bike_routing_agent.poi.wikipedia_languages import WIKIPEDIA_LANGUAGES
 from bike_routing_agent.poi.zone import OpenMeteoZoneLookup
+from bike_routing_agent.providers import brouter_params
 from bike_routing_agent.providers.base import (
     CacheBackend,
     GeocodeProvider,
@@ -1409,6 +1416,44 @@ def _provider_unavailable(exc: ProviderError) -> HTTPException:
 async def poi_categories() -> list[dict[str, str]]:
     """The categories the POI endpoints accept, for building a filter."""
     return [{"key": c.key, "label": c.label, "kind": c.kind} for c in CATEGORIES]
+
+
+@app.get("/v1/profiles/settings")
+async def profile_settings(
+    bike_type: str | None = Query(default=None, description="a bike type: its BRouter profile"),
+    profile: str | None = Query(default=None, description="a BRouter profile name"),
+    schema: bool = Query(default=False, description="include each profile's JSON Schema"),
+) -> dict[str, Any]:
+    """The settings a request may change with ``constraints.profile_params``, per BRouter
+    profile: name, type, range, what it does, and whether it changes the route or only the time
+    estimate. The parameter space is the LinkML schema providers/profile_settings.linkml.yaml.
+    Without ``bike_type`` or ``profile``: every profile that has settings."""
+    if bike_type is not None and profile is not None:
+        raise HTTPException(status_code=422, detail="give bike_type or profile, not both")
+    if bike_type is not None:
+        if bike_type not in BROUTER_PROFILE_MAP:
+            raise HTTPException(status_code=422, detail=f"unknown bike_type '{bike_type}'")
+        profile = BROUTER_PROFILE_MAP[bike_type]
+    known = {
+        *BROUTER_PROFILE_MAP.values(),
+        *(p for alt in BROUTER_ALTERNATIVE_PROFILES.values() for p in alt),
+        *brouter_params.PROFILE_MODELS,
+    }
+    if profile is not None and profile not in known:
+        raise HTTPException(status_code=404, detail=f"unknown profile '{profile}'")
+    names = [profile] if profile is not None else sorted(brouter_params.PROFILE_MODELS)
+    found = []
+    for name in names:
+        info = brouter_params.describe(name)
+        entry: dict[str, Any] = {
+            "profile": name,
+            "bike_types": sorted(b for b, p in BROUTER_PROFILE_MAP.items() if p == name),
+            "settings": info["settings"],
+        }
+        if schema:
+            entry["json_schema"] = info["json_schema"]
+        found.append(entry)
+    return {"profiles": found}
 
 
 @app.post("/v1/pois/along-route", response_model=PoiSearchResponse)

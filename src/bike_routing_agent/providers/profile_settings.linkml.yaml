@@ -1,0 +1,224 @@
+id: https://w3id.org/bike-router/profile-settings
+name: profile_settings
+title: BRouter profile settings
+description: >-
+  The settings of a BRouter routing profile that one request may change (BRouter takes them as
+  profile:<name>=<number> per request). This schema is the single definition of that
+  parameter space: the types, ranges and meanings below become the pydantic models in
+  profile_settings_model.py (scripts/gen_profile_settings.sh), which the request checks, the
+  CLI (bike-router profile ...) and the API (GET /v1/profiles/settings) read.
+  Only routing preferences and the rider's physics are listed. Turn instructions, debugging,
+  via-point correction and allow_motorways are left out on purpose.
+license: MIT
+
+prefixes:
+  linkml: https://w3id.org/linkml/
+  brs: https://w3id.org/bike-router/profile-settings/
+
+default_prefix: brs
+default_range: string
+
+imports:
+  - linkml:types
+
+classes:
+  # ---- groups of settings (mixins), reused by the profiles below -------------------------
+
+  RiderPhysics:
+    mixin: true
+    description: The rider and the bike. These change the time estimate only, never the route.
+    slots: [totalMass, bikerPower, maxSpeed, S_C_x, C_r]
+
+  ClimbingCosts:
+    mixin: true
+    description: >-
+      How much climbing and descending cost. They are priced per kilometre, so where a climb
+      cannot be avoided a high value only buys a longer way round.
+    slots: [uphillcost, downhillcost, uphillcutoff, downhillcutoff]
+
+  TrekkingPreferences:
+    mixin: true
+    description: What the trekking-family profiles (trekking, fastbike, touring, commuter) avoid or prefer.
+    slots:
+      - consider_traffic
+      - consider_noise
+      - consider_town
+      - consider_forest
+      - consider_river
+      - allow_steps
+      - allow_ferries
+      - consider_elevation
+
+  CycleRoutePreferences:
+    mixin: true
+    description: How the trekking, touring and commuter profiles treat highways and signed cycle routes.
+    slots: [avoid_unsafe, stick_to_cycleroutes, ignore_cycleroutes]
+
+  GravelPreferences:
+    mixin: true
+    description: What the gravel profiles avoid or prefer.
+    slots:
+      - consider_traffic_estimate
+      - avoid_noise
+      - avoid_towns
+      - prefer_forests
+      - prefer_rivers
+      - prefer_cycle_routes
+      - use_proposed_cycleroutes
+      - prefer_unpaved_paths
+      - assume_wet_conditions
+      - avoid_steep_inclines
+      - consider_elevation
+
+  # ---- one class per BRouter profile (the name is mapped in brouter_params.PROFILE_MODELS) --
+
+  TouringV1:
+    description: custom_touring-v1
+    mixins: [TrekkingPreferences, CycleRoutePreferences, ClimbingCosts, RiderPhysics]
+    slots: [use_proposed_cycleroutes, unpavedPenalty]
+
+  CommuterV1:
+    description: custom_commuter-v1
+    mixins: [TrekkingPreferences, CycleRoutePreferences, ClimbingCosts, RiderPhysics]
+
+  Trekking:
+    description: trekking (stock profile)
+    mixins: [TrekkingPreferences, CycleRoutePreferences, ClimbingCosts, RiderPhysics]
+
+  Fastbike:
+    description: fastbike (stock profile)
+    mixins: [TrekkingPreferences, ClimbingCosts, RiderPhysics]
+
+  FastbikeVerylowtraffic:
+    description: fastbike-verylowtraffic (stock profile)
+    mixins: [TrekkingPreferences, ClimbingCosts, RiderPhysics]
+
+  GravelV1:
+    description: custom_gravel-v1
+    mixins: [GravelPreferences, RiderPhysics]
+
+  GravelV2:
+    description: custom_gravel-v2
+    mixins: [GravelPreferences, RiderPhysics]
+
+slots:
+  # ---- rider physics -----------------------------------------------------------------------
+  totalMass:
+    range: float
+    minimum_value: 20
+    maximum_value: 300
+    description: bike and rider together, in kg
+  bikerPower:
+    range: float
+    minimum_value: 20
+    maximum_value: 1000
+    description: average power the rider delivers, in W
+  maxSpeed:
+    range: float
+    minimum_value: 5
+    maximum_value: 80
+    description: top speed, in km/h
+  S_C_x:
+    range: float
+    minimum_value: 0.05
+    maximum_value: 1.5
+    description: drag area (drag coefficient x frontal area, with half the air density), in m^2
+  C_r:
+    range: float
+    minimum_value: 0.001
+    maximum_value: 0.05
+    description: rolling resistance coefficient
+
+  # ---- climbing -------------------------------------------------------------------------------
+  uphillcost:
+    range: float
+    minimum_value: 0
+    maximum_value: 200
+    description: cost per metre climbed per km; high values add detours when the climb is unavoidable
+  downhillcost:
+    range: float
+    minimum_value: 0
+    maximum_value: 200
+    description: cost per metre descended per km
+  uphillcutoff:
+    range: float
+    minimum_value: 0
+    maximum_value: 10
+    description: gradient in percent below which climbing is free
+  downhillcutoff:
+    range: float
+    minimum_value: 0
+    maximum_value: 10
+    description: gradient in percent below which descending is free
+  consider_elevation:
+    range: boolean
+    description: count climbing as a cost
+
+  # ---- traffic, surroundings -------------------------------------------------------------------
+  consider_traffic:
+    range: boolean
+    description: avoid roads with heavy estimated traffic
+  consider_traffic_estimate:
+    range: boolean
+    description: avoid roads with heavy estimated traffic
+  consider_noise:
+    range: boolean
+    description: prefer quiet surroundings
+  avoid_noise:
+    range: boolean
+    description: prefer quiet surroundings
+  consider_town:
+    range: boolean
+    description: bypass towns
+  avoid_towns:
+    range: boolean
+    description: bypass towns
+  consider_forest:
+    range: boolean
+    description: prefer forests and parks
+  prefer_forests:
+    range: boolean
+    description: prefer forests and parks
+  consider_river:
+    range: boolean
+    description: prefer rivers and lakes
+  prefer_rivers:
+    range: boolean
+    description: prefer rivers and lakes
+
+  # ---- roads, cycle routes, surfaces -------------------------------------------------------------
+  avoid_unsafe:
+    range: boolean
+    description: avoid standard highways
+  stick_to_cycleroutes:
+    range: boolean
+    description: follow signed cycle routes closely
+  ignore_cycleroutes:
+    range: boolean
+    description: ignore signed cycle routes
+  prefer_cycle_routes:
+    range: boolean
+    description: prefer signed cycle routes
+  use_proposed_cycleroutes:
+    range: boolean
+    description: treat proposed cycle routes like existing ones
+  allow_steps:
+    range: boolean
+    description: allow steps
+  allow_ferries:
+    range: boolean
+    description: allow ferries
+  prefer_unpaved_paths:
+    range: boolean
+    description: prefer unpaved paths
+  assume_wet_conditions:
+    range: boolean
+    description: assume wet ground
+  avoid_steep_inclines:
+    range: boolean
+    description: avoid steep inclines
+  unpavedPenalty:
+    range: float
+    minimum_value: 1
+    maximum_value: 10
+    description: extra cost factor on unpaved ways, 1 meaning none

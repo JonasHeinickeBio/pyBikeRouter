@@ -87,7 +87,13 @@ def test_a_client_can_plan_and_follow_up_through_the_real_process(api_url):
         assert info["result"]["serverInfo"]["name"] == "bike-router"
         client.send("notifications/initialized", notify=True)
         names = [t["name"] for t in client.send("tools/list")["result"]["tools"]]
-        assert names == ["plan_route", "explain_route", "route_weather", "sights_along_route"]
+        assert names == [
+            "plan_route",
+            "profile_settings",
+            "explain_route",
+            "route_weather",
+            "sights_along_route",
+        ]
 
         plan = client.tool("plan_route", origin="52.26,10.52", destination="Goslar")
         assert plan["isError"] is False

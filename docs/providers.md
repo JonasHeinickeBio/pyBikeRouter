@@ -305,3 +305,88 @@ commuter 14 vs 24 %, fastbike (road, e-bike) 56 vs 76 %, gravel 0.7 vs 2.3 %, at
 were routed with the traffic estimate off whatever the request said; they now follow it
 (on by default), so their default routes are calmer. Ferries are not covered yet: the
 same mechanism would work for the profiles that have `allow_ferries`.
+
+### Profile settings per request (`profile_params`)
+
+The same mechanism is open to the caller: `constraints.profile_params` is a map of profile
+settings for this request, e.g. `{"consider_noise": true, "uphillcost": 120}` (API and MCP:
+the field; CLI: `--profile-param consider_noise=true`, repeatable). BRouter only. It exists to
+fit a ride to one rider, which the bike type alone cannot: how much climbing costs, quiet
+surroundings, a heavier rider or a stronger one.
+
+BRouter is picky about what it is sent, so nothing goes straight through
+(`providers/brouter_params.py`): a name the profile does not have is **not sent** (BRouter would
+ignore it silently, so a typo would do nothing) and comes back in the route's `warnings` with
+a "did you mean"; a flag is sent as `1`/`0` (never `true`: HTTP 500); a number outside the
+range below is **clamped** and reported; ORS and Valhalla say they did not apply the settings.
+What was sent is in `provenance.profile_overrides`. A setting for the traffic switch wins over
+`avoid_high_traffic_roads` and the route says so. Every other candidate of a plan (the
+alternatives use other profiles, [BROUTER_ALTERNATIVE_PROFILES](../src/bike_routing_agent/config.py))
+gets the settings its own profile has and a warning for the rest.
+
+| Setting (profiles) | Range | Does |
+| --- | --- | --- |
+| `consider_traffic` (touring, commuter, trekking, fastbike\*) / `consider_traffic_estimate` (gravel) | on/off | avoid roads with heavy estimated traffic |
+| `consider_noise` / `avoid_noise` (gravel) | on/off | prefer quiet surroundings |
+| `consider_town` / `avoid_towns` (gravel) | on/off | bypass towns |
+| `consider_forest` / `prefer_forests` (gravel), `consider_river` / `prefer_rivers` (gravel) | on/off | prefer forests and parks, rivers and lakes |
+| `avoid_unsafe`, `stick_to_cycleroutes`, `ignore_cycleroutes` (touring, commuter, trekking) | on/off | highways, signed cycle routes |
+| `prefer_cycle_routes`, `prefer_unpaved_paths`, `assume_wet_conditions`, `avoid_steep_inclines`, `use_proposed_cycleroutes` (gravel; the last also touring) | on/off | the gravel profile's own preferences |
+| `allow_steps`, `allow_ferries` (trekking family) | on/off | |
+| `consider_elevation` | on/off | count climbing as a cost |
+| `uphillcost`, `downhillcost` (trekking family) | 0-200 | cost per metre climbed / descended per km. **Careful**: see below |
+| `uphillcutoff`, `downhillcutoff` (trekking family) | 0-10 (%) | gradient below which it is free |
+| `unpavedPenalty` (touring) | 1-10 | extra cost factor on unpaved ways |
+| `totalMass` / `bikerPower` / `maxSpeed` / `S_C_x` / `C_r` | 20-300 kg / 20-1000 W / 5-80 km/h / 0.05-1.5 / 0.001-0.05 | the rider and bike: **time estimate only, the route does not change** |
+
+\* `fastbike` and `fastbike-verylowtraffic` have the trekking family's settings except the
+cycle-route ones. `mtb` and the `vm-forum` profiles have none this service sets. Turn
+instructions, debugging, via-point correction and `allow_motorways` are deliberately not
+offered.
+
+**Where the list comes from.** The parameter space is one [LinkML](https://linkml.io) schema,
+[`profile_settings.linkml.yaml`](../src/bike_routing_agent/providers/profile_settings.linkml.yaml):
+every setting's type, range and meaning, grouped into reusable mixins (rider physics, climbing, the
+trekking and gravel preferences) and combined per profile. The pydantic models in
+`profile_settings_model.py` are *generated* from it (`scripts/gen_profile_settings.sh`, LinkML run
+through `uvx` and pinned, so it is not a dependency: the models need only pydantic), and
+`brouter_params.py` reads ranges, kinds and meanings from those models, so the table above, the
+clamping, `bike-router profile`, `GET /v1/profiles/settings` and the MCP tool cannot disagree with
+the schema. To add or change a setting, edit the schema, run the script and commit both; a test
+(and the CI job *profile settings schema*) fails when the generated file is stale, and another keeps
+the schema in step with the `# %name% |` markers of our profile files.
+
+**Finding out and trying settings** (all read the schema):
+
+```bash
+bike-router profile settings --bike-type touring          # names, ranges, what they do
+bike-router profile check --bike-type touring --profile-param uphilcost=120   # dry run + hint
+bike-router profile schema --bike-type touring            # JSON Schema, for editors and UIs
+curl 'http://127.0.0.1:8765/v1/profiles/settings?bike_type=touring&schema=true'
+```
+
+On the command line settings are checked **strictly before routing** against the profile the bike
+type is planned with: `bike-router route plan --bike-type touring --profile-param uphilcost=120`
+stops with `'uphilcost' is not a setting of custom_touring-v1 (did you mean 'uphillcost'?)`. The API
+is lenient (it warns and routes), because a request may be meant for several engines.
+
+What they do, measured on `custom_touring-v1` on three routes (real BRouter, one setting at
+a time; km / metres climbed):
+
+| setting | Harz (Bad Harzburg - Braunlage) | Garmisch - Mittenwald | Eisenach - Brotterode |
+| --- | ---: | ---: | ---: |
+| default | 26.7 / 659 | 18.2 / 323 | 24.8 / 290 |
+| `consider_traffic=false` | 22.7 / 617 | 18.2 / 323 | 24.7 / 290 |
+| `consider_noise=true` | 28.9 / 759 | 21.1 / 355 | 24.7 / 300 |
+| `consider_forest=true` | 27.8 / 664 | 18.6 / 301 | 24.8 / 303 |
+| `unpavedPenalty=5` | 28.2 / 662 | 18.2 / 323 | 25.0 / 292 |
+| `uphillcost=60` | 26.7 / 659 | 24.9 / 327 | 24.8 / 290 |
+| `uphillcost=200` | **61.1** / 664 | 24.9 / 327 | 24.9 / 285 |
+| `bikerPower=250` (time 144 / 85 / 98 min -> 72 / 44 / 54) | 26.7 / 659 | 18.2 / 323 | 24.8 / 290 |
+
+`uphillcost` is a trap: it prices climbing per kilometre, so where a climb cannot be avoided
+(the destination is uphill) a high value only buys a longer way round: 200 turned the Harz
+route into 61 km while the climbing did not go down, and 60 added 37 % on the Garmisch route for
+no gain. Use it for riders who dislike hills *and* have a flat alternative, not as a "less
+climbing" knob; `max_ascent_m` is the limit that is checked against the finished route. The rider
+settings are the safe ones: `bikerPower` 250 halves the time estimate and moves no route.

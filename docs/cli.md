@@ -46,6 +46,13 @@ bike-router route export plan.json --candidate 2 --gpx second.gpx --geojson seco
 bike-router route picks                                # which compared route people take (opt-in log)
 ```
 
+`bike-router profile` shows and tries the settings a routing profile takes (the LinkML schema,
+[providers.md](providers.md#profile-settings-per-request-profile_params)): `profile settings
+[--bike-type T | --profile P] [--format json]` lists names, ranges and effects, `profile schema` prints
+the JSON Schema (for editors and UIs), and `profile check ... --profile-param N=V
+[--profile-params-file F]` is a dry run: valid or not (exit 2), and the `profile:` variables BRouter
+would be sent.
+
 `route plan` takes everything the API request does: `--via` (repeatable), `--loop` /
 `--target-distance-km`, surfaces, traffic and ferries, `--departure-time`, plus
 
@@ -53,6 +60,8 @@ bike-router route picks                                # which compared route pe
 | --- | --- |
 | `--max-alternatives N` | keep at most N distinct alternatives (1-5) |
 | `--engine ors\|brouter\|valhalla` | route with this engine for this plan only (repeatable) |
+| `--profile-param NAME=VALUE` | a setting of the BRouter profile for this ride, e.g. `uphillcost=120`, `consider_noise=true` (repeatable; true/false/on/off or a number). Typos and out-of-range values stop the command before routing, with a hint (exit 2; [providers.md](providers.md#profile-settings-per-request-profile_params)) |
+| `--profile-params-file FILE` | the same settings as a JSON object (`-` reads standard input), e.g. `echo '{"uphillcost": 90}' \| bike-router route plan ... --profile-params-file -`; `--profile-param` words win. Both are checked against the bike type's profile **before** routing: a typo stops the command with a hint |
 | `--poi-stops N` `--poi-categories` `--poi-corridor-km` `--poi-min-fame` | route past the N best-known sights ([pois.md](pois.md#routing-past-the-most-famous-sights)) |
 | `--format json\|text` | machine readable (default) or a readable summary: the route, every alternative with its pros and cons, weather, stops, warnings, files |
 | `--gpx FILE` `--geojson FILE` `--candidate RANK` | write the best route, or the alternative of that rank, as GPX / GeoJSON |

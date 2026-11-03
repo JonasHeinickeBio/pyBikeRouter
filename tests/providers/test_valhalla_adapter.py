@@ -156,6 +156,25 @@ async def test_gravel_and_mountain_say_the_standard_costing_is_not_tuned_for_the
 
 
 @respx.mock
+async def test_profile_params_are_not_applied_and_say_so(valhalla_route_response: dict) -> None:
+    call = respx.post(ROUTE_URL).mock(
+        return_value=httpx.Response(200, json=valhalla_route_response)
+    )
+    adapter = ValhallaAdapter(base_url=VALHALLA_BASE)
+
+    candidate = await adapter.route(
+        make_request(bike_type="road", profile_params={"uphillcost": 120})
+    )
+
+    assert any(
+        "profile_params ['uphillcost'] are settings of BRouter profiles; Valhalla did not apply"
+        in w
+        for w in candidate.warnings
+    )
+    assert b"uphillcost" not in call.calls[0].request.content
+
+
+@respx.mock
 async def test_relaxed_constraints_omit_avoidances(valhalla_route_response: dict) -> None:
     call = respx.post(ROUTE_URL).mock(
         return_value=httpx.Response(200, json=valhalla_route_response)

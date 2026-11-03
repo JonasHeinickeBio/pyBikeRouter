@@ -13,8 +13,11 @@ from typing import IO, Any
 
 from pydantic import ValidationError
 
+from bike_routing_agent.cli import profile_params as cli_params
 from bike_routing_agent.cli.render import format_ms, pick_lines, plan_text
+from bike_routing_agent.config import BROUTER_PROFILE_MAP
 from bike_routing_agent.models import MAX_FORECAST_DAYS, RouteCandidate, RoutePlanAPIRequest
+from bike_routing_agent.providers import brouter_params
 from bike_routing_agent.storage.history import record_from_state
 
 EXIT_OK = 0
@@ -83,6 +86,27 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     ferries = plan.add_mutually_exclusive_group()
     ferries.add_argument("--avoid-ferries", dest="avoid_ferries", action="store_true", default=True)
     ferries.add_argument("--allow-ferries", dest="avoid_ferries", action="store_false")
+    plan.add_argument(
+        "--profile-param",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help=(
+            "set a setting of the BRouter profile for this ride, e.g. uphillcost=120 or "
+            "consider_noise=true (repeatable; 'bike-router profile settings' lists them). "
+            "Unknown names and out-of-range values are refused before routing (exit 2)"
+        ),
+    )
+    plan.add_argument(
+        "--profile-params-file",
+        metavar="FILE",
+        help=(
+            "profile settings as a JSON object ('-' reads standard input), e.g. "
+            '{"uphillcost": 120, "consider_noise": true}; --profile-param words win. '
+            "Checked against the bike type's profile before routing ('bike-router profile "
+            "settings' lists them)"
+        ),
+    )
     plan.add_argument(
         "--loop",
         action="store_true",
@@ -323,6 +347,34 @@ def _model_error(request: dict[str, Any]) -> str | None:
     return None
 
 
+def _profile_params_error(args: argparse.Namespace, params: dict[str, bool | float]) -> str | None:
+    """Settings checked strictly against the profile the bike type is planned with, so a typo
+    fails here with a hint instead of coming back as a warning after the whole plan."""
+    if not params or (args.engine and "brouter" not in args.engine):
+        return None  # nothing to check, or an engine that does not use them
+    if args.text is not None:
+        return "--profile-param / --profile-params-file need the structured options, not --text"
+    profile = BROUTER_PROFILE_MAP.get(args.bike_type)
+    if profile is None:
+        return None  # an unknown bike type is reported by the request's own checks
+    try:
+        brouter_params.validate(profile, params)
+    except ValidationError as exc:
+        return "; ".join(brouter_params.problems(exc, profile))
+    except ValueError as exc:
+        return str(exc)
+    return None
+
+
+def _gathered_profile_params(args: argparse.Namespace) -> dict[str, bool | float]:
+    """The settings from --profile-params-file and --profile-param (read once: stdin can be)."""
+    gathered = getattr(args, "profile_params_value", None)
+    if gathered is None:
+        gathered = cli_params.gather(args.profile_param, args.profile_params_file)
+        args.profile_params_value = gathered
+    return gathered
+
+
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
     if args.text is not None:
         return {"text": args.text, "timezone": args.timezone}
@@ -338,6 +390,7 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
             "avoid_surfaces": _csv(args.avoid_surfaces),
             "avoid_high_traffic_roads": args.avoid_high_traffic_roads,
             "avoid_ferries": args.avoid_ferries,
+            "profile_params": _gathered_profile_params(args),
             "return_to_origin": args.loop,
             "loop_direction": args.loop_direction,
         },
@@ -478,6 +531,11 @@ def run(
         usage_error = "--optimize-poi-* options belong to --optimize pois"
     if usage_error is None and (args.candidate is not None) and not (args.gpx or args.geojson):
         usage_error = "--candidate only selects what --gpx / --geojson write"
+    if usage_error is None:
+        try:
+            usage_error = _profile_params_error(args, _gathered_profile_params(args))
+        except ValueError as exc:
+            usage_error = str(exc)
     request: dict[str, Any] = {}
     if usage_error is None:
         request = build_request(args)

@@ -138,6 +138,7 @@ bike-router docker logs -f
 bike-router config show          # effective settings, secrets redacted
 bike-router config check         # validate settings against the environment
 bike-router providers list       # provider names and bike-type -> ORS profile map
+bike-router profile settings --bike-type touring   # what a request may tune (route plan --profile-param), from the LinkML schema
 bike-router route plan ... --format text --gpx best.gpx   # alternatives, sight stops, exports
 bike-router route show plan.json # a saved plan again; `route export` writes any alternative
 bike-router poi along --route plan.json   # sights near a route, ranked by fame

@@ -90,6 +90,16 @@ TOOLS: list[dict[str, Any]] = [
                 "avoid_surfaces": {"type": "array", "items": {"type": "string"}},
                 "avoid_high_traffic_roads": {"type": "boolean"},
                 "avoid_ferries": {"type": "boolean"},
+                "profile_params": {
+                    "type": "object",
+                    "additionalProperties": {"type": ["boolean", "number"]},
+                    "description": (
+                        "settings of the BRouter routing profile for this ride, e.g. "
+                        '{"uphillcost": 120, "consider_noise": true} (a rider who dislikes '
+                        "climbing, wants a quiet route); a name the profile lacks or a value "
+                        "out of range is listed in the answer's warnings"
+                    ),
+                },
                 "departure_time": {
                     "type": "string",
                     "description": "ISO 8601 with a time zone, at most 14 days ahead; default now",
@@ -107,6 +117,27 @@ TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["origin"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "profile_settings",
+        "description": (
+            "List the settings a plan_route request may change for a bike type's routing profile "
+            "(plan_route's profile_params): each one's name, on/off or number with its range, "
+            "what it does, and whether it changes the route or only the time estimate. Look here "
+            "before setting any: a name the profile lacks is not applied. " + FACTS_ONLY
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "bike_type": {
+                    "type": "string",
+                    "enum": BIKE_TYPES,
+                    "description": "the bike type to list the settings of (default gravel)",
+                },
+            },
+            "required": [],
             "additionalProperties": False,
         },
     },
@@ -228,6 +259,12 @@ def _check_value(name: str, spec: dict[str, Any], value: Any) -> str | None:
             problem = _check_value(f"{name} item", item, entry)
             if problem:
                 return problem
+    elif kind == "object":
+        if not isinstance(value, dict):
+            return f"{name} must be an object"
+        for key, entry in value.items():
+            if not isinstance(entry, bool | int | float):
+                return f"{name}.{key} must be true/false or a number"
     return None
 
 
@@ -315,6 +352,7 @@ class BikeRouterTools:
         self._counter = 0
         self._handlers = {
             "plan_route": self._plan_route,
+            "profile_settings": self._profile_settings,
             "explain_route": self._explain_route,
             "route_weather": self._route_weather,
             "sights_along_route": self._sights_along_route,
@@ -338,9 +376,15 @@ class BikeRouterTools:
 
     # ------------------------------------------------------------------------------ the API
 
-    def _request(self, method: str, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
-            response = self._client.request(method, f"{self._api}{path}", json=body)
+            response = self._client.request(method, f"{self._api}{path}", json=body, params=params)
         except httpx.TimeoutException as exc:
             raise ApiError(f"the pyBikeRouter API at {self._api} did not answer in time") from exc
         except httpx.HTTPError as exc:
@@ -356,6 +400,19 @@ class BikeRouterTools:
         if not isinstance(data, dict):
             raise ApiError("the API sent an unexpected answer")
         return data
+
+    # ------------------------------------------------------------------------- profile_settings
+
+    def _profile_settings(self, args: dict[str, Any]) -> dict[str, Any]:
+        bike_type = args.get("bike_type", "gravel")
+        answer = self._request("GET", "/v1/profiles/settings", params={"bike_type": bike_type})
+        (found,) = answer["profiles"]
+        return {
+            "bike_type": bike_type,
+            "profile": found["profile"],
+            "settings": found["settings"],
+            "how_to_use": "plan_route profile_params={name: true|false|number, ...}",
+        }
 
     # ------------------------------------------------------------------------------ plan_route
 
@@ -378,6 +435,7 @@ class BikeRouterTools:
                 "avoid_surfaces",
                 "avoid_high_traffic_roads",
                 "avoid_ferries",
+                "profile_params",
             )
             if key in args
         }
