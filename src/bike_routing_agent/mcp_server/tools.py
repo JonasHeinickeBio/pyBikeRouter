@@ -90,6 +90,16 @@ TOOLS: list[dict[str, Any]] = [
                 "avoid_surfaces": {"type": "array", "items": {"type": "string"}},
                 "avoid_high_traffic_roads": {"type": "boolean"},
                 "avoid_ferries": {"type": "boolean"},
+                "profile_params": {
+                    "type": "object",
+                    "additionalProperties": {"type": ["boolean", "number"]},
+                    "description": (
+                        "settings of the BRouter routing profile for this ride, e.g. "
+                        '{"uphillcost": 120, "consider_noise": true} (a rider who dislikes '
+                        "climbing, wants a quiet route); a name the profile lacks or a value "
+                        "out of range is listed in the answer's warnings"
+                    ),
+                },
                 "departure_time": {
                     "type": "string",
                     "description": "ISO 8601 with a time zone, at most 14 days ahead; default now",
@@ -228,6 +238,12 @@ def _check_value(name: str, spec: dict[str, Any], value: Any) -> str | None:
             problem = _check_value(f"{name} item", item, entry)
             if problem:
                 return problem
+    elif kind == "object":
+        if not isinstance(value, dict):
+            return f"{name} must be an object"
+        for key, entry in value.items():
+            if not isinstance(entry, bool | int | float):
+                return f"{name}.{key} must be true/false or a number"
     return None
 
 
@@ -378,6 +394,7 @@ class BikeRouterTools:
                 "avoid_surfaces",
                 "avoid_high_traffic_roads",
                 "avoid_ferries",
+                "profile_params",
             )
             if key in args
         }

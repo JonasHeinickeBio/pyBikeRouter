@@ -39,7 +39,7 @@ The package is called like the command (`bike-router`), which is what `uvx` look
 
 | Tool | Does |
 | --- | --- |
-| `plan_route` | Plan a route between two places (names or `lat,lon`), or a loop (`loop` + `target_distance_km`), with `via`, bike type, surfaces, traffic and ferries, limits, departure time, alternatives, sight stops. Returns the best route and its alternatives as facts, and a **`plan_ref`**. An ambiguous place comes back as candidates with `lat,lon` to answer with. |
+| `plan_route` | Plan a route between two places (names or `lat,lon`), or a loop (`loop` + `target_distance_km`), with `via`, bike type, surfaces, traffic and ferries, limits, departure time, alternatives, sight stops, and `profile_params` (settings of the BRouter profile for this rider, e.g. `{"consider_noise": true}`; see [providers.md](providers.md#profile-settings-per-request-profile_params)). Returns the best route and its alternatives as facts, and a **`plan_ref`**. An ambiguous place comes back as candidates with `lat,lon` to answer with. |
 | `explain_route` | The facts of one route of a plan (`rank`, 1 = best fit): distance, duration, climb, surface and traffic shares, pros and cons against the best fit, warnings. |
 | `route_weather` | The forecast along one route at its departure: temperature, rain, wind, daylight, a better departure when there is one; says so when there is no forecast. `detail=true` adds the hourly samples. |
 | `sights_along_route` | Sights (or services: cafes, water, ...) along one route, best known first, with the distance from the route and the position along it. `categories`, `buffer_m`, `limit`. |

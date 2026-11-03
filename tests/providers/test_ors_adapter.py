@@ -126,6 +126,29 @@ async def test_only_gravel_says_the_profile_is_not_tuned_for_it(
 
 
 @respx.mock
+async def test_profile_params_are_not_applied_and_say_so(ors_directions_response):
+    route = respx.post(url__regex=rf"{BASE_URL}/v2/directions/cycling-[a-z]+/geojson").mock(
+        return_value=httpx.Response(200, json=ors_directions_response)
+    )
+    adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)
+    request = make_request().model_copy(
+        update={
+            "constraints": RouteConstraints(
+                bike_type="road", profile_params={"uphillcost": 120, "consider_noise": True}
+            )
+        }
+    )
+
+    candidate = await adapter.route(request)
+
+    assert any(
+        "profile_params ['consider_noise', 'uphillcost'] are settings of BRouter" in w
+        for w in candidate.warnings
+    )
+    assert b"uphillcost" not in route.calls[0].request.content
+
+
+@respx.mock
 async def test_health_reports_ok_on_200():
     respx.get(f"{BASE_URL}/v2/health").mock(return_value=httpx.Response(200))
     adapter = OpenRouteServiceAdapter(api_key="key", base_url=BASE_URL, timeout_s=1.0)

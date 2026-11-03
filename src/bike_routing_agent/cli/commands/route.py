@@ -84,6 +84,18 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     ferries.add_argument("--avoid-ferries", dest="avoid_ferries", action="store_true", default=True)
     ferries.add_argument("--allow-ferries", dest="avoid_ferries", action="store_false")
     plan.add_argument(
+        "--profile-param",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help=(
+            "set a setting of the BRouter profile for this ride, e.g. uphillcost=120 or "
+            "consider_noise=true (repeatable; 'bike-router providers list' shows the profile, "
+            "docs/providers.md the settings). Unknown names and out-of-range values are "
+            "reported in the route's warnings"
+        ),
+    )
+    plan.add_argument(
         "--loop",
         action="store_true",
         help="round trip back to the origin; omit --destination and set --target-distance-km",
@@ -323,6 +335,28 @@ def _model_error(request: dict[str, Any]) -> str | None:
     return None
 
 
+def _profile_params(items: list[str]) -> dict[str, bool | float]:
+    """``NAME=VALUE`` words -> settings; true/false/on/off are booleans, the rest numbers."""
+    found: dict[str, bool | float] = {}
+    for item in items:
+        name, sep, raw = item.partition("=")
+        name, raw = name.strip(), raw.strip().lower()
+        if not sep or not name or not raw:
+            raise ValueError(f"--profile-param wants NAME=VALUE, got {item!r}")
+        if raw in ("true", "on", "yes"):
+            found[name] = True
+        elif raw in ("false", "off", "no"):
+            found[name] = False
+        else:
+            try:
+                found[name] = float(raw)
+            except ValueError:
+                raise ValueError(
+                    f"--profile-param {name}: {raw!r} is not a number or true/false"
+                ) from None
+    return found
+
+
 def build_request(args: argparse.Namespace) -> dict[str, Any]:
     if args.text is not None:
         return {"text": args.text, "timezone": args.timezone}
@@ -338,6 +372,7 @@ def build_request(args: argparse.Namespace) -> dict[str, Any]:
             "avoid_surfaces": _csv(args.avoid_surfaces),
             "avoid_high_traffic_roads": args.avoid_high_traffic_roads,
             "avoid_ferries": args.avoid_ferries,
+            "profile_params": _profile_params(args.profile_param),
             "return_to_origin": args.loop,
             "loop_direction": args.loop_direction,
         },
@@ -478,6 +513,11 @@ def run(
         usage_error = "--optimize-poi-* options belong to --optimize pois"
     if usage_error is None and (args.candidate is not None) and not (args.gpx or args.geojson):
         usage_error = "--candidate only selects what --gpx / --geojson write"
+    if usage_error is None:
+        try:
+            _profile_params(args.profile_param)
+        except ValueError as exc:
+            usage_error = str(exc)
     request: dict[str, Any] = {}
     if usage_error is None:
         request = build_request(args)

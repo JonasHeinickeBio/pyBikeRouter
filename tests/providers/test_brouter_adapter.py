@@ -921,3 +921,132 @@ async def test_the_http_call_of_the_main_route_gets_the_longer_timeout() -> None
     adapter = BRouterAdapter(base_url=BROUTER_BASE, timeout_s=30.0, timeout_per_km_s=0.5)
     await adapter.route(_trip(135))
     assert seen and seen[0] == pytest.approx(82.5, abs=1.0)  # 15 s + 0.5 s * 135 km
+
+
+# --- profile_params: settings of the profile, per request
+
+
+@respx.mock
+async def test_profile_params_are_sent_as_profile_variables_and_recorded(
+    brouter_route_response: dict,
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(
+        make_request(
+            bike_type="touring",
+            profile_params={"uphillcost": 120, "consider_noise": True, "allow_steps": False},
+        )
+    )
+
+    params = route.calls[0].request.url.params
+    assert params["profile"] == "custom_touring-v1"
+    assert params["profile:uphillcost"] == "120"
+    assert params["profile:consider_noise"] == "1"  # BRouter wants 1/0, "true" is HTTP 500
+    assert params["profile:allow_steps"] == "0"
+    assert params["profile:consider_traffic"] == "1"  # avoid_high_traffic_roads still applies
+    assert candidate.provenance["profile_overrides"] == {
+        "consider_traffic": 1,
+        "uphillcost": 120,
+        "consider_noise": 1,
+        "allow_steps": 0,
+    }
+    assert not any("profile_params" in w for w in candidate.warnings)
+
+
+@respx.mock
+async def test_unknown_and_out_of_range_settings_are_reported_not_sent(
+    brouter_route_response: dict,
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(
+        make_request(bike_type="touring", profile_params={"uphilcost": 120, "downhillcost": 9999})
+    )
+
+    params = route.calls[0].request.url.params
+    assert "profile:uphilcost" not in params
+    assert params["profile:downhillcost"] == "200"
+    notes = [w for w in candidate.warnings if "profile_params" in w]
+    assert len(notes) == 2
+    assert any("'uphilcost' is not a setting of custom_touring-v1" in w for w in notes)
+    assert any("did you mean 'uphillcost'" in w for w in notes)
+    assert any("'downhillcost'=9999 is outside 0..200" in w and "used 200" in w for w in notes)
+
+
+@respx.mock
+async def test_an_explicit_traffic_setting_wins_over_avoid_high_traffic_roads_and_says_so(
+    brouter_route_response: dict,
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(
+        make_request(
+            bike_type="touring",
+            avoid_high_traffic_roads=True,
+            profile_params={"consider_traffic": False},
+        )
+    )
+
+    assert route.calls[0].request.url.params["profile:consider_traffic"] == "0"
+    assert candidate.provenance["profile_overrides"] == {"consider_traffic": 0}
+    assert any(
+        "profile_params consider_traffic=0 overrides avoid_high_traffic_roads=true" in w
+        for w in candidate.warnings
+    )
+
+
+@respx.mock
+async def test_a_matching_traffic_setting_is_not_a_conflict(brouter_route_response: dict) -> None:
+    respx.get(BROUTER_URL).mock(return_value=httpx.Response(200, json=brouter_route_response))
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(
+        make_request(bike_type="touring", profile_params={"consider_traffic": True})
+    )
+
+    assert not any("overrides" in w for w in candidate.warnings)
+
+
+@respx.mock
+async def test_a_profile_without_settings_sends_nothing_and_says_so(
+    brouter_route_response: dict,
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(
+        make_request(bike_type="mountain", profile_params={"uphillcost": 120})
+    )
+
+    params = route.calls[0].request.url.params
+    assert params["profile"] == "mtb"
+    assert not [k for k in params if k.startswith("profile:")]
+    assert any("mtb has no per-request settings" in w for w in candidate.warnings)
+
+
+@respx.mock
+async def test_without_profile_params_the_request_is_unchanged(
+    brouter_route_response: dict,
+) -> None:
+    route = respx.get(BROUTER_URL).mock(
+        return_value=httpx.Response(200, json=brouter_route_response)
+    )
+    adapter = BRouterAdapter(base_url=BROUTER_BASE)
+
+    candidate = await adapter.route(make_request(bike_type="touring"))
+
+    sent = {k for k in route.calls[0].request.url.params if k.startswith("profile:")}
+    assert sent == {"profile:consider_traffic"}
+    assert not any("profile_params" in w for w in candidate.warnings)

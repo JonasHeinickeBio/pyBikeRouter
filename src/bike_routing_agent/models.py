@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import re
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -22,6 +24,9 @@ from bike_routing_agent.poi.models import Poi
 from bike_routing_agent.weather.models import RouteWeather
 
 MAX_VIA_POINTS = 10
+# Routing-engine profile settings a request may carry (``RouteConstraints.profile_params``).
+MAX_PROFILE_PARAMS = 24
+_PROFILE_PARAM_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,39}")
 # Famous-POI route stops (issue #55): how many, and how wide a corridor to look in.
 MAX_POI_STOPS = 5
 MAX_POI_CORRIDOR_KM = 15.0
@@ -64,8 +69,28 @@ class RouteConstraints(BaseModel):
     avoid_surfaces: list[str] = Field(default_factory=list)
     avoid_high_traffic_roads: bool = True
     avoid_ferries: bool = True
+    profile_params: dict[str, bool | float] = Field(
+        default_factory=dict,
+        description=(
+            "Settings of the routing profile for this request, e.g. {'uphillcost': 120, "
+            "'consider_noise': true}. Applied by BRouter only; a name the profile does not "
+            "have, or a value out of range, is reported in the route's warnings."
+        ),
+    )
     return_to_origin: bool = False
     loop_direction: LoopDirection = "clockwise"
+
+    @field_validator("profile_params")
+    @classmethod
+    def _check_profile_params(cls, value: dict[str, bool | float]) -> dict[str, bool | float]:
+        if len(value) > MAX_PROFILE_PARAMS:
+            raise ValueError(f"at most {MAX_PROFILE_PARAMS} profile_params")
+        for name, setting in value.items():
+            if not _PROFILE_PARAM_NAME.fullmatch(name):
+                raise ValueError(f"profile_params name '{name}' is not a setting name")
+            if not isinstance(setting, bool) and not math.isfinite(setting):
+                raise ValueError(f"profile_params '{name}' must be a finite number or a boolean")
+        return value
 
     @model_validator(mode="after")
     def _check_distance_consistency(self) -> RouteConstraints:

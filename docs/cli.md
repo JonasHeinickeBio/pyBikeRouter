@@ -53,6 +53,7 @@ bike-router route picks                                # which compared route pe
 | --- | --- |
 | `--max-alternatives N` | keep at most N distinct alternatives (1-5) |
 | `--engine ors\|brouter\|valhalla` | route with this engine for this plan only (repeatable) |
+| `--profile-param NAME=VALUE` | a setting of the BRouter profile for this ride, e.g. `uphillcost=120`, `consider_noise=true` (repeatable; true/false/on/off or a number). Typos and out-of-range values come back in the route's warnings ([providers.md](providers.md#profile-settings-per-request-profile_params)) |
 | `--poi-stops N` `--poi-categories` `--poi-corridor-km` `--poi-min-fame` | route past the N best-known sights ([pois.md](pois.md#routing-past-the-most-famous-sights)) |
 | `--format json\|text` | machine readable (default) or a readable summary: the route, every alternative with its pros and cons, weather, stops, warnings, files |
 | `--gpx FILE` `--geojson FILE` `--candidate RANK` | write the best route, or the alternative of that rank, as GPX / GeoJSON |

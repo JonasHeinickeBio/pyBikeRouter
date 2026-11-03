@@ -123,6 +123,37 @@ def test_the_plan_request_carries_alternatives_engines_and_sight_stops():
     assert code == 0
 
 
+def test_profile_params_are_collected_from_repeated_flags():
+    code, _, _, graph = plan(
+        "--profile-param", "uphillcost=120", "--profile-param", "consider_noise=true",
+        "--profile-param", "allow_steps=off", "--profile-param", "C_r=0.0075",
+    )  # fmt: skip
+    request = (graph.invoked_with or {})["raw_input"]
+    assert code == 0
+    assert request["constraints"]["profile_params"] == {
+        "uphillcost": 120.0,
+        "consider_noise": True,
+        "allow_steps": False,
+        "C_r": 0.0075,
+    }
+
+
+@pytest.mark.parametrize(
+    ("flag", "fragment"),
+    [("uphillcost", "NAME=VALUE"), ("=3", "NAME=VALUE"), ("uphillcost=", "NAME=VALUE"),
+     ("uphillcost=lots", "not a number or true/false"), ("a b=3", "profile_params")],
+)  # fmt: skip
+def test_a_malformed_profile_param_is_a_usage_error(flag, fragment):
+    code, _, err, graph = plan("--profile-param", flag)
+    assert code == 2 and graph.invoked_with is None
+    assert fragment in err
+
+
+def test_without_profile_params_the_constraint_is_empty():
+    _, _, _, graph = plan()
+    assert (graph.invoked_with or {})["raw_input"]["constraints"]["profile_params"] == {}
+
+
 def test_without_the_new_options_the_request_is_unchanged():
     _, _, _, graph = plan()
     request = (graph.invoked_with or {})["raw_input"]

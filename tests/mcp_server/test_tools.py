@@ -155,6 +155,22 @@ def test_plan_route_asks_the_api_for_what_was_said(tools, api):
     }
 
 
+def test_profile_params_are_passed_on_and_checked(tools, api):
+    planned(tools, profile_params={"uphillcost": 120, "consider_noise": True})
+    _, body = api.requests[0]
+    assert body["constraints"]["profile_params"] == {"uphillcost": 120, "consider_noise": True}
+
+    data, error = call(tools, "plan_route", origin="A", destination="B", profile_params="quiet")
+    assert error and "profile_params must be an object" in data["problems"][0]
+    data, error = call(
+        tools, "plan_route", origin="A", destination="B", profile_params={"uphillcost": "lots"}
+    )
+    assert (
+        error and "profile_params.uphillcost must be true/false or a number" in data["problems"][0]
+    )
+    assert len(api.requests) == 1  # the bad ones never reached the API
+
+
 def test_a_loop_has_a_distance_and_no_destination(tools, api):
     data, error = call(tools, "plan_route", origin="Goslar", loop=True, target_distance_km=40)
     assert not error

@@ -76,6 +76,11 @@ class OpenRouteServiceAdapter:
                 "all-round profile not tuned for gravel, so the surface mix is not known "
                 "(the BRouter engine has a gravel profile)"
             )
+        if request.constraints.profile_params:
+            warnings.append(
+                f"profile_params {sorted(request.constraints.profile_params)} are settings of "
+                "BRouter profiles; ORS did not apply them"
+            )
         if unsupported:
             warnings.append(
                 f"requested avoid_features {unsupported} are not supported by ORS cycling "

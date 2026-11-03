@@ -25,7 +25,7 @@ import asyncio
 import json
 import logging
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, TypeVar
 
 import httpx
@@ -59,6 +59,7 @@ from bike_routing_agent.providers.brouter_optimize import (
     plan_variants,
     poi_via_sets,
 )
+from bike_routing_agent.providers.brouter_params import resolve
 from bike_routing_agent.providers.brouter_segments import missing_segment
 from bike_routing_agent.providers.brouter_tags import (
     main_road_share,
@@ -193,16 +194,28 @@ class BRouterAdapter:
                 f"avoid_high_traffic_roads=True cannot be applied by {profile}: the profile "
                 "has no traffic setting, so its own cost structure decides"
             )
+        params = resolve(profile, request.constraints.profile_params)
+        warnings.extend(params.warnings)
+        switch = BROUTER_TRAFFIC_SWITCHES.get(profile)
+        wanted = int(request.constraints.avoid_high_traffic_roads)
+        if switch in params.values and params.values[switch] != wanted:
+            warnings.append(
+                f"profile_params {switch}={params.values[switch]} overrides "
+                f"avoid_high_traffic_roads={str(request.constraints.avoid_high_traffic_roads).lower()}"
+            )
         return warnings
 
     @staticmethod
-    def _profile_overrides(request: RoutingRequest, profile: str) -> dict[str, int]:
-        """Profile variables set for this request (``avoid_high_traffic_roads`` -> the
-        profile's traffic switch); empty for a profile without one."""
+    def _profile_overrides(request: RoutingRequest, profile: str) -> dict[str, int | float]:
+        """Profile variables set for this request: ``avoid_high_traffic_roads`` -> the profile's
+        traffic switch (none for a profile without one), then the request's own
+        ``profile_params`` (checked per profile, see brouter_params), which win."""
+        overrides: dict[str, int | float] = {}
         variable = BROUTER_TRAFFIC_SWITCHES.get(profile)
-        if variable is None:
-            return {}
-        return {variable: 1 if request.constraints.avoid_high_traffic_roads else 0}
+        if variable is not None:
+            overrides[variable] = 1 if request.constraints.avoid_high_traffic_roads else 0
+        overrides.update(resolve(profile, request.constraints.profile_params).values)
+        return overrides
 
     async def _get(
         self, params: dict[str, str], *, timeout_s: float | None = None
@@ -485,7 +498,7 @@ class BRouterAdapter:
         *,
         timeout_s: float | None = None,
         alternative_index: int = 0,
-        extra_overrides: dict[str, int] | None = None,
+        extra_overrides: Mapping[str, int | float] | None = None,
     ) -> RouteCandidate:
         overrides = {**self._profile_overrides(request, profile), **(extra_overrides or {})}
         response = await self._get(
@@ -552,7 +565,7 @@ class BRouterAdapter:
         )
 
     def _normalize(
-        self, payload: object, *, profile: str, overrides: dict[str, int] | None = None
+        self, payload: object, *, profile: str, overrides: Mapping[str, int | float] | None = None
     ) -> RouteCandidate:
         if not isinstance(payload, dict):
             raise ProviderBadResponseError(

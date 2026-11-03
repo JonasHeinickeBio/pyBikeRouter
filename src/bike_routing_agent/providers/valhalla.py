@@ -152,6 +152,11 @@ class ValhallaAdapter:
                 "avoid_ferries=False keeps Valhalla's default ferry willingness (0.5); "
                 "ferries may appear on the route"
             )
+        if constraints.profile_params:
+            warnings.append(
+                f"profile_params {sorted(constraints.profile_params)} are settings of BRouter "
+                "profiles; Valhalla did not apply them"
+            )
         return warnings
 
     async def _post(self, payload: dict) -> httpx.Response:
